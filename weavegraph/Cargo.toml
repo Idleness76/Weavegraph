@@ -15,6 +15,12 @@ documentation = "https://docs.rs/weavegraph"
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
+rag_utils = { path = "../rag_utils" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls"] }
+tokio-rusqlite = { version = "0.6", features = ["bundled"] }
+url = "2"
+scraper = "0.24"
+httpmock = "0.7"
 
 [dependencies]
 # Error handling & diagnostics
