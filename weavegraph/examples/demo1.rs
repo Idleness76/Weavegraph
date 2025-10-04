@@ -148,7 +148,10 @@ async fn demo() -> Result<()> {
     println!("\n🔗 Step 2: Building workflow graph with modern GraphBuilder");
 
     let app = GraphBuilder::new()
-        .add_node(NodeKind::Start, SimpleNode::new("Start"))
+        .add_node(
+            NodeKind::Other("Initializer".into()),
+            SimpleNode::new("Initializer"),
+        )
         .add_node(
             NodeKind::Other("ProcessorA".into()),
             SimpleNode::new("ProcessorA"),
@@ -159,7 +162,11 @@ async fn demo() -> Result<()> {
         )
         .add_node(NodeKind::End, SimpleNode::new("End"))
         // Create a processing pipeline: Start -> A -> B -> End
-        .add_edge(NodeKind::Start, NodeKind::Other("ProcessorA".into()))
+        .add_edge(NodeKind::Start, NodeKind::Other("Initializer".into()))
+        .add_edge(
+            NodeKind::Other("Initializer".into()),
+            NodeKind::Other("ProcessorA".into()),
+        )
         .add_edge(
             NodeKind::Other("ProcessorA".into()),
             NodeKind::Other("ProcessorB".into()),
@@ -172,7 +179,7 @@ async fn demo() -> Result<()> {
         .map_err(|e| miette::miette!("Graph compilation failed: {e:?}"))?;
 
     println!("   ✓ Graph compiled successfully");
-    println!("   ✓ Nodes: Start, ProcessorA, ProcessorB, End");
+    println!("   ✓ Nodes: Initializer, ProcessorA, ProcessorB, End");
     println!("   ✓ Edges: Start→A→B→End, Start→B (fan-out pattern)");
 
     // ✅ STEP 3: Full Workflow Execution

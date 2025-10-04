@@ -154,7 +154,10 @@ async fn run_demo2() -> miette::Result<()> {
     println!("\n🔗 Step 2: Building complex graph with dependencies and fan-out");
 
     let app = GraphBuilder::new()
-        .add_node(NodeKind::Start, SchedulerDemoNode::new("Start", 50))
+        .add_node(
+            NodeKind::Other("Initializer".into()),
+            SchedulerDemoNode::new("Initializer", 50),
+        )
         .add_node(
             NodeKind::Other("Analyzer".into()),
             SchedulerDemoNode::new("Analyzer", 200),
@@ -174,8 +177,15 @@ async fn run_demo2() -> miette::Result<()> {
         .add_node(NodeKind::End, SchedulerDemoNode::new("End", 75))
         // Create complex dependency graph:
         // Start fans out to Analyzer and ProcessorA
-        .add_edge(NodeKind::Start, NodeKind::Other("Analyzer".into()))
-        .add_edge(NodeKind::Start, NodeKind::Other("ProcessorA".into()))
+        .add_edge(NodeKind::Start, NodeKind::Other("Initializer".into()))
+        .add_edge(
+            NodeKind::Other("Initializer".into()),
+            NodeKind::Other("Analyzer".into()),
+        )
+        .add_edge(
+            NodeKind::Other("Initializer".into()),
+            NodeKind::Other("ProcessorA".into()),
+        )
         // Analyzer feeds into ProcessorB
         .add_edge(
             NodeKind::Other("Analyzer".into()),

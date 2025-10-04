@@ -1,0 +1,33 @@
+{
+    "title": "Example Plan",
+    "metadata": {
+        "owner": "Ariel",
+        "version": 3,
+        "tags": [
+            "semantic",
+            "chunking",
+            "json"
+        ],
+        "published": true
+    },
+    "sections": [
+        {
+            "name": "intro",
+            "text": "This introduction explains the goals of the document. It should be segmented into a readable chunk that remains coherent."
+        },
+        {
+            "name": "details",
+            "steps": [
+                {
+                    "description": "Gather requirements and examples.",
+                    "notes": "Look at existing pipelines for inspiration."
+                },
+                {
+                    "description": "Implement chunking logic.",
+                    "notes": "Include semantic breakpoints and metadata enrichment."
+                }
+            ]
+        }
+    ],
+    "summary": "A short summary highlighting key actions and owners."
+}

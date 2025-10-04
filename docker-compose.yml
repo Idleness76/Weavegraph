@@ -1,10 +1,3 @@
-volumes:
-  ollama_data:
-    external: true
-networks:
-  weavegraph:
-    name: weavegraph
-
 services:
   ollama:
     container_name: ollama
@@ -20,3 +13,17 @@ services:
     environment:
       - OLLAMA_KEEP_ALIVE=24h
       - OLLAMA_HOST=0.0.0.0
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+volumes:
+  ollama_data:
+    external: true
+networks:
+  weavegraph:
+    name: weavegraph

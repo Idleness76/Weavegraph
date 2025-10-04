@@ -1,0 +1,28 @@
+{
+    "metrics": {
+        "accuracy": 0.92,
+        "loss": 0.34,
+        "history": [
+            {
+                "epoch": 1,
+                "accuracy": 0.82,
+                "loss": 0.58
+            },
+            {
+                "epoch": 2,
+                "accuracy": 0.88,
+                "loss": 0.44
+            },
+            {
+                "epoch": 3,
+                "accuracy": 0.92,
+                "loss": 0.34
+            }
+        ]
+    },
+    "notes": "Embedding failures should produce lexical fallback without panicking.",
+    "warnings": [
+        "Learning rate scheduled aggressively",
+        "Consider additional validation"
+    ]
+}

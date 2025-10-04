@@ -1,0 +1,98 @@
+[package]
+name = "weavegraph"
+version = "0.1.0-alpha.3"
+edition = "2021"
+description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
+license = "MIT"
+repository = "https://github.com/Idleness76/weavegraph"
+readme = "README.md"
+keywords = ["graph", "workflow", "concurrency", "agents", "tracing"]
+categories = ["concurrency", "data-structures", "algorithms"]
+rust-version = "1.83"
+homepage = "https://github.com/Idleness76/weavegraph"
+documentation = "https://docs.rs/weavegraph"
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+
+[dependencies]
+# Error handling & diagnostics
+miette = { version = "7.6", features = ["fancy"] }
+thiserror = "2"
+
+# Tracing & logging  
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+] }
+tracing-error = "0.2"
+
+# Async runtime
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Data structures & utilities
+rustc-hash = "2.1"
+flume = "0.11"
+
+# Time & IDs
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+rand = "0.9"
+
+# LLM framework (external dependency)
+# NOTE: rig-core is not currently used in the codebase but will be part of a future iteration.
+# It is intentionally included to prepare for upcoming LLM integration features.
+# This dependency should NOT be removed even if flagged by cargo-machete.
+rig-core = "0.21"
+
+# Database
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "macros",
+    "uuid",
+    "chrono",
+    "json",
+] }
+
+# Configuration
+dotenvy = "0.15"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["sqlite-migrations"]
+sqlite-migrations = []
+
+# Clippy configuration to enforce Message API best practices
+[lints.clippy]
+# Encourage use of convenience constructors over manual struct construction
+manual_string_new = "warn"
+# Encourage use of builder patterns and convenience methods
+new_without_default = "warn"
+# General code quality
+missing_errors_doc = "allow"      # We handle this manually
+module_name_repetitions = "allow" # Common in this domain
+too_many_lines = "allow"          # Documentation examples can be long
+
+# Cargo-machete configuration to ignore intentionally unused dependencies
+[package.metadata.cargo-machete]
+ignored = [
+    "rig-core",
+] # Intentionally included for future LLM integration features
