@@ -1,28 +1,44 @@
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use rag_utils::ingestion::rust_book::{RustBookIngestOptions, RustBookIngestor};
+use rag_utils::ingestion::{chunk_response_to_ingestion, fetch_html, DocumentCache, ResumeTracker};
 use rag_utils::semantic_chunking::embeddings::MockEmbeddingProvider;
-use rag_utils::semantic_chunking::service::SemanticChunkingService;
+use rag_utils::semantic_chunking::service::{
+    ChunkDocumentRequest, ChunkSource, SemanticChunkingService,
+};
 use rag_utils::stores::sqlite::SqliteChunkStore;
+use rag_utils::types::RagError;
+use reqwest::Client;
 use rig::embeddings::embedding::{Embedding, EmbeddingError, EmbeddingModel};
+use scraper::{Html, Selector};
 use tokio::fs;
 use tracing_subscriber::FmtSubscriber;
 use url::Url;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), RagError> {
     init_tracing();
 
     let base_url = env::var("RUST_BOOK_BASE_URL")
         .unwrap_or_else(|_| "https://doc.rust-lang.org/book/".to_string());
-    let base_url = Url::parse(&base_url)?;
+    let base_url =
+        Url::parse(&base_url).map_err(|err| RagError::InvalidDocument(err.to_string()))?;
 
     let cache_dir = env::var("RUST_BOOK_CACHE").unwrap_or_else(|_| "./rust_book_cache".to_string());
     let cache_dir = PathBuf::from(cache_dir);
+    if let Some(parent) = cache_dir.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).await?;
+        }
+    }
     fs::create_dir_all(&cache_dir).await?;
+    let cache = DocumentCache::new(cache_dir.clone());
+
+    let state_path = env::var("RUST_BOOK_STATE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| cache.state_file());
 
     let db_path =
         env::var("RUST_BOOK_DB").unwrap_or_else(|_| "./rust_book_chunks.sqlite".to_string());
@@ -39,20 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let resume = env::var("RUST_BOOK_RESUME")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    let concurrency = env::var("RUST_BOOK_CONCURRENCY")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(4)
-        .max(1);
 
-    let options = RustBookIngestOptions {
-        base_url,
-        concurrency,
-        limit,
-        cache_dir: Some(cache_dir.clone()),
-        resume,
-        state_path: None,
-    };
+    let client = Client::builder()
+        .user_agent("weavegraph-RustBook-Ingestor/0.2")
+        .use_rustls_tls()
+        .build()?;
 
     let service = Arc::new(
         SemanticChunkingService::builder()
@@ -63,22 +70,96 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let embedding_model = DemoEmbeddingModel;
     let store = Arc::new(SqliteChunkStore::open(&db_path, &embedding_model).await?);
 
-    let ingestor = RustBookIngestor::new(service, store, options)?;
+    let mut toc_urls = fetch_rust_book_toc(&client, &base_url).await?;
+    if let Some(limit) = limit {
+        toc_urls.truncate(limit);
+    }
 
-    println!("🚀 Starting Rust Book ingestion...");
-    let result = ingestor.ingest().await?;
+    let resume_tracker = if resume {
+        let tracker = ResumeTracker::new(state_path);
+        tracker.load().await?;
+        Some(tracker)
+    } else {
+        None
+    };
+
+    println!("Found {} chapters to process", toc_urls.len());
+
+    let start = Instant::now();
+    let mut pages_processed = 0usize;
+    let mut pages_skipped = 0usize;
+    let mut chunks_written = 0usize;
+    let mut bytes_downloaded = 0usize;
+    let mut telemetry = Vec::new();
+
+    for url in toc_urls {
+        if let Some(tracker) = &resume_tracker {
+            if tracker.contains(&url).await {
+                pages_skipped += 1;
+                println!("⏭︎ Skipping {} (already recorded)", url);
+                continue;
+            }
+        }
+
+        println!("→ Fetching {}", url);
+        let fetch = fetch_html(&client, &url, Some(&cache)).await?;
+        if fetch.from_cache {
+            println!("   using cache ({:.2} KB)", fetch.bytes as f64 / 1024.0);
+        } else {
+            println!("   downloaded {:.2} KB", fetch.bytes as f64 / 1024.0);
+        }
+        bytes_downloaded += fetch.bytes;
+
+        let response = service
+            .chunk_document(ChunkDocumentRequest::new(ChunkSource::Html(fetch.content)))
+            .await
+            .map_err(|err| RagError::Chunking(err.to_string()))?;
+
+        let ingestion = chunk_response_to_ingestion(&url, response)?;
+        let chunk_count = ingestion.chunk_count();
+        let skipped_chunks = ingestion.skipped_chunks();
+        let (batch, _outcome, telemetry_item) = ingestion.into_parts();
+
+        store.add_chunks(batch.into_documents()).await?;
+        telemetry.push(telemetry_item);
+
+        pages_processed += 1;
+        chunks_written += chunk_count;
+
+        println!(
+            "   stored {} chunks (skipped {} without embeddings)",
+            chunk_count, skipped_chunks
+        );
+
+        if let Some(tracker) = &resume_tracker {
+            tracker.mark_processed(&url).await?;
+        }
+    }
+
+    let duration = start.elapsed();
 
     println!("\n✅ Ingestion complete!");
-    println!("  pages processed : {}", result.pages_processed);
-    println!("  pages skipped   : {}", result.pages_skipped);
-    println!("  chunks written  : {}", result.chunks_written);
+    println!("  pages processed : {}", pages_processed);
+    println!("  pages skipped   : {}", pages_skipped);
+    println!("  chunks written  : {}", chunks_written);
     println!(
         "  bytes downloaded: {:.2} MB",
-        result.bytes_downloaded as f64 / (1024.0 * 1024.0)
+        bytes_downloaded as f64 / (1024.0 * 1024.0)
     );
-    println!("  duration        : {:?}", format_duration(result.duration));
+    println!("  duration        : {}", format_duration(duration));
     println!("  cache directory : {}", cache_dir.display());
     println!("  sqlite database : {}", db_path.display());
+
+    if !telemetry.is_empty() {
+        let avg_tokens: f32 =
+            telemetry.iter().map(|t| t.average_tokens).sum::<f32>() / telemetry.len() as f32;
+        let avg_chunks: f32 =
+            telemetry.iter().map(|t| t.chunk_count as f32).sum::<f32>() / telemetry.len() as f32;
+        println!(
+            "  avg chunks/run : {:.1} (avg tokens {:.1})",
+            avg_chunks, avg_tokens
+        );
+    }
 
     Ok(())
 }
@@ -97,6 +178,42 @@ fn format_duration(duration: Duration) -> String {
     let minutes = secs / 60;
     let seconds = secs % 60;
     format!("{}m {}.{:03}s", minutes, seconds, millis)
+}
+
+async fn fetch_rust_book_toc(client: &Client, base_url: &Url) -> Result<Vec<Url>, RagError> {
+    let response = client
+        .get(base_url.clone())
+        .send()
+        .await?
+        .error_for_status()?;
+    let body = response.text().await?;
+    let document = Html::parse_document(&body);
+    let selector =
+        Selector::parse("nav ul li a").map_err(|err| RagError::InvalidDocument(err.to_string()))?;
+
+    let mut urls = Vec::new();
+    for element in document.select(&selector) {
+        let Some(href) = element.value().attr("href") else {
+            continue;
+        };
+        if href.starts_with('#') {
+            continue;
+        }
+        if let Ok(mut url) = base_url.join(href) {
+            url.set_fragment(None);
+            if !urls.iter().any(|existing| existing == &url) {
+                urls.push(url);
+            }
+        }
+    }
+
+    if urls.is_empty() {
+        return Err(RagError::InvalidDocument(
+            "no chapter links found".to_string(),
+        ));
+    }
+
+    Ok(urls)
 }
 
 #[derive(Clone)]
