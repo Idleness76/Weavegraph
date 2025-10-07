@@ -421,6 +421,7 @@ pub enum NodeError {
 mod tests {
     use super::*;
     use crate::event_bus::EventBus;
+    use crate::state::VersionedState;
     use crate::utils::collections::new_extra_map;
 
     fn make_ctx(step: u64) -> (NodeContext, EventBus) {
@@ -567,5 +568,110 @@ mod tests {
         assert!(partial.messages.is_none());
         assert!(partial.extra.is_none());
         assert!(partial.errors.is_none());
+    }
+
+    #[test]
+    fn test_node_context_emit_error() {
+        // Create a NodeContext with a disconnected event bus
+        let (ctx, event_bus) = make_ctx(1);
+        drop(event_bus); // Drop the event bus to disconnect sender
+        let result = ctx.emit("scope", "message");
+        assert!(matches!(result, Err(NodeContextError::EventBusUnavailable)));
+    }
+
+    #[test]
+    fn test_node_error_variants() {
+        // MissingInput
+        let err = NodeError::MissingInput { what: "field" };
+        match err {
+            NodeError::MissingInput { what } => assert_eq!(what, "field"),
+            _ => panic!("Wrong variant"),
+        }
+
+        // Provider
+        let err = NodeError::Provider {
+            provider: "svc",
+            message: "fail".to_string(),
+        };
+        match err {
+            NodeError::Provider { provider, message } => {
+                assert_eq!(provider, "svc");
+                assert_eq!(message, "fail");
+            }
+            _ => panic!("Wrong variant"),
+        }
+
+        // Serde
+        let json_err = serde_json::from_str::<serde_json::Value>("not_json").unwrap_err();
+        let err = NodeError::Serde(json_err);
+        match err {
+            NodeError::Serde(_) => (),
+            _ => panic!("Wrong variant"),
+        }
+
+        // ValidationFailed
+        let err = NodeError::ValidationFailed("bad input".to_string());
+        match err {
+            NodeError::ValidationFailed(msg) => assert_eq!(msg, "bad input"),
+            _ => panic!("Wrong variant"),
+        }
+
+        // EventBus
+        let err = NodeError::EventBus(NodeContextError::EventBusUnavailable);
+        match err {
+            NodeError::EventBus(NodeContextError::EventBusUnavailable) => (),
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_node_context_error_variant() {
+        let err = NodeContextError::EventBusUnavailable;
+        match err {
+            NodeContextError::EventBusUnavailable => (),
+        }
+    }
+
+    // Dummy Node trait implementation for coverage
+    use async_trait::async_trait;
+    struct DummyNode;
+    #[async_trait]
+    impl Node for DummyNode {
+        async fn run(
+            &self,
+            _snapshot: StateSnapshot,
+            ctx: NodeContext,
+        ) -> Result<NodePartial, NodeError> {
+            // Emit event and return a message
+            ctx.emit("dummy", "executed").map_err(NodeError::EventBus)?;
+            Ok(NodePartial::with_message(Message {
+                role: "dummy".to_string(),
+                content: "ok".to_string(),
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_node_trait_success() {
+        let (ctx, _event_bus) = make_ctx(0);
+        let node = DummyNode;
+        let snapshot = VersionedState::new_with_user_message("dummy").snapshot();
+        let result = node.run(snapshot, ctx).await;
+        assert!(result.is_ok());
+        let partial = result.unwrap();
+        assert_eq!(partial.messages.unwrap()[0].role, "dummy");
+    }
+
+    #[tokio::test]
+    async fn test_node_trait_eventbus_error() {
+        let (ctx, event_bus) = make_ctx(0);
+        drop(event_bus); // disconnect event bus
+        let node = DummyNode;
+        let snapshot = VersionedState::new_with_user_message("dummy").snapshot();
+        let result = node.run(snapshot, ctx).await;
+        assert!(matches!(
+            result,
+            Err(NodeError::EventBus(NodeContextError::EventBusUnavailable))
+        ));
     }
 }
