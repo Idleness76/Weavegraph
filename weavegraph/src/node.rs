@@ -7,6 +7,18 @@ use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
+/// Errors that can occur when using NodeContext methods.
+#[derive(Debug, Error, Diagnostic)]
+pub enum NodeContextError {
+    /// Event could not be sent due to event bus disconnection or capacity issues.
+    #[error("failed to emit event: event bus unavailable")]
+    #[diagnostic(
+        code(weavegraph::node::event_bus_unavailable),
+        help("The event bus may be disconnected or at capacity. Check workflow state.")
+    )]
+    EventBusUnavailable,
+}
+
 /// Execution context passed to nodes during workflow execution.
 ///
 /// `NodeContext` provides nodes with access to their execution environment,
@@ -56,7 +68,7 @@ impl NodeContext {
     ///
     /// # Returns
     /// * `Ok(())` - Event was successfully queued
-    /// * `Err(flume::SendError)` - Event bus is disconnected or full
+    /// * `Err(NodeContextError)` - Event could not be sent
     ///
     /// # Examples
     ///
@@ -72,34 +84,15 @@ impl NodeContext {
         &self,
         scope: impl Into<String>,
         message: impl Into<String>,
-    ) -> Result<(), flume::SendError<Event>> {
-        self.event_bus_sender.send(Event::node_message_with_meta(
-            self.node_id.clone(),
-            self.step,
-            scope,
-            message,
-        ))
-    }
-
-    /// Emit a diagnostic event that is not tied to node metadata.
-    ///
-    /// Use this for system-level diagnostics or events that don't belong to
-    /// a specific node's execution context.
-    ///
-    /// # Parameters
-    /// * `scope` - The diagnostic scope (e.g., "system", "performance")
-    /// * `message` - The diagnostic message
-    ///
-    /// # Returns
-    /// * `Ok(())` - Event was successfully queued
-    /// * `Err(flume::SendError)` - Event bus is disconnected or full
-    pub fn emit_diagnostic(
-        &self,
-        scope: impl Into<String>,
-        message: impl Into<String>,
-    ) -> Result<(), flume::SendError<Event>> {
+    ) -> Result<(), NodeContextError> {
         self.event_bus_sender
-            .send(Event::diagnostic(scope.into(), message.into()))
+            .send(Event::node_message_with_meta(
+                self.node_id.clone(),
+                self.step,
+                scope,
+                message,
+            ))
+            .map_err(|_| NodeContextError::EventBusUnavailable)
     }
 }
 
@@ -358,7 +351,7 @@ pub enum NodeError {
     /// Event bus communication error.
     #[error("event bus error: {0}")]
     #[diagnostic(code(weavegraph::node::event_bus))]
-    EventBus(#[from] flume::SendError<Event>),
+    EventBus(#[from] NodeContextError),
 }
 
 /****************
