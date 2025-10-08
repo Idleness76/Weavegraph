@@ -18,7 +18,7 @@
 //! Messages are the primary communication primitive. Use convenience constructors:
 //!
 //! ```
-//! use weavegraph::message::{Message, roles};
+//! use weavegraph::message::Message;
 //!
 //! // Preferred: Use convenience constructors
 //! let user_msg = Message::user("What's the weather like?");
@@ -28,16 +28,12 @@
 //! // For custom roles, use the general constructor
 //! let function_msg = Message::new("function", "Processing complete");
 //!
-//! // For complex cases, use the builder pattern
-//! let complex_msg = Message::builder()
-//!     .role("custom_agent")
-//!     .content("Task completed with status: OK")
-//!     .build();
+//! // Use role constants for consistency
+//! let user_msg2 = Message::new(Message::USER, "Another user message");
 //!
-//! // Validate messages
-//! assert!(user_msg.is_valid());
-//! assert!(user_msg.is_user());
-//! assert!(!user_msg.is_assistant());
+//! // Check message roles
+//! assert!(user_msg.has_role(Message::USER));
+//! assert!(!user_msg.has_role(Message::ASSISTANT));
 //! ```
 //!
 //! ### Building a Simple Workflow
@@ -96,7 +92,7 @@
 //! ### Message Construction
 //!
 //! ```
-//! use weavegraph::message::{Message, roles};
+//! use weavegraph::message::Message;
 //!
 //! // ✅ GOOD: Use convenience constructors
 //! let user_msg = Message::user("Hello");
@@ -104,13 +100,10 @@
 //! let system_msg = Message::system("You are helpful");
 //!
 //! // ✅ GOOD: Use role constants for consistency
-//! let custom_msg = Message::new(roles::USER, "Custom content");
+//! let custom_msg = Message::new(Message::USER, "Custom content");
 //!
-//! // ✅ GOOD: Use builder for complex cases
-//! let complex_msg = Message::builder()
-//!     .role("function")
-//!     .content("Result: success")
-//!     .build();
+//! // ✅ GOOD: Use general constructor for custom roles
+//! let function_msg = Message::new("function", "Result: success");
 //!
 //! // ❌ AVOID: Direct struct construction (verbose and error-prone)
 //! // let verbose_msg = Message {
