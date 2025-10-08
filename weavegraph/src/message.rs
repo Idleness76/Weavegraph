@@ -1,18 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Common role constants for message types in chat/AI interactions.
-///
-/// These constants provide type-safe, standardized role values for creating messages,
-/// reducing typos and ensuring consistency across the codebase.
-pub mod roles {
-    /// User input message role.
-    pub const USER: &str = "user";
-    /// AI assistant response message role.
-    pub const ASSISTANT: &str = "assistant";
-    /// System prompt or instruction message role.
-    pub const SYSTEM: &str = "system";
-}
-
 /// A message in a conversation, containing a role and text content.
 ///
 /// Messages are the primary data structure for representing chat interactions,
@@ -24,11 +11,11 @@ pub mod roles {
 ///
 /// ## Basic Construction
 /// ```
-/// use weavegraph::message::{Message, roles};
+/// use weavegraph::message::Message;
 ///
 /// // Manual construction
 /// let message = Message {
-///     role: roles::USER.to_string(),
+///     role: Message::USER.to_string(),
 ///     content: "Hello, world!".to_string(),
 /// };
 ///
@@ -36,16 +23,6 @@ pub mod roles {
 /// let user_msg = Message::user("What is the weather?");
 /// let assistant_msg = Message::assistant("It's sunny today!");
 /// let system_msg = Message::system("You are a helpful assistant.");
-/// ```
-///
-/// ## Builder Pattern
-/// ```
-/// use weavegraph::message::Message;
-///
-/// let message = Message::builder()
-///     .role("user")
-///     .content("Tell me a joke")
-///     .build();
 /// ```
 ///
 /// # Serialization
@@ -63,20 +40,27 @@ pub mod roles {
 pub struct Message {
     /// The role of the message sender (e.g., "user", "assistant", "system").
     ///
-    /// Use the constants in [`roles`] module for standardized values.
+    /// Use the constants on [`Message`] for standardized values.
     pub role: String,
     /// The text content of the message.
     pub content: String,
 }
 
 impl Message {
+    /// User input message role.
+    pub const USER: &'static str = "user";
+    /// AI assistant response message role.
+    pub const ASSISTANT: &'static str = "assistant";
+    /// System prompt or instruction message role.
+    pub const SYSTEM: &'static str = "system";
+
     /// Creates a new message with the specified role and content.
     ///
     /// # Examples
     /// ```
-    /// use weavegraph::message::{Message, roles};
+    /// use weavegraph::message::Message;
     ///
-    /// let msg = Message::new(roles::USER, "Hello!");
+    /// let msg = Message::new(Message::USER, "Hello!");
     /// assert_eq!(msg.role, "user");
     /// assert_eq!(msg.content, "Hello!");
     /// ```
@@ -100,7 +84,7 @@ impl Message {
     /// ```
     #[must_use]
     pub fn user(content: &str) -> Self {
-        Self::new(roles::USER, content)
+        Self::new(Self::USER, content)
     }
 
     /// Creates an assistant message with the specified content.
@@ -115,7 +99,7 @@ impl Message {
     /// ```
     #[must_use]
     pub fn assistant(content: &str) -> Self {
-        Self::new(roles::ASSISTANT, content)
+        Self::new(Self::ASSISTANT, content)
     }
 
     /// Creates a system message with the specified content.
@@ -130,192 +114,22 @@ impl Message {
     /// ```
     #[must_use]
     pub fn system(content: &str) -> Self {
-        Self::new(roles::SYSTEM, content)
-    }
-
-    /// Creates a message builder for fluent construction.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let msg = Message::builder()
-    ///     .role("function")
-    ///     .content("Result: 42")
-    ///     .build();
-    /// ```
-    #[must_use]
-    pub fn builder() -> MessageBuilder {
-        MessageBuilder::new()
-    }
-
-    /// Validates that the message has non-empty role and content.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let valid = Message::user("Hello");
-    /// assert!(valid.is_valid());
-    ///
-    /// let invalid = Message::new("", "");
-    /// assert!(!invalid.is_valid());
-    /// ```
-    #[must_use]
-    pub fn is_valid(&self) -> bool {
-        !self.role.trim().is_empty() && !self.content.trim().is_empty()
+        Self::new(Self::SYSTEM, content)
     }
 
     /// Returns true if this message has the specified role.
     ///
     /// # Examples
     /// ```
-    /// use weavegraph::message::{Message, roles};
+    /// use weavegraph::message::Message;
     ///
     /// let msg = Message::user("Hello");
-    /// assert!(msg.has_role(roles::USER));
-    /// assert!(!msg.has_role(roles::ASSISTANT));
+    /// assert!(msg.has_role(Message::USER));
+    /// assert!(!msg.has_role(Message::ASSISTANT));
     /// ```
     #[must_use]
     pub fn has_role(&self, role: &str) -> bool {
         self.role == role
-    }
-
-    /// Returns true if this message is from a user.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let user_msg = Message::user("Hello");
-    /// let assistant_msg = Message::assistant("Hi there!");
-    ///
-    /// assert!(user_msg.is_user());
-    /// assert!(!assistant_msg.is_user());
-    /// ```
-    #[must_use]
-    pub fn is_user(&self) -> bool {
-        self.has_role(roles::USER)
-    }
-
-    /// Returns true if this message is from an assistant.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let user_msg = Message::user("Hello");
-    /// let assistant_msg = Message::assistant("Hi there!");
-    ///
-    /// assert!(!user_msg.is_assistant());
-    /// assert!(assistant_msg.is_assistant());
-    /// ```
-    #[must_use]
-    pub fn is_assistant(&self) -> bool {
-        self.has_role(roles::ASSISTANT)
-    }
-
-    /// Returns true if this message is a system message.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let system_msg = Message::system("You are helpful");
-    /// let user_msg = Message::user("Hello");
-    ///
-    /// assert!(system_msg.is_system());
-    /// assert!(!user_msg.is_system());
-    /// ```
-    #[must_use]
-    pub fn is_system(&self) -> bool {
-        self.has_role(roles::SYSTEM)
-    }
-}
-
-/// Builder for constructing `Message` instances with a fluent API.
-///
-/// Provides a more flexible way to construct messages when you need
-/// to conditionally set fields or when the message construction is complex.
-///
-/// # Examples
-/// ```
-/// use weavegraph::message::Message;
-///
-/// let msg = Message::builder()
-///     .role("function")
-///     .content("Processing complete")
-///     .build();
-/// ```
-#[derive(Default)]
-pub struct MessageBuilder {
-    role: Option<String>,
-    content: Option<String>,
-}
-
-impl MessageBuilder {
-    /// Creates a new message builder.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the role for the message.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::{Message, roles};
-    ///
-    /// let msg = Message::builder()
-    ///     .role(roles::USER)
-    ///     .content("Hello")
-    ///     .build();
-    /// ```
-    #[must_use]
-    pub fn role(mut self, role: &str) -> Self {
-        self.role = Some(role.to_string());
-        self
-    }
-
-    /// Sets the content for the message.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let msg = Message::builder()
-    ///     .role("user")
-    ///     .content("What time is it?")
-    ///     .build();
-    /// ```
-    #[must_use]
-    pub fn content(mut self, content: &str) -> Self {
-        self.content = Some(content.to_string());
-        self
-    }
-
-    /// Builds the message.
-    ///
-    /// Uses empty strings for any unset fields.
-    ///
-    /// # Examples
-    /// ```
-    /// use weavegraph::message::Message;
-    ///
-    /// let msg = Message::builder()
-    ///     .role("user")
-    ///     .content("Hello")
-    ///     .build();
-    ///
-    /// assert_eq!(msg.role, "user");
-    /// assert_eq!(msg.content, "Hello");
-    /// ```
-    #[must_use]
-    pub fn build(self) -> Message {
-        Message {
-            role: self.role.unwrap_or_default(),
-            content: self.content.unwrap_or_default(),
-        }
     }
 }
 
@@ -377,15 +191,15 @@ mod tests {
     /// Tests convenience constructors for common message types.
     fn test_convenience_constructors() {
         let user_msg = Message::user("Hello");
-        assert_eq!(user_msg.role, roles::USER);
+        assert_eq!(user_msg.role, Message::USER);
         assert_eq!(user_msg.content, "Hello");
 
         let assistant_msg = Message::assistant("Hi there!");
-        assert_eq!(assistant_msg.role, roles::ASSISTANT);
+        assert_eq!(assistant_msg.role, Message::ASSISTANT);
         assert_eq!(assistant_msg.content, "Hi there!");
 
         let system_msg = Message::system("You are helpful");
-        assert_eq!(system_msg.role, roles::SYSTEM);
+        assert_eq!(system_msg.role, Message::SYSTEM);
         assert_eq!(system_msg.content, "You are helpful");
 
         let custom_msg = Message::new("function", "Result: 42");
@@ -394,80 +208,36 @@ mod tests {
     }
 
     #[test]
-    /// Tests message builder pattern for fluent construction.
-    fn test_message_builder() {
-        let msg = Message::builder()
-            .role("custom")
-            .content("test content")
-            .build();
-
-        assert_eq!(msg.role, "custom");
-        assert_eq!(msg.content, "test content");
-
-        // Test partial building
-        let empty_msg = Message::builder().build();
-        assert_eq!(empty_msg.role, "");
-        assert_eq!(empty_msg.content, "");
-
-        // Test role-only
-        let role_only = Message::builder().role("user").build();
-        assert_eq!(role_only.role, "user");
-        assert_eq!(role_only.content, "");
-    }
-
-    #[test]
-    /// Tests message validation functionality.
-    fn test_message_validation() {
-        let valid_msg = Message::user("Hello world");
-        assert!(valid_msg.is_valid());
-
-        let empty_role = Message::new("", "content");
-        assert!(!empty_role.is_valid());
-
-        let empty_content = Message::new("user", "");
-        assert!(!empty_content.is_valid());
-
-        let whitespace_only = Message::new("  ", "  ");
-        assert!(!whitespace_only.is_valid());
-
-        let whitespace_content = Message::new("user", "  hello  ");
-        assert!(whitespace_content.is_valid()); // Content has non-whitespace
-    }
-
-    #[test]
     /// Tests role checking methods.
     fn test_role_checking() {
         let user_msg = Message::user("Hello");
-        assert!(user_msg.is_user());
-        assert!(!user_msg.is_assistant());
-        assert!(!user_msg.is_system());
-        assert!(user_msg.has_role(roles::USER));
+        assert!(user_msg.has_role(Message::USER));
+        assert!(!user_msg.has_role(Message::ASSISTANT));
+        assert!(!user_msg.has_role(Message::SYSTEM));
 
         let assistant_msg = Message::assistant("Hi");
-        assert!(!assistant_msg.is_user());
-        assert!(assistant_msg.is_assistant());
-        assert!(!assistant_msg.is_system());
-        assert!(assistant_msg.has_role(roles::ASSISTANT));
+        assert!(!assistant_msg.has_role(Message::USER));
+        assert!(assistant_msg.has_role(Message::ASSISTANT));
+        assert!(!assistant_msg.has_role(Message::SYSTEM));
 
         let system_msg = Message::system("You are helpful");
-        assert!(!system_msg.is_user());
-        assert!(!system_msg.is_assistant());
-        assert!(system_msg.is_system());
-        assert!(system_msg.has_role(roles::SYSTEM));
+        assert!(!system_msg.has_role(Message::USER));
+        assert!(!system_msg.has_role(Message::ASSISTANT));
+        assert!(system_msg.has_role(Message::SYSTEM));
 
         let custom_msg = Message::new("function", "result");
-        assert!(!custom_msg.is_user());
-        assert!(!custom_msg.is_assistant());
-        assert!(!custom_msg.is_system());
+        assert!(!custom_msg.has_role(Message::USER));
+        assert!(!custom_msg.has_role(Message::ASSISTANT));
+        assert!(!custom_msg.has_role(Message::SYSTEM));
         assert!(custom_msg.has_role("function"));
     }
 
     #[test]
     /// Tests role constants are correct.
     fn test_role_constants() {
-        assert_eq!(roles::USER, "user");
-        assert_eq!(roles::ASSISTANT, "assistant");
-        assert_eq!(roles::SYSTEM, "system");
+        assert_eq!(Message::USER, "user");
+        assert_eq!(Message::ASSISTANT, "assistant");
+        assert_eq!(Message::SYSTEM, "system");
     }
 
     #[test]
