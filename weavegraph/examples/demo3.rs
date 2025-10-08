@@ -65,14 +65,13 @@ impl Node for ContentGeneratorNode {
         ctx.emit("llm_start", "Starting content generation with Ollama")?;
 
         // Extract user input (should be the first/last user message)
-        let user_prompt =
-            snapshot
-                .messages
-                .iter()
-                .find(|msg| msg.is_user())
-                .ok_or(NodeError::MissingInput {
-                    what: "user_prompt",
-                })?;
+        let user_prompt = snapshot
+            .messages
+            .iter()
+            .find(|msg| msg.has_role(Message::USER))
+            .ok_or(NodeError::MissingInput {
+                what: "user_prompt",
+            })?;
 
         ctx.emit("llm_input", format!("User prompt: {}", user_prompt.content))?;
 
@@ -171,7 +170,7 @@ impl Node for ContentEnhancerNode {
         let previous_content = snapshot
             .messages
             .iter()
-            .filter(|msg| msg.is_assistant())
+            .filter(|msg| msg.has_role(Message::ASSISTANT))
             .next_back()
             .ok_or(NodeError::MissingInput {
                 what: "previous_assistant_content",
@@ -451,12 +450,12 @@ async fn demo() -> Result<()> {
     let user_messages: Vec<_> = final_snapshot
         .messages
         .iter()
-        .filter(|msg| msg.is_user())
+        .filter(|msg| msg.has_role(Message::USER))
         .collect();
     let assistant_messages: Vec<_> = final_snapshot
         .messages
         .iter()
-        .filter(|msg| msg.is_assistant())
+        .filter(|msg| msg.has_role(Message::ASSISTANT))
         .collect();
 
     println!("      1. User Request:");

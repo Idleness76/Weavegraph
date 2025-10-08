@@ -51,7 +51,7 @@ impl Node for InputBootstrapperNode {
         let user_input = snapshot
             .messages
             .iter()
-            .find(|msg| msg.is_user())
+            .find(|msg| msg.has_role(Message::USER))
             .map(|msg| msg.content.as_str())
             .unwrap_or("Tell me about Weavegraph capabilities");
 
@@ -100,7 +100,7 @@ impl Node for OllamaIterativeRefinerNode {
             .messages
             .iter()
             .rev()
-            .find(|m| m.is_assistant())
+            .find(|m| m.has_role(Message::ASSISTANT))
             .map(|m| m.content.clone())
             .unwrap_or_else(|| "No previous draft; using bootstrap.".into());
 
@@ -320,7 +320,7 @@ impl Node for SummaryPublisherNode {
             .messages
             .iter()
             .rev()
-            .find(|m| m.is_assistant())
+            .find(|m| m.has_role(Message::ASSISTANT))
             .map(|msg| msg.content.clone())
             .unwrap_or_else(|| "No content available.".into());
 
@@ -389,27 +389,39 @@ async fn main() -> Result<()> {
     let snapshot = final_state.snapshot();
 
     // Display only the final refined content from Ollama
-    if let Some(latest) = snapshot.messages.iter().rev().find(|m| m.is_assistant()) {
-        println!("┌────────────────────────────────────────────────────────────────────────────────┐");
-        println!("│                           � FINAL WEAVEGRAPH OVERVIEW                        │");
-        println!("└────────────────────────────────────────────────────────────────────────────────┘");
+    if let Some(latest) = snapshot
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.has_role(Message::ASSISTANT))
+    {
+        println!(
+            "┌────────────────────────────────────────────────────────────────────────────────┐"
+        );
+        println!(
+            "│                           � FINAL WEAVEGRAPH OVERVIEW                        │"
+        );
+        println!(
+            "└────────────────────────────────────────────────────────────────────────────────┘"
+        );
         println!();
-        
+
         // Clean up the content by removing any iteration mentions or meta-commentary
-        let clean_content = latest.content
+        let clean_content = latest
+            .content
             .lines()
             .filter(|line| {
-                !line.contains("iteration") && 
-                !line.contains("incorporating your feedback") &&
-                !line.contains("To help me refine") &&
-                !line.contains("could you tell me") &&
-                !line.contains("Notes on Changes")
+                !line.contains("iteration")
+                    && !line.contains("incorporating your feedback")
+                    && !line.contains("To help me refine")
+                    && !line.contains("could you tell me")
+                    && !line.contains("Notes on Changes")
             })
             .collect::<Vec<_>>()
             .join("\n")
             .trim()
             .to_string();
-        
+
         // Find the main content (skip any meta-commentary at the start)
         let main_content = if let Some(start) = clean_content.find("**Weavegraph:") {
             &clean_content[start..]
@@ -418,7 +430,7 @@ async fn main() -> Result<()> {
         } else {
             &clean_content
         };
-        
+
         // Print the cleaned content
         for line in main_content.lines() {
             if line.trim().starts_with("---") {
@@ -435,24 +447,40 @@ async fn main() -> Result<()> {
                 println!();
             }
         }
-        
+
         println!();
-        println!("┌────────────────────────────────────────────────────────────────────────────────┐");
-        
+        println!(
+            "┌────────────────────────────────────────────────────────────────────────────────┐"
+        );
+
         // Show summary stats
-        let iterations = snapshot.extra.get("iteration_count")
+        let iterations = snapshot
+            .extra
+            .get("iteration_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let char_count = snapshot.extra.get("refiner_char_total")
+        let char_count = snapshot
+            .extra
+            .get("refiner_char_total")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        let model = snapshot.extra.get("refiner_model")
+        let model = snapshot
+            .extra
+            .get("refiner_model")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-            
-        println!("│ ✨ Generated via {} refinement iterations using {}     │", iterations, model);
-        println!("│ 📊 Final content: {} characters                                              │", char_count);
-        println!("└────────────────────────────────────────────────────────────────────────────────┘");
+
+        println!(
+            "│ ✨ Generated via {} refinement iterations using {}     │",
+            iterations, model
+        );
+        println!(
+            "│ 📊 Final content: {} characters                                              │",
+            char_count
+        );
+        println!(
+            "└────────────────────────────────────────────────────────────────────────────────┘"
+        );
     } else {
         println!("❌ No final content generated");
     }

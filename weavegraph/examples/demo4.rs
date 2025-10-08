@@ -83,7 +83,7 @@ impl Node for StreamingGeneratorNode {
             snapshot
                 .messages
                 .iter()
-                .find(|msg| msg.is_user())
+                .find(|msg| msg.has_role(Message::USER))
                 .ok_or(NodeError::MissingInput {
                     what: "user_prompt",
                 })?;
@@ -403,7 +403,7 @@ impl Node for StreamingEnhancerNode {
         let previous_content = snapshot
             .messages
             .iter()
-            .filter(|msg| msg.is_assistant())
+            .filter(|msg| msg.has_role(Message::ASSISTANT))
             .next_back()
             .ok_or(NodeError::MissingInput {
                 what: "previous_assistant_content",
@@ -936,12 +936,12 @@ async fn demo() -> Result<()> {
     let user_messages: Vec<_> = final_snapshot
         .messages
         .iter()
-        .filter(|msg| msg.is_user())
+        .filter(|msg| msg.has_role(Message::USER))
         .collect();
     let assistant_messages: Vec<_> = final_snapshot
         .messages
         .iter()
-        .filter(|msg| msg.is_assistant())
+        .filter(|msg| msg.has_role(Message::ASSISTANT))
         .collect();
 
     println!("   📋 Content Pipeline Results:");
