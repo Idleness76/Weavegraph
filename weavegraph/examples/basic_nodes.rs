@@ -65,13 +65,12 @@ impl Node for MessageCounterNode {
             format!("{} finished processing", self.node_name),
         )?;
 
-        let mut partial = NodePartial::with_messages(vec![Message {
-            role: "assistant".to_string(),
-            content: summary,
-        }]);
-        partial.extra = Some(extra);
-        
-        Ok(partial)
+        Ok(NodePartial::new()
+            .with_messages(vec![Message {
+                role: "assistant".to_string(),
+                content: summary,
+            }])
+            .with_extra(extra))
     }
 }
 
@@ -128,7 +127,7 @@ impl Node for ValidationNode {
         extra.insert("validated_fields".to_string(), json!(self.required_fields));
         extra.insert("message_count_ok".to_string(), json!(true));
 
-        Ok(NodePartial::with_extra(extra))
+        Ok(NodePartial::new().with_extra(extra))
     }
 }
 
@@ -197,13 +196,12 @@ impl Node for AggregatorNode {
 
         ctx.emit("completed", "Data aggregation completed")?;
 
-        let mut partial = NodePartial::with_messages(vec![Message {
-            role: "assistant".to_string(),
-            content: summary,
-        }]);
-        partial.extra = Some(extra);
-        
-        Ok(partial)
+        Ok(NodePartial::new()
+            .with_messages(vec![Message {
+                role: "assistant".to_string(),
+                content: summary,
+            }])
+            .with_extra(extra))
     }
 }
 

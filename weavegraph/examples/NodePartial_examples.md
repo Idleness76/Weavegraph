@@ -30,7 +30,7 @@ impl Node for ValidationNode {
         if snapshot.messages.is_empty() {
             return Err(NodeError::ValidationFailed("No messages to process".to_string()));
         }
-        
+
         // Recoverable error - logged but workflow continues
         // Use this for issues that can be worked around
         if snapshot.extra.get("user_id").is_none() {
@@ -40,9 +40,9 @@ impl Node for ValidationNode {
                 ..Default::default()
             };
             // Notice: ONE clear way to return just errors
-            return Ok(NodePartial::with_errors(vec![error]));
+            return Ok(NodePartial::new().with_errors(vec![error]));
         }
-        
+
         Ok(NodePartial::default())
     }
 }
@@ -65,11 +65,11 @@ struct DataProcessorNode;
 impl Node for DataProcessorNode {
     async fn run(&self, snapshot: StateSnapshot, ctx: NodeContext) -> Result<NodePartial, NodeError> {
         ctx.emit("processing", "Starting data processing")?;
-        
+
         let mut messages = Vec::new();
         let mut errors = Vec::new();
         let mut extra = new_extra_map();
-        
+
         // Process multiple data items - some may fail
         for (index, message) in snapshot.messages.iter().enumerate() {
             match self.process_item(message) {
@@ -87,13 +87,12 @@ impl Node for DataProcessorNode {
                 }
             }
         }
-        
+
         // The streamlined way to combine multiple aspects
-        let mut partial = NodePartial::with_messages(messages);
-        partial.extra = Some(extra);
-        partial.errors = Some(errors);
-        
-        Ok(partial)
+        Ok(NodePartial::new()
+            .with_messages(messages)
+            .with_extra(extra)
+            .with_errors(errors))
     }
 }
 
@@ -124,17 +123,17 @@ struct ComprehensiveAnalyzerNode {
 impl Node for ComprehensiveAnalyzerNode {
     async fn run(&self, snapshot: StateSnapshot, ctx: NodeContext) -> Result<NodePartial, NodeError> {
         ctx.emit("analysis", format!("Starting {} analysis", self.analysis_type))?;
-        
+
         // Analyze the conversation
         let analysis_result = self.analyze_conversation(&snapshot.messages);
-        
+
         // Create response messages
         let messages = vec![
             Message::assistant(&format!("Analysis type: {}", self.analysis_type)),
             Message::assistant(&format!("Summary: {}", analysis_result.summary)),
             Message::system(&format!("Confidence: {:.2}", analysis_result.confidence)),
         ];
-        
+
         // Create rich metadata
         let mut extra = new_extra_map();
         extra.insert("analysis_type".to_string(), json!(self.analysis_type));
@@ -142,7 +141,7 @@ impl Node for ComprehensiveAnalyzerNode {
         extra.insert("word_count".to_string(), json!(analysis_result.word_count));
         extra.insert("sentiment".to_string(), json!(analysis_result.sentiment));
         extra.insert("timestamp".to_string(), json!(chrono::Utc::now().to_rfc3339()));
-        
+
         // Create conditional warnings based on analysis quality
         let mut errors = Vec::new();
         if analysis_result.confidence < 0.5 {
@@ -152,7 +151,7 @@ impl Node for ComprehensiveAnalyzerNode {
                 ..Default::default()
             });
         }
-        
+
         if analysis_result.word_count < 10 {
             errors.push(ErrorEvent {
                 scope: "data_quality".to_string(),
@@ -160,14 +159,16 @@ impl Node for ComprehensiveAnalyzerNode {
                 ..Default::default()
             });
         }
-        
+
         // Combine everything - notice how readable this is
-        let mut partial = NodePartial::with_messages(messages);
-        partial.extra = Some(extra);
+        let mut partial = NodePartial::new()
+            .with_messages(messages)
+            .with_extra(extra);
+
         if !errors.is_empty() {
             partial.errors = Some(errors);
         }
-        
+
         ctx.emit("completed", "Analysis completed successfully")?;
         Ok(partial)
     }
@@ -185,7 +186,7 @@ impl ComprehensiveAnalyzerNode {
         let total_words: usize = messages.iter()
             .map(|m| m.content.split_whitespace().count())
             .sum();
-            
+
         AnalysisResult {
             summary: "Conversation analyzed".to_string(),
             confidence: if total_words > 50 { 0.85 } else { 0.45 },
@@ -221,26 +222,27 @@ impl Node for ConditionalProcessorNode {
             ProcessingMode::Fast => {
                 // Minimal response - just messages, no extras
                 // Notice: ONE clear constructor for this case
-                Ok(NodePartial::with_messages(vec![
+                Ok(NodePartial::new().with_messages(vec![
                     Message::assistant("Fast processing complete")
                 ]))
             }
-            
+
             ProcessingMode::Thorough => {
                 // Rich response with messages and detailed metadata
                 let mut extra = new_extra_map();
                 extra.insert("processing_time_ms".to_string(), json!(150));
                 extra.insert("items_processed".to_string(), json!(snapshot.messages.len()));
                 extra.insert("mode".to_string(), json!("thorough"));
-                
-                let mut partial = NodePartial::with_messages(vec![
-                    Message::assistant("Thorough processing complete"),
-                    Message::system("All validation checks passed"),
-                ]);
-                partial.extra = Some(extra);
-                Ok(partial)
+
+                Ok(NodePartial::new()
+                    .with_messages(vec![
+                        Message::assistant("Thorough processing complete"),
+                        Message::system("All validation checks passed"),
+                        )
+                    .with_extra(extra)
+                )
             }
-            
+
             ProcessingMode::ErrorTesting => {
                 // Demonstrate error handling with partial success
                 let errors = vec![
@@ -255,13 +257,13 @@ impl Node for ConditionalProcessorNode {
                         ..Default::default()
                     },
                 ];
-                
+
                 // Start with errors, then add messages
-                let mut partial = NodePartial::with_errors(errors);
-                partial.messages = Some(vec![
-                    Message::assistant("Error testing mode - warnings generated")
-                ]);
-                Ok(partial)
+                Ok(NodePartial::new()
+                    .with_errors(errors)
+                    .with_messages(vec![
+                        Message::assistant("Error testing mode - warnings generated")
+                ]))
             }
         }
     }
@@ -277,6 +279,6 @@ impl Node for ConditionalProcessorNode {
 The examples above demonstrate that **removing complexity from the API** doesn't limit functionality - it clarifies it. Each example shows:
 
 1. **One obvious way** to create each type of response
-2. **Explicit composition** when combining multiple aspects  
+2. **Explicit composition** when combining multiple aspects
 3. **Clear intent** at every step
 4. **No choice paralysis** between different builder methods

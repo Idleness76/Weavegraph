@@ -61,7 +61,7 @@ impl Node for InputBootstrapperNode {
         )?;
 
         let initial_content = format!(
-            "Here's a brief overview based on your request: 
+            "Here's a brief overview based on your request:
             {}\n\nWeavegraph is a Rust-based graph execution framework that provides:
             \n• Flexible node orchestration
             \n• Built-in state management
@@ -74,10 +74,9 @@ impl Node for InputBootstrapperNode {
         let mut extra = FxHashMap::default();
         extra.insert("needs_more_refinement".into(), json!(true));
 
-        let mut partial = NodePartial::with_messages(vec![Message::assistant(&initial_content)]);
-        partial.extra = Some(extra);
-
-        Ok(partial)
+        Ok(NodePartial::new()
+            .with_messages(vec![Message::assistant(&initial_content)])
+            .with_extra(extra))
     }
 }
 
@@ -326,9 +325,7 @@ impl Node for SummaryPublisherNode {
 
         ctx.emit("publish_complete", "Content finalized")?;
 
-        Ok(NodePartial::with_messages(vec![Message::assistant(
-            &final_content,
-        )]))
+        Ok(NodePartial::new().with_messages(vec![Message::assistant(&final_content)]))
     }
 }
 
