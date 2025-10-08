@@ -29,7 +29,7 @@ use crate::state::StateSnapshot;
 /// # Design Principles
 ///
 /// - **Stateless**: Nodes should be stateless and deterministic
-/// - **Focused**: Each node should have a single, well-defined responsibility  
+/// - **Focused**: Each node should have a single, well-defined responsibility
 /// - **Composable**: Nodes should be easily combined into larger workflows
 /// - **Observable**: Use the context to emit events for monitoring and debugging
 ///
@@ -54,13 +54,13 @@ use crate::state::StateSnapshot;
 /// impl Node for ValidationNode {
 ///     async fn run(&self, snapshot: StateSnapshot, ctx: NodeContext) -> Result<NodePartial, NodeError> {
 ///         ctx.emit("validation", "Starting validation")?;
-///         
+///
 ///         for field in &self.required_fields {
 ///             if !snapshot.extra.contains_key(field) {
 ///                 return Err(NodeError::ValidationFailed(format!("Missing field: {}", field)));
 ///             }
 ///         }
-///         
+///
 ///         Ok(NodePartial::default())
 ///     }
 /// }
@@ -130,19 +130,14 @@ impl NodeContext {
 /// use weavegraph::node::NodePartial;
 /// use weavegraph::message::Message;
 /// use serde_json::json;
+/// use weavegraph::utils::collections::new_extra_map;
 ///
-/// // Builder pattern (recommended)
-/// let partial = NodePartial::builder()
-///     .message(Message::assistant("Task completed"))
-///     .extra("status", json!("success"))
-///     .build();
+/// // Essential constructors
+/// let partial = NodePartial::new().with_messages(vec![Message::assistant("Done")]);
 ///
-/// // Convenience methods
-/// let partial = NodePartial::with_message(Message::assistant("Done"));
-/// let partial = NodePartial::with_extra_pair("key", json!("value"));
-///
-/// // From trait conversions
-/// let partial: NodePartial = Message::assistant("Task done").into();
+/// let mut extra = new_extra_map();
+/// extra.insert("status".to_string(), json!("success"));
+/// let partial = NodePartial::new().with_extra(extra);
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct NodePartial {
@@ -155,203 +150,30 @@ pub struct NodePartial {
 }
 
 impl NodePartial {
-    /// Create a new builder for constructing a `NodePartial`.
-    #[must_use]
-    pub fn builder() -> NodePartialBuilder {
-        NodePartialBuilder::new()
-    }
-
-    /// Create a `NodePartial` with a single message.
-    #[must_use]
-    pub fn with_message(message: Message) -> Self {
-        Self::with_messages(vec![message])
-    }
-
-    /// Create a `NodePartial` with multiple messages.
-    #[must_use]
-    pub fn with_messages(messages: Vec<Message>) -> Self {
+    pub fn new() -> Self {
         Self {
-            messages: Some(messages),
             ..Default::default()
         }
     }
-
-    /// Create a `NodePartial` with a single extra key-value pair.
+    /// Create a `NodePartial` with multiple messages.
     #[must_use]
-    pub fn with_extra_pair(key: impl Into<String>, value: serde_json::Value) -> Self {
-        let mut extra = crate::utils::collections::new_extra_map();
-        extra.insert(key.into(), value);
-        Self::with_extra(extra)
+    pub fn with_messages(mut self, messages: Vec<Message>) -> Self {
+        self.messages = Some(messages);
+        self
     }
 
     /// Create a `NodePartial` with extra data.
     #[must_use]
-    pub fn with_extra(extra: FxHashMap<String, serde_json::Value>) -> Self {
-        Self {
-            extra: Some(extra),
-            ..Default::default()
-        }
-    }
-
-    /// Create a `NodePartial` with a single error.
-    #[must_use]
-    pub fn with_error(error: ErrorEvent) -> Self {
-        Self::with_errors(vec![error])
+    pub fn with_extra(mut self, extra: FxHashMap<String, serde_json::Value>) -> Self {
+        self.extra = Some(extra);
+        self
     }
 
     /// Create a `NodePartial` with multiple errors.
     #[must_use]
-    pub fn with_errors(errors: Vec<ErrorEvent>) -> Self {
-        Self {
-            errors: Some(errors),
-            ..Default::default()
-        }
-    }
-
-    /// Create a `NodePartial` with both messages and extra data.
-    #[must_use]
-    pub fn with_messages_and_extra(
-        messages: Vec<Message>,
-        extra: FxHashMap<String, serde_json::Value>,
-    ) -> Self {
-        Self {
-            messages: Some(messages),
-            extra: Some(extra),
-            ..Default::default()
-        }
-    }
-}
-
-// ============================================================================
-// Builder Pattern
-// ============================================================================
-
-/// Builder for constructing `NodePartial` instances with a fluent API.
-///
-/// Enables ergonomic, chainable construction of `NodePartial` values.
-///
-/// # Examples
-///
-/// ```rust
-/// use weavegraph::node::NodePartial;
-/// use weavegraph::message::Message;
-/// use serde_json::json;
-///
-/// let partial = NodePartial::builder()
-///     .message(Message::assistant("Step 1 complete"))
-///     .message(Message::assistant("Step 2 complete"))
-///     .extra("status", json!("completed"))
-///     .extra("duration_ms", json!(150))
-///     .build();
-/// ```
-#[derive(Debug, Default)]
-pub struct NodePartialBuilder {
-    messages: Vec<Message>,
-    extra: FxHashMap<String, serde_json::Value>,
-    errors: Vec<ErrorEvent>,
-}
-
-impl NodePartialBuilder {
-    /// Create a new builder.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add a single message.
-    #[must_use]
-    pub fn message(mut self, message: Message) -> Self {
-        self.messages.push(message);
+    pub fn with_errors(mut self, errors: Vec<ErrorEvent>) -> Self {
+        self.errors = Some(errors);
         self
-    }
-
-    /// Add multiple messages.
-    #[must_use]
-    pub fn messages(mut self, messages: Vec<Message>) -> Self {
-        self.messages.extend(messages);
-        self
-    }
-
-    /// Add a key-value pair to the extra data.
-    #[must_use]
-    pub fn extra(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
-        self.extra.insert(key.into(), value);
-        self
-    }
-
-    /// Add multiple key-value pairs to the extra data.
-    #[must_use]
-    pub fn extra_map(mut self, extra: FxHashMap<String, serde_json::Value>) -> Self {
-        self.extra.extend(extra);
-        self
-    }
-
-    /// Add a single error.
-    #[must_use]
-    pub fn error(mut self, error: ErrorEvent) -> Self {
-        self.errors.push(error);
-        self
-    }
-
-    /// Add multiple errors.
-    #[must_use]
-    pub fn errors(mut self, errors: Vec<ErrorEvent>) -> Self {
-        self.errors.extend(errors);
-        self
-    }
-
-    /// Build the final `NodePartial` instance.
-    #[must_use]
-    pub fn build(self) -> NodePartial {
-        NodePartial {
-            messages: if self.messages.is_empty() {
-                None
-            } else {
-                Some(self.messages)
-            },
-            extra: if self.extra.is_empty() {
-                None
-            } else {
-                Some(self.extra)
-            },
-            errors: if self.errors.is_empty() {
-                None
-            } else {
-                Some(self.errors)
-            },
-        }
-    }
-}
-
-// ============================================================================
-// From Trait Implementations
-// ============================================================================
-
-impl From<Message> for NodePartial {
-    /// Convert a single message into a NodePartial.
-    fn from(message: Message) -> Self {
-        Self::with_messages(vec![message])
-    }
-}
-
-impl From<Vec<Message>> for NodePartial {
-    /// Convert a vector of messages into a NodePartial.
-    fn from(messages: Vec<Message>) -> Self {
-        Self::with_messages(messages)
-    }
-}
-
-impl From<FxHashMap<String, serde_json::Value>> for NodePartial {
-    /// Convert an extra data map into a NodePartial.
-    fn from(extra: FxHashMap<String, serde_json::Value>) -> Self {
-        Self::with_extra(extra)
-    }
-}
-
-impl From<Vec<ErrorEvent>> for NodePartial {
-    /// Convert a vector of error events into a NodePartial.
-    fn from(errors: Vec<ErrorEvent>) -> Self {
-        Self::with_errors(errors)
     }
 }
 
@@ -455,7 +277,7 @@ mod tests {
             role: "test".to_string(),
             content: "test message".to_string(),
         }];
-        let partial = NodePartial::with_messages(messages.clone());
+        let partial = NodePartial::new().with_messages(messages.clone());
         assert_eq!(partial.messages, Some(messages));
         assert!(partial.extra.is_none());
         assert!(partial.errors.is_none());
@@ -466,108 +288,19 @@ mod tests {
         let mut extra = new_extra_map();
         extra.insert("test_key".to_string(), serde_json::json!("test_value"));
 
-        let partial = NodePartial::with_extra(extra.clone());
+        let partial = NodePartial::new().with_extra(extra.clone());
         assert!(partial.messages.is_none());
         assert_eq!(partial.extra, Some(extra));
         assert!(partial.errors.is_none());
     }
 
     #[test]
-    fn test_node_partial_with_messages_and_extra() {
-        let messages = vec![Message {
-            role: "test".to_string(),
-            content: "test message".to_string(),
-        }];
-        let mut extra = new_extra_map();
-        extra.insert("test_key".to_string(), serde_json::json!("test_value"));
-
-        let partial = NodePartial::with_messages_and_extra(messages.clone(), extra.clone());
-        assert_eq!(partial.messages, Some(messages));
-        assert_eq!(partial.extra, Some(extra));
-        assert!(partial.errors.is_none());
-    }
-
-    #[test]
-    fn test_node_partial_builder() {
-        use serde_json::json;
-
-        let message = Message {
-            role: "assistant".to_string(),
-            content: "Task completed".to_string(),
-        };
-
-        let partial = NodePartial::builder()
-            .message(message.clone())
-            .extra("status", json!("success"))
-            .extra("count", json!(42))
-            .build();
-
-        assert_eq!(partial.messages, Some(vec![message]));
-        assert!(partial.extra.is_some());
-        let extra = partial.extra.unwrap();
-        assert_eq!(extra["status"], json!("success"));
-        assert_eq!(extra["count"], json!(42));
-        assert!(partial.errors.is_none());
-    }
-
-    #[test]
-    fn test_node_partial_from_message() {
-        let message = Message {
-            role: "assistant".to_string(),
-            content: "Test message".to_string(),
-        };
-
-        let partial: NodePartial = message.clone().into();
-        assert_eq!(partial.messages, Some(vec![message]));
-        assert!(partial.extra.is_none());
-        assert!(partial.errors.is_none());
-    }
-
-    #[test]
-    fn test_node_partial_from_messages() {
-        let messages = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: "Message 1".to_string(),
-            },
-            Message {
-                role: "assistant".to_string(),
-                content: "Message 2".to_string(),
-            },
-        ];
-
-        let partial: NodePartial = messages.clone().into();
-        assert_eq!(partial.messages, Some(messages));
-        assert!(partial.extra.is_none());
-        assert!(partial.errors.is_none());
-    }
-
-    #[test]
-    fn test_node_partial_convenience_methods() {
-        use serde_json::json;
-
-        let message = Message {
-            role: "assistant".to_string(),
-            content: "Single message".to_string(),
-        };
-
-        // Test with_message
-        let partial = NodePartial::with_message(message.clone());
-        assert_eq!(partial.messages, Some(vec![message]));
-
-        // Test with_extra_pair
-        let partial = NodePartial::with_extra_pair("key", json!("value"));
-        assert!(partial.extra.is_some());
-        let extra = partial.extra.unwrap();
-        assert_eq!(extra["key"], json!("value"));
-    }
-
-    #[test]
-    fn test_node_partial_builder_empty() {
-        let partial = NodePartial::builder().build();
+    fn test_node_partial_with_errors() {
+        let errors = vec![ErrorEvent::default()];
+        let partial = NodePartial::new().with_errors(errors.clone());
         assert!(partial.messages.is_none());
         assert!(partial.extra.is_none());
-        assert!(partial.errors.is_none());
+        assert_eq!(partial.errors, Some(errors));
     }
 
     #[test]
@@ -644,10 +377,10 @@ mod tests {
         ) -> Result<NodePartial, NodeError> {
             // Emit event and return a message
             ctx.emit("dummy", "executed").map_err(NodeError::EventBus)?;
-            Ok(NodePartial::with_message(Message {
+            Ok(NodePartial::new().with_messages(vec![Message {
                 role: "dummy".to_string(),
                 content: "ok".to_string(),
-            }))
+            }]))
         }
     }
 

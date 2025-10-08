@@ -5,7 +5,7 @@
 //!
 //! ## Core Patterns
 //! - **Complex error handling**: Retry logic, graceful fallbacks, and error recovery
-//! - **Conditional node execution**: Dynamic routing based on state conditions  
+//! - **Conditional node execution**: Dynamic routing based on state conditions
 //! - **Rich state transformations**: Complex data processing and enrichment
 //! - **Advanced NodePartial usage**: Efficient partial state updates
 //!
@@ -37,7 +37,7 @@ use weavegraph::utils::collections::new_extra_map;
 ///
 /// ## Features
 /// - **Configurable failure simulation**: Adjustable failure rates for testing
-/// - **Retry logic**: Configurable retry attempts with detailed logging  
+/// - **Retry logic**: Configurable retry attempts with detailed logging
 /// - **Rich error reporting**: Comprehensive error metadata and context
 /// - **Graceful degradation**: Structured failure handling
 ///
@@ -99,13 +99,14 @@ impl Node for ApiCallNode {
                     }),
                 );
 
-                return Ok(NodePartial::with_messages_and_extra(
-                    vec![Message {
+                let partial = NodePartial::new()
+                    .with_messages(vec![Message {
                         role: "system".to_string(),
                         content: format!("{} API call completed successfully", self.service_name),
-                    }],
-                    extra,
-                ));
+                    }])
+                    .with_extra(extra);
+
+                return Ok(partial);
             } else {
                 ctx.emit("retry", format!("Attempt {} failed, retrying...", attempt))?;
             }
@@ -134,7 +135,7 @@ impl Node for ApiCallNode {
 /// - **Rich routing metadata**: Comprehensive decision logging
 /// - **Type-safe conditions**: JSON value-based condition matching
 ///
-/// ## Use Cases  
+/// ## Use Cases
 /// - User role-based workflow routing
 /// - Data quality-based processing paths
 /// - Feature flag-driven execution
@@ -192,13 +193,12 @@ impl Node for ConditionalRouterNode {
             }),
         );
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message {
+        Ok(NodePartial::new()
+            .with_messages(vec![Message {
                 role: "system".to_string(),
                 content: format!("Routed to: {}", selected_route),
-            }],
-            extra,
-        ))
+            }])
+            .with_extra(extra))
     }
 }
 
@@ -322,13 +322,12 @@ impl Node for DataTransformerNode {
 
         extra.insert("transformation_log".to_string(), json!(transformation_log));
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message {
+        Ok(NodePartial::new()
+            .with_messages(vec![Message {
                 role: "assistant".to_string(),
                 content: format!("Applied {} transformations", transformation_log.len()),
-            }],
-            extra,
-        ))
+            }])
+            .with_extra(extra))
     }
 }
 
