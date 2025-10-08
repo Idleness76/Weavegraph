@@ -99,13 +99,13 @@ impl Node for ApiCallNode {
                     }),
                 );
 
-                return Ok(NodePartial::with_messages_and_extra(
-                    vec![Message {
-                        role: "system".to_string(),
-                        content: format!("{} API call completed successfully", self.service_name),
-                    }],
-                    extra,
-                ));
+                let mut partial = NodePartial::with_messages(vec![Message {
+                    role: "system".to_string(),
+                    content: format!("{} API call completed successfully", self.service_name),
+                }]);
+                partial.extra = Some(extra);
+                
+                return Ok(partial);
             } else {
                 ctx.emit("retry", format!("Attempt {} failed, retrying...", attempt))?;
             }
@@ -192,13 +192,13 @@ impl Node for ConditionalRouterNode {
             }),
         );
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message {
-                role: "system".to_string(),
-                content: format!("Routed to: {}", selected_route),
-            }],
-            extra,
-        ))
+        let mut partial = NodePartial::with_messages(vec![Message {
+            role: "system".to_string(),
+            content: format!("Routed to: {}", selected_route),
+        }]);
+        partial.extra = Some(extra);
+        
+        Ok(partial)
     }
 }
 
@@ -322,13 +322,13 @@ impl Node for DataTransformerNode {
 
         extra.insert("transformation_log".to_string(), json!(transformation_log));
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message {
-                role: "assistant".to_string(),
-                content: format!("Applied {} transformations", transformation_log.len()),
-            }],
-            extra,
-        ))
+        let mut partial = NodePartial::with_messages(vec![Message {
+            role: "assistant".to_string(),
+            content: format!("Applied {} transformations", transformation_log.len()),
+        }]);
+        partial.extra = Some(extra);
+        
+        Ok(partial)
     }
 }
 

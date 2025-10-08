@@ -74,10 +74,10 @@ impl Node for InputBootstrapperNode {
         let mut extra = FxHashMap::default();
         extra.insert("needs_more_refinement".into(), json!(true));
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message::assistant(&initial_content)],
-            extra,
-        ))
+        let mut partial = NodePartial::with_messages(vec![Message::assistant(&initial_content)]);
+        partial.extra = Some(extra);
+
+        Ok(partial)
     }
 }
 

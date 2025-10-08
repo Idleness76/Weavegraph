@@ -65,13 +65,13 @@ impl Node for MessageCounterNode {
             format!("{} finished processing", self.node_name),
         )?;
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message {
-                role: "assistant".to_string(),
-                content: summary,
-            }],
-            extra,
-        ))
+        let mut partial = NodePartial::with_messages(vec![Message {
+            role: "assistant".to_string(),
+            content: summary,
+        }]);
+        partial.extra = Some(extra);
+        
+        Ok(partial)
     }
 }
 
@@ -197,13 +197,13 @@ impl Node for AggregatorNode {
 
         ctx.emit("completed", "Data aggregation completed")?;
 
-        Ok(NodePartial::with_messages_and_extra(
-            vec![Message {
-                role: "assistant".to_string(),
-                content: summary,
-            }],
-            extra,
-        ))
+        let mut partial = NodePartial::with_messages(vec![Message {
+            role: "assistant".to_string(),
+            content: summary,
+        }]);
+        partial.extra = Some(extra);
+        
+        Ok(partial)
     }
 }
 
