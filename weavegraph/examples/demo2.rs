@@ -103,11 +103,9 @@ impl Node for SchedulerDemoNode {
         extra.insert("execution_time_ms".into(), json!(self.execution_time_ms));
         extra.insert("timestamp".into(), json!(chrono::Utc::now().to_rfc3339()));
 
-        Ok(NodePartial {
-            messages: Some(vec![result_message]),
-            extra: Some(extra),
-            errors: None,
-        })
+        Ok(NodePartial::new()
+            .with_messages(vec![result_message])
+            .with_extra(extra))
     }
 }
 

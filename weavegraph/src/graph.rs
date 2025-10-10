@@ -10,7 +10,7 @@
 //! - **Nodes**: Executable units of work implementing the [`Node`] trait
 //! - **Edges**: Connections between nodes defining execution flow
 //! - **Conditional Edges**: Dynamic routing based on state predicates
-//! - **Entry Point**: The starting node for workflow execution
+//! - **Virtual Endpoints**: `NodeKind::Start` and `NodeKind::End` for structural definition
 //! - **Compilation**: Validation and conversion to executable [`App`]
 //!
 //! # Quick Start
@@ -164,9 +164,12 @@ pub struct ConditionalEdge {
 /// # Required Configuration
 ///
 /// Every graph must have:
-/// - At least one node added via [`add_node`](Self::add_node)
-/// - An entry point set via [`set_entry`](Self::set_entry)
-/// - The entry point must be a registered node
+/// - At least one executable node added via [`add_node`](Self::add_node)
+/// - Edges connecting from `NodeKind::Start` to define entry points
+/// - Edges connecting to `NodeKind::End` to define exit points
+///
+/// Note: `NodeKind::Start` and `NodeKind::End` are virtual endpoints and should
+/// never be registered with `add_node`. They exist only for structural definition.
 ///
 /// # Examples
 ///
@@ -221,7 +224,6 @@ pub struct GraphBuilder {
     pub edges: FxHashMap<NodeKind, Vec<NodeKind>>,
     /// Conditional edges for dynamic routing based on state.
     pub conditional_edges: Vec<ConditionalEdge>,
-    /// The entry point for graph execution.
     /// Runtime configuration for the compiled application.
     pub runtime_config: RuntimeConfig,
 }
@@ -661,10 +663,10 @@ mod tests {
     }
 
     #[test]
-    /// Compiling without setting entry should return MissingEntry error.
+    /// Tests basic graph compilation with virtual Start/End nodes.
     ///
-    /// Validates that the builder properly detects when no entry point has been
-    /// configured and returns the appropriate error.
+    /// Validates that graphs compile successfully when using virtual Start/End
+    /// endpoints without requiring explicit entry point configuration.
     fn test_compile_missing_entry() {
         let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
         let app = gb.compile();
@@ -672,10 +674,10 @@ mod tests {
     }
 
     #[test]
-    /// Compiling with entry set to a node that is not registered should return EntryNotRegistered error.
+    /// Tests graph compilation with virtual endpoints.
     ///
-    /// Tests the validation that ensures the entry point refers to an actual node
-    /// that has been added to the graph.
+    /// Validates that graphs using virtual Start/End nodes compile successfully
+    /// and maintain proper edge topology without entry point validation.
     fn test_compile_entry_not_registered() {
         let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
         let app = gb.compile();

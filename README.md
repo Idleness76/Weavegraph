@@ -60,11 +60,7 @@ impl Node for GreetingNode {
 
         let greeting = Message::assistant("Hello! How can I help you today?");
 
-        Ok(NodePartial {
-            messages: Some(vec![greeting]),
-            extra: None,
-            errors: None,
-        })
+        Ok(NodePartial::new().with_messages(vec![greeting]))
     }
 }
 
@@ -139,23 +135,25 @@ Declarative workflow definition with conditional routing:
 
 ```rust
 use weavegraph::graph::GraphBuilder;
+use weavegraph::types::NodeKind;
+use std::sync::Arc;
 
 let graph = GraphBuilder::new()
-    .add_node("input", InputProcessorNode)
-    .add_node("analyze", AnalyzerNode)
-    .add_node("respond", ResponseNode)
-    .add_edge("input", "analyze")
-    .add_conditional_edge("analyze", |state| {
-        if state.extra.contains_key("needs_escalation") {
-            "escalate"
-        } else {
-            "respond"
-        }
-    })
-    // Virtual Start/End: connect from Start and into End explicitly.
+    .add_node(NodeKind::Custom("input".into()), InputProcessorNode)
+    .add_node(NodeKind::Custom("analyze".into()), AnalyzerNode)
+    .add_node(NodeKind::Custom("respond".into()), ResponseNode)
+    .add_node(NodeKind::Custom("escalate".into()), EscalateNode)
+    // Virtual Start/End: connect from Start and into End explicitly
     .add_edge(NodeKind::Start, NodeKind::Custom("input".into()))
     .add_edge(NodeKind::Custom("input".into()), NodeKind::Custom("analyze".into()))
+    .add_conditional_edge(
+        NodeKind::Custom("analyze".into()),
+        NodeKind::Custom("escalate".into()),  // If predicate returns true
+        NodeKind::Custom("respond".into()),   // If predicate returns false
+        Arc::new(|state| state.extra.contains_key("needs_escalation"))
+    )
     .add_edge(NodeKind::Custom("respond".into()), NodeKind::End)
+    .add_edge(NodeKind::Custom("escalate".into()), NodeKind::End)
     .compile();
 ```
 

@@ -74,11 +74,7 @@ impl Node for SimpleNode {
             format!("Node {} completed successfully", self.name),
         )?;
 
-        Ok(NodePartial {
-            messages: Some(vec![output_message]),
-            extra: None,
-            errors: None,
-        })
+        Ok(NodePartial::new().with_messages(vec![output_message]))
     }
 }
 
@@ -243,32 +239,26 @@ async fn demo() -> Result<()> {
     let mut barrier_state = final_state.clone();
 
     // Create example NodePartials with modern message construction
-    let partial_a = NodePartial {
-        messages: Some(vec![Message::assistant(
-            "Manual barrier message from virtual node A",
-        )]),
-        extra: Some({
-            let mut extra = FxHashMap::default();
-            extra.insert("source".into(), json!("manual_barrier_a"));
-            extra.insert("priority".into(), json!("high"));
-            extra
-        }),
-        errors: None,
-    };
+    let mut extra_a = FxHashMap::default();
+    extra_a.insert("source".into(), json!("manual_barrier_a"));
+    extra_a.insert("priority".into(), json!("high"));
 
-    let partial_b = NodePartial {
-        messages: Some(vec![Message::assistant(
+    let partial_a = NodePartial::new()
+        .with_messages(vec![Message::assistant(
+            "Manual barrier message from virtual node A",
+        )])
+        .with_extra(extra_a);
+
+    let mut extra_b = FxHashMap::default();
+    extra_b.insert("source".into(), json!("manual_barrier_b"));
+    extra_b.insert("priority".into(), json!("low")); // Will overwrite priority
+    extra_b.insert("additional_data".into(), json!({"value": 42}));
+
+    let partial_b = NodePartial::new()
+        .with_messages(vec![Message::assistant(
             "Manual barrier message from virtual node B",
-        )]),
-        extra: Some({
-            let mut extra = FxHashMap::default();
-            extra.insert("source".into(), json!("manual_barrier_b"));
-            extra.insert("priority".into(), json!("low")); // Will overwrite priority
-            extra.insert("additional_data".into(), json!({"value": 42}));
-            extra
-        }),
-        errors: None,
-    };
+        )])
+        .with_extra(extra_b);
 
     let run_ids = vec![
         NodeKind::Custom("VirtualA".into()),
@@ -297,11 +287,7 @@ async fn demo() -> Result<()> {
     println!("\n   🔄 Testing no-op barrier operations");
     let pre_noop_version = barrier_state.messages.version();
 
-    let noop_partials = vec![NodePartial {
-        messages: Some(vec![]), // Empty - should not update
-        extra: None,
-        errors: None,
-    }];
+    let noop_partials = vec![NodePartial::new().with_messages(vec![])]; // Empty - should not update
 
     let noop_updated = app
         .apply_barrier(&mut barrier_state, &[], noop_partials)
@@ -327,13 +313,9 @@ async fn demo() -> Result<()> {
     let mut saturation_state = final_state.clone();
     saturation_state.messages.set_version(u32::MAX);
 
-    let saturation_partial = NodePartial {
-        messages: Some(vec![Message::assistant(
-            "This message won't increment version due to saturation",
-        )]),
-        extra: None,
-        errors: None,
-    };
+    let saturation_partial = NodePartial::new().with_messages(vec![Message::assistant(
+        "This message won't increment version due to saturation",
+    )]);
 
     let pre_saturation_version = saturation_state.messages.version();
     let _ = app
