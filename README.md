@@ -52,9 +52,9 @@ impl Node for GreetingNode {
         ctx: NodeContext,
     ) -> Result<NodePartial, weavegraph::node::NodeError> {
         ctx.emit("greeting", "Generating welcome message")?;
-        
+
         let greeting = Message::assistant("Hello! How can I help you today?");
-        
+
         Ok(NodePartial {
             messages: Some(vec![greeting]),
             extra: None,
@@ -74,12 +74,12 @@ async fn main() -> miette::Result<()> {
     // Create initial state and run
     let state = VersionedState::new_with_user_message("Hello, system!");
     let result = graph.invoke(state).await?;
-    
+
     // Access results
     for message in result.messages {
         println!("{}: {}", message.role, message.content);
     }
-    
+
     Ok(())
 }
 ```
@@ -135,14 +135,14 @@ use weavegraph::graph::GraphBuilder;
 
 let graph = GraphBuilder::new()
     .add_node("input", InputProcessorNode)
-    .add_node("analyze", AnalyzerNode) 
+    .add_node("analyze", AnalyzerNode)
     .add_node("respond", ResponseNode)
     .add_edge("input", "analyze")
     .add_conditional_edge("analyze", |state| {
         if state.extra.contains_key("needs_escalation") {
             "escalate"
         } else {
-            "respond" 
+            "respond"
         }
     })
     .set_entry_point("input")
@@ -172,7 +172,7 @@ Historical demo applications showcase evolution of capabilities:
 # Basic graph execution patterns (examples/demo1.rs)
 cargo run --example demo1
 
-# Direct scheduler usage and barrier synchronization (examples/demo2.rs)  
+# Direct scheduler usage and barrier synchronization (examples/demo2.rs)
 cargo run --example demo2
 
 # LLM workflows with Ollama integration (examples/demo3.rs)
@@ -193,7 +193,7 @@ docker-compose up -d ollama
 Weavegraph is built around several core modules:
 
 - **[`message`]** - Type-safe message construction and role-based messaging
-- **[`state`]** - Versioned state management with channel isolation  
+- **[`state`]** - Versioned state management with channel isolation
 - **[`node`]** - Node execution primitives and async trait definitions
 - **[`graph`]** - Workflow graph definition and conditional routing
 - **[`schedulers`]** - Concurrent execution with dependency resolution
@@ -284,6 +284,112 @@ cargo test integration:: -- --nocapture
 ```
 
 Property-based testing with `proptest` ensures correctness across edge cases.
+
+
+Overview mermain flowchart of the app
+
+```mermaid
+
+flowchart TB
+
+subgraph Client
+  user[Client App or UI]
+end
+
+subgraph Build
+  gb[GraphBuilder]
+end
+
+subgraph Graph
+  cg[CompiledGraph]
+end
+
+subgraph Runtime
+  app[App]
+  sched[Scheduler]
+  router[Router Edges and Commands]
+  barrier[Barrier Applier]
+end
+
+subgraph Nodes
+  usernode[User Nodes]
+  llmnode[LLM Node]
+  toolnode[Tool Node]
+end
+
+subgraph State
+  vstate[Versioned State]
+  snap[State Snapshot]
+end
+
+subgraph Reducers
+  redreg[Reducer Registry]
+end
+
+subgraph Checkpoint
+  cpif[Checkpointer]
+end
+
+subgraph Rig
+  rigad[Rig Adapter]
+  llmprov[LLM Provider]
+end
+
+subgraph Tools
+  toolreg[Tool Registry]
+  exttools[External Tools]
+end
+
+subgraph Stream
+  stream[Stream Controller]
+end
+
+subgraph Viz
+  viz[Visualizer]
+end
+
+
+user --> gb
+gb --> cg
+
+user --> app
+cg --> app
+
+app --> sched
+sched --> snap
+vstate --> snap
+
+sched --> usernode
+sched --> llmnode
+sched --> toolnode
+
+usernode --> barrier
+llmnode --> barrier
+toolnode --> barrier
+redreg --> barrier
+barrier --> vstate
+
+snap --> router
+app --> router
+router --> sched
+
+llmnode --> rigad
+rigad --> llmprov
+llmprov --> rigad
+rigad --> llmnode
+
+toolnode --> toolreg
+toolnode --> exttools
+exttools --> toolnode
+
+barrier --> cpif
+
+app --> stream
+stream --> user
+
+cg --> viz
+
+```
 
 ## 🚀 Production Considerations
 

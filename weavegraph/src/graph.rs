@@ -32,14 +32,13 @@
 //!     }
 //! }
 //!
-//! // Build a simple workflow: Start -> MyNode -> End
+//! // Build a simple workflow (virtual Start/End):
+//! // Start (virtual) -> process -> End (virtual)
 //! let app = GraphBuilder::new()
-//!     .add_node(NodeKind::Start, MyNode)
-//!     .add_node(NodeKind::End, MyNode)
-//!     .add_edge(NodeKind::Start, NodeKind::End)
-//!     .set_entry(NodeKind::Start)
-//!     .compile()
-//!     .expect("Failed to compile graph");
+//!     .add_node(NodeKind::Custom("process".into()), MyNode)
+//!     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
+//!     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
+//!     .compile();
 //! ```
 //!
 //! # Advanced Usage
@@ -65,23 +64,19 @@
 //! # }
 //!
 //! let app = GraphBuilder::new()
-//!     .add_node(NodeKind::Start, MyNode)
-//!     .add_node(NodeKind::Other("process".into()), MyNode)
-//!     .add_node(NodeKind::Other("skip".into()), MyNode)
-//!     .add_node(NodeKind::End, MyNode)
-//!     // Add a basic edge from Start to satisfy validation
-//!     .add_edge(NodeKind::Start, NodeKind::Other("process".into()))
+//!     .add_node(NodeKind::Custom("process".into()), MyNode)
+//!     .add_node(NodeKind::Custom("skip".into()), MyNode)
+//!     // Basic structural edge from virtual Start
+//!     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
 //!     .add_conditional_edge(
 //!         NodeKind::Start,
-//!         NodeKind::Other("process".into()), // If predicate returns true
-//!         NodeKind::Other("skip".into()),    // If predicate returns false
+//!         NodeKind::Custom("process".into()), // If predicate returns true
+//!         NodeKind::Custom("skip".into()),    // If predicate returns false
 //!         has_messages,
 //!     )
-//!     .add_edge(NodeKind::Other("process".into()), NodeKind::End)
-//!     .add_edge(NodeKind::Other("skip".into()), NodeKind::End)
-//!     .set_entry(NodeKind::Start)
-//!     .compile()
-//!     .expect("Failed to compile conditional graph");
+//!     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
+//!     .add_edge(NodeKind::Custom("skip".into()), NodeKind::End)
+//!     .compile();
 //! ```
 
 use rustc_hash::FxHashMap;
@@ -96,24 +91,10 @@ use crate::types::*;
 ///
 /// These errors indicate problems with the graph structure or configuration
 /// that prevent it from being compiled into an executable [`App`].
-#[derive(Debug, thiserror::Error)]
-pub enum GraphCompileError {
-    /// No entry point was set for the graph.
-    ///
-    /// Every graph must have exactly one entry point specified via
-    /// [`GraphBuilder::set_entry`]. This error occurs when [`GraphBuilder::compile`]
-    /// is called without setting an entry point.
-    #[error("Graph compilation failed: no entry point specified")]
-    MissingEntry,
-
-    /// The specified entry point is not registered as a node.
-    ///
-    /// This error occurs when the entry point refers to a [`NodeKind`] that
-    /// was not added to the graph via [`GraphBuilder::add_node`]. The entry
-    /// point must be a valid, registered node.
-    #[error("Graph compilation failed: entry point {0:?} is not a registered node")]
-    EntryNotRegistered(NodeKind),
-}
+// (removed obsolete derive previously attached to now-removed GraphCompileError)
+// (Removed) GraphCompileError: entry point validation no longer required because
+// Start/End are purely virtual. Graph compilation now always succeeds unless
+// future structural validations are added (e.g., cycle detection).
 
 /// Predicate function for conditional edge routing.
 ///
@@ -156,8 +137,8 @@ pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> bool + Send 
 /// let predicate: EdgePredicate = Arc::new(|_| true);
 /// let edge = ConditionalEdge {
 ///     from: NodeKind::Start,
-///     yes: NodeKind::Other("success".into()),
-///     no: NodeKind::Other("failure".into()),
+///     yes: NodeKind::Custom("success".into()),
+///     no: NodeKind::Custom("failure".into()),
 ///     predicate,
 /// };
 /// ```
@@ -203,12 +184,10 @@ pub struct ConditionalEdge {
 /// # }
 ///
 /// let app = GraphBuilder::new()
-///     .add_node(NodeKind::Start, MyNode)
-///     .add_node(NodeKind::End, MyNode)
-///     .add_edge(NodeKind::Start, NodeKind::End)
-///     .set_entry(NodeKind::Start)
-///     .compile()
-///     .expect("Graph should compile successfully");
+///     .add_node(NodeKind::Custom("worker".into()), MyNode)
+///     .add_edge(NodeKind::Start, NodeKind::Custom("worker".into()))
+///     .add_edge(NodeKind::Custom("worker".into()), NodeKind::End)
+///     .compile();
 /// ```
 ///
 /// ## Complex Workflow with Fan-out
@@ -225,19 +204,15 @@ pub struct ConditionalEdge {
 /// # }
 ///
 /// let app = GraphBuilder::new()
-///     .add_node(NodeKind::Start, MyNode)
-///     .add_node(NodeKind::Other("processor_a".into()), MyNode)
-///     .add_node(NodeKind::Other("processor_b".into()), MyNode)
-///     .add_node(NodeKind::End, MyNode)
-///     // Fan-out: Start -> A and Start -> B
-///     .add_edge(NodeKind::Start, NodeKind::Other("processor_a".into()))
-///     .add_edge(NodeKind::Start, NodeKind::Other("processor_b".into()))
+///     .add_node(NodeKind::Custom("processor_a".into()), MyNode)
+///     .add_node(NodeKind::Custom("processor_b".into()), MyNode)
+///     // Fan-out: Start -> A and Start -> B (Start virtual)
+///     .add_edge(NodeKind::Start, NodeKind::Custom("processor_a".into()))
+///     .add_edge(NodeKind::Start, NodeKind::Custom("processor_b".into()))
 ///     // Fan-in: A -> End and B -> End
-///     .add_edge(NodeKind::Other("processor_a".into()), NodeKind::End)
-///     .add_edge(NodeKind::Other("processor_b".into()), NodeKind::End)
-///     .set_entry(NodeKind::Start)
-///     .compile()
-///     .expect("Fan-out graph should compile successfully");
+///     .add_edge(NodeKind::Custom("processor_a".into()), NodeKind::End)
+///     .add_edge(NodeKind::Custom("processor_b".into()), NodeKind::End)
+///     .compile();
 /// ```
 pub struct GraphBuilder {
     /// Registry of all nodes in the graph, keyed by their identifier.
@@ -247,7 +222,6 @@ pub struct GraphBuilder {
     /// Conditional edges for dynamic routing based on state.
     pub conditional_edges: Vec<ConditionalEdge>,
     /// The entry point for graph execution.
-    pub entry: Option<NodeKind>,
     /// Runtime configuration for the compiled application.
     pub runtime_config: RuntimeConfig,
 }
@@ -255,6 +229,20 @@ pub struct GraphBuilder {
 impl Default for GraphBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Debug)]
+struct VirtualNode;
+
+#[async_trait::async_trait]
+impl Node for VirtualNode {
+    async fn run(
+        &self,
+        _snapshot: crate::state::StateSnapshot,
+        _ctx: crate::node::NodeContext,
+    ) -> Result<crate::node::NodePartial, crate::node::NodeError> {
+        Ok(crate::node::NodePartial::default())
     }
 }
 
@@ -279,7 +267,6 @@ impl GraphBuilder {
             nodes: FxHashMap::default(),
             edges: FxHashMap::default(),
             conditional_edges: Vec::new(),
-            entry: None,
             runtime_config: RuntimeConfig::default(),
         }
     }
@@ -318,13 +305,12 @@ impl GraphBuilder {
     /// });
     ///
     /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Start, MyNode)
-    ///     .add_node(NodeKind::Other("many_messages".into()), MyNode)
-    ///     .add_node(NodeKind::Other("few_messages".into()), MyNode)
+    ///     .add_node(NodeKind::Custom("many_messages".into()), MyNode)
+    ///     .add_node(NodeKind::Custom("few_messages".into()), MyNode)
     ///     .add_conditional_edge(
     ///         NodeKind::Start,
-    ///         NodeKind::Other("many_messages".into()),
-    ///         NodeKind::Other("few_messages".into()),
+    ///         NodeKind::Custom("many_messages".into()),
+    ///         NodeKind::Custom("few_messages".into()),
     ///         predicate,
     ///     );
     /// ```
@@ -378,11 +364,21 @@ impl GraphBuilder {
     /// }
     ///
     /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Start, ProcessorNode { name: "start".into() })
-    ///     .add_node(NodeKind::Other("custom".into()), ProcessorNode { name: "custom".into() });
+    ///     .add_node(NodeKind::Custom("custom".into()), ProcessorNode { name: "custom".into() });
+    /// // Edge from virtual Start
+    /// // .add_edge(NodeKind::Start, NodeKind::Custom("custom".into()));
     /// ```
     #[must_use]
     pub fn add_node(mut self, id: NodeKind, node: impl Node + 'static) -> Self {
+        if id.is_start() || id.is_end() {
+            // Virtual nodes should not have concrete implementations supplied.
+            // We log a warning (once per GraphBuilder path) and ensure a placeholder exists.
+            tracing::warn!(?id, "Ignoring registration of virtual node; Start/End are virtual and managed automatically");
+            self.nodes
+                .entry(id)
+                .or_insert_with(|| Arc::new(VirtualNode));
+            return self;
+        }
         self.nodes.insert(id, Arc::new(node));
         self
     }
@@ -415,9 +411,9 @@ impl GraphBuilder {
     /// # }
     ///
     /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Start, MyNode)
-    ///     .add_node(NodeKind::End, MyNode)
-    ///     .add_edge(NodeKind::Start, NodeKind::End); // Linear workflow
+    ///     .add_node(NodeKind::Custom("step".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("step".into()))
+    ///     .add_edge(NodeKind::Custom("step".into()), NodeKind::End); // Linear workflow with virtual endpoints
     /// ```
     ///
     /// ## Fan-out Pattern
@@ -434,51 +430,14 @@ impl GraphBuilder {
     /// # }
     ///
     /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Start, MyNode)
-    ///     .add_node(NodeKind::Other("worker_a".into()), MyNode)
-    ///     .add_node(NodeKind::Other("worker_b".into()), MyNode)
-    ///     .add_edge(NodeKind::Start, NodeKind::Other("worker_a".into()))
-    ///     .add_edge(NodeKind::Start, NodeKind::Other("worker_b".into())); // Fan-out
+    ///     .add_node(NodeKind::Custom("worker_a".into()), MyNode)
+    ///     .add_node(NodeKind::Custom("worker_b".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker_a".into()))
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker_b".into())); // Fan-out from virtual Start
     /// ```
     #[must_use]
     pub fn add_edge(mut self, from: NodeKind, to: NodeKind) -> Self {
         self.edges.entry(from).or_default().push(to);
-        self
-    }
-
-    /// Sets the entry point for graph execution.
-    ///
-    /// The entry point determines where workflow execution begins. It must
-    /// be a [`NodeKind`] that has been registered via [`add_node`](Self::add_node).
-    /// Every graph must have exactly one entry point.
-    ///
-    /// # Parameters
-    ///
-    /// - `entry`: The [`NodeKind`] identifier for the starting node
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::graph::GraphBuilder;
-    /// use weavegraph::types::NodeKind;
-    ///
-    /// # struct MyNode;
-    /// # #[async_trait::async_trait]
-    /// # impl weavegraph::node::Node for MyNode {
-    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
-    /// #         Ok(weavegraph::node::NodePartial::default())
-    /// #     }
-    /// # }
-    ///
-    /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Start, MyNode)
-    ///     .add_node(NodeKind::End, MyNode)
-    ///     .add_edge(NodeKind::Start, NodeKind::End)
-    ///     .set_entry(NodeKind::Start); // Start execution from the Start node
-    /// ```
-    #[must_use]
-    pub fn set_entry(mut self, entry: NodeKind) -> Self {
-        self.entry = Some(entry);
         self
     }
 
@@ -526,19 +485,16 @@ impl GraphBuilder {
     /// Validates the graph configuration and converts it into an [`App`] that
     /// can execute workflows. This method performs several validation checks:
     ///
-    /// - Ensures an entry point has been set
-    /// - Verifies the entry point is a registered node
     /// - Future: cycle detection, reachability analysis
+    /// - Future: validation that at least one edge originates from Start
     ///
     /// # Returns
     ///
     /// - `Ok(App)`: Successfully compiled application ready for execution
-    /// - `Err(GraphCompileError)`: Validation failed, see error for details
     ///
     /// # Errors
     ///
-    /// - [`GraphCompileError::MissingEntry`]: No entry point was set
-    /// - [`GraphCompileError::EntryNotRegistered`]: Entry point is not a registered node
+    /// Currently none. (Reserved for future structural validation errors.)
     ///
     /// # Examples
     ///
@@ -555,26 +511,43 @@ impl GraphBuilder {
     /// # }
     ///
     /// let app = GraphBuilder::new()
-    ///     .add_node(NodeKind::Start, MyNode)
-    ///     .add_node(NodeKind::End, MyNode)
-    ///     .add_edge(NodeKind::Start, NodeKind::End)
-    ///     .set_entry(NodeKind::Start)
-    ///     .compile()?;
+    ///     .add_node(NodeKind::Custom("process".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
+    ///     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
+    ///     .compile();
     ///
     /// // App is ready for execution
-    /// # Ok::<(), weavegraph::graph::GraphCompileError>(())
     /// ```
-    pub fn compile(self) -> Result<App, GraphCompileError> {
-        let entry = self.entry.as_ref().ok_or(GraphCompileError::MissingEntry)?;
-        if !self.edges.contains_key(entry) {
-            return Err(GraphCompileError::EntryNotRegistered(entry.clone()));
+    pub fn compile(mut self) -> App {
+        // Auto-inject virtual placeholder nodes if Start/End appear in topology
+        let mut needed: Vec<NodeKind> = Vec::new();
+        for (from, tos) in &self.edges {
+            if from.is_start() || from.is_end() {
+                needed.push(from.clone());
+            }
+            for t in tos {
+                if t.is_start() || t.is_end() {
+                    needed.push(t.clone());
+                }
+            }
         }
-        Ok(App::from_parts(
+        for ce in &self.conditional_edges {
+            for k in [&ce.from, &ce.yes, &ce.no] {
+                if k.is_start() || k.is_end() {
+                    needed.push(k.clone());
+                }
+            }
+        }
+        for k in needed {
+            self.nodes.entry(k).or_insert_with(|| Arc::new(VirtualNode));
+        }
+
+        App::from_parts(
             self.nodes,
             self.edges,
             self.conditional_edges,
             self.runtime_config,
-        ))
+        )
     }
 }
 
@@ -630,19 +603,19 @@ mod tests {
         let always_true: super::EdgePredicate = std::sync::Arc::new(|_s: StateSnapshot| true);
         let gb = super::GraphBuilder::new()
             .add_node(super::NodeKind::Start, NodeA)
-            .add_node(super::NodeKind::Other("Y".into()), NodeA)
-            .add_node(super::NodeKind::Other("N".into()), NodeA)
+            .add_node(super::NodeKind::Custom("Y".into()), NodeA)
+            .add_node(super::NodeKind::Custom("N".into()), NodeA)
             .add_conditional_edge(
                 super::NodeKind::Start,
-                super::NodeKind::Other("Y".into()),
-                super::NodeKind::Other("N".into()),
+                super::NodeKind::Custom("Y".into()),
+                super::NodeKind::Custom("N".into()),
                 always_true.clone(),
             );
         assert_eq!(gb.conditional_edges.len(), 1);
         let ce = &gb.conditional_edges[0];
         assert_eq!(ce.from, super::NodeKind::Start);
-        assert_eq!(ce.yes, super::NodeKind::Other("Y".into()));
-        assert_eq!(ce.no, super::NodeKind::Other("N".into()));
+        assert_eq!(ce.yes, super::NodeKind::Custom("Y".into()));
+        assert_eq!(ce.no, super::NodeKind::Custom("N".into()));
         // Predicate should return true
         let snap = StateSnapshot {
             messages: vec![],
@@ -665,7 +638,7 @@ mod tests {
         assert!(gb.nodes.is_empty());
         assert!(gb.edges.is_empty());
         assert!(gb.conditional_edges.is_empty());
-        assert!(gb.entry.is_none());
+        // entry field removed; no explicit entry point tracking required
     }
 
     #[test]
@@ -675,11 +648,11 @@ mod tests {
     /// they can be retrieved by their NodeKind identifiers.
     fn test_add_node() {
         let gb = GraphBuilder::new()
-            .add_node(NodeKind::Start, NodeA)
-            .add_node(NodeKind::End, NodeB);
+            .add_node(NodeKind::Custom("A".into()), NodeA)
+            .add_node(NodeKind::Custom("B".into()), NodeB);
         assert_eq!(gb.nodes.len(), 2);
-        assert!(gb.nodes.contains_key(&NodeKind::Start));
-        assert!(gb.nodes.contains_key(&NodeKind::End));
+        assert!(gb.nodes.contains_key(&NodeKind::Custom("A".into())));
+        assert!(gb.nodes.contains_key(&NodeKind::Custom("B".into())));
     }
 
     #[test]
@@ -690,12 +663,12 @@ mod tests {
     fn test_add_edge() {
         let gb = GraphBuilder::new()
             .add_edge(NodeKind::Start, NodeKind::End)
-            .add_edge(NodeKind::Start, NodeKind::Other("C".to_string()));
+            .add_edge(NodeKind::Start, NodeKind::Custom("C".to_string()));
         assert_eq!(gb.edges.len(), 1);
         let edges = gb.edges.get(&NodeKind::Start).unwrap();
         assert_eq!(edges.len(), 2);
         assert!(edges.contains(&NodeKind::End));
-        assert!(edges.contains(&NodeKind::Other("C".to_string())));
+        assert!(edges.contains(&NodeKind::Custom("C".to_string())));
     }
 
     #[test]
@@ -704,12 +677,9 @@ mod tests {
     /// Tests the compilation process for a valid graph configuration and verifies
     /// that the resulting App contains the expected nodes and edges.
     fn test_compile() {
-        let gb = GraphBuilder::new()
-            .add_node(NodeKind::Start, NodeA)
-            .add_node(NodeKind::End, NodeB)
-            .add_edge(NodeKind::Start, NodeKind::End)
-            .set_entry(NodeKind::Start);
-        let app = gb.compile().unwrap();
+        let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
+        // Start/End are virtual; no concrete node registrations required.
+        let app = gb.compile();
         assert_eq!(app.nodes().len(), 2);
         assert!(app.nodes().contains_key(&NodeKind::Start));
         assert!(app.nodes().contains_key(&NodeKind::End));
@@ -727,15 +697,9 @@ mod tests {
     /// Validates that the builder properly detects when no entry point has been
     /// configured and returns the appropriate error.
     fn test_compile_missing_entry() {
-        let gb = GraphBuilder::new()
-            .add_node(NodeKind::Start, NodeA)
-            .add_node(NodeKind::End, NodeB)
-            .add_edge(NodeKind::Start, NodeKind::End);
-        let result = gb.compile();
-        match result {
-            Err(GraphCompileError::MissingEntry) => (),
-            _ => panic!("Expected MissingEntry error"),
-        }
+        let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
+        let app = gb.compile();
+        assert!(app.edges().get(&NodeKind::Start).is_some());
     }
 
     #[test]
@@ -744,16 +708,9 @@ mod tests {
     /// Tests the validation that ensures the entry point refers to an actual node
     /// that has been added to the graph.
     fn test_compile_entry_not_registered() {
-        let gb = GraphBuilder::new()
-            .add_node(NodeKind::Start, NodeA)
-            .add_node(NodeKind::End, NodeB)
-            .add_edge(NodeKind::Start, NodeKind::End)
-            .set_entry(NodeKind::Other("NotRegistered".to_string()));
-        let result = gb.compile();
-        assert!(matches!(
-            result,
-            Err(GraphCompileError::EntryNotRegistered(NodeKind::Other(ref s))) if s == "NotRegistered"
-        ));
+        let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
+        let app = gb.compile();
+        assert!(app.edges().contains_key(&NodeKind::Start));
     }
 
     #[test]
@@ -761,9 +718,9 @@ mod tests {
     ///
     /// Validates that NodeKind comparison works correctly for custom node types.
     fn test_nodekind_other_variant() {
-        let k1 = NodeKind::Other("foo".to_string());
-        let k2 = NodeKind::Other("foo".to_string());
-        let k3 = NodeKind::Other("bar".to_string());
+        let k1 = NodeKind::Custom("foo".to_string());
+        let k2 = NodeKind::Custom("foo".to_string());
+        let k3 = NodeKind::Custom("bar".to_string());
         assert_eq!(k1, k2);
         assert_ne!(k1, k3);
     }
@@ -789,14 +746,9 @@ mod tests {
     /// Validates that each method returns a new builder instance with the added
     /// configuration, enabling method chaining.
     fn test_builder_fluent_api() {
-        let final_builder = GraphBuilder::new()
-            .add_node(NodeKind::Start, NodeA)
-            .add_node(NodeKind::End, NodeB)
-            .add_edge(NodeKind::Start, NodeKind::End)
-            .set_entry(NodeKind::Start);
-
-        // Should be able to compile successfully
-        assert!(final_builder.compile().is_ok());
+        let final_builder = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
+        // Should compile successfully
+        let _app = final_builder.compile();
     }
 
     #[test]
@@ -810,12 +762,10 @@ mod tests {
         let config = RuntimeConfig::new(Some("test_session".into()), None, None);
 
         let builder = GraphBuilder::new()
-            .add_node(NodeKind::Start, NodeA)
             .add_edge(NodeKind::Start, NodeKind::End)
-            .set_entry(NodeKind::Start)
             .with_runtime_config(config);
 
         // Should compile successfully with custom runtime config
-        assert!(builder.compile().is_ok());
+        let _app = builder.compile();
     }
 }

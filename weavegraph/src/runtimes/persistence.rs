@@ -9,7 +9,7 @@ Design Goals:
 - Keep conversion logic localized (From / TryFrom impls) so the
   checkpointer code is lean and declarative.
 - Allow forward compatibility (unknown NodeKind encodings round-trip
-  as `NodeKind::Other(encoded_string)`).
+  as `NodeKind::Custom(encoded_string)`).
 
 This module intentionally does NOT perform I/O. It is pure data
 transformation and (de)serialization glue.
@@ -290,7 +290,7 @@ mod tests {
             session_id: "sess123".into(),
             step: 7,
             state: vs.clone(),
-            frontier: vec![NodeKind::Start, NodeKind::Other("X".into()), NodeKind::End],
+            frontier: vec![NodeKind::Start, NodeKind::Custom("X".into()), NodeKind::End],
             versions_seen: FxHashMap::from_iter([
                 (
                     "Start".into(),
@@ -303,7 +303,7 @@ mod tests {
             ]),
             concurrency_limit: 4,
             created_at: Utc::now(),
-            ran_nodes: vec![NodeKind::Start, NodeKind::Other("X".into())],
+            ran_nodes: vec![NodeKind::Start, NodeKind::Custom("X".into())],
             skipped_nodes: vec![NodeKind::End],
             updated_channels: vec!["messages".to_string(), "extra".to_string()],
         };
@@ -327,14 +327,14 @@ mod tests {
         let kinds = vec![
             NodeKind::Start,
             NodeKind::End,
-            NodeKind::Other("Alpha".into()),
-            NodeKind::Other("Other:Nested".into()),
+            NodeKind::Custom("Alpha".into()),
+            NodeKind::Custom("Other:Nested".into()),
         ];
         for k in kinds {
             let enc = k.encode();
             let dec = NodeKind::decode(&enc);
             match (&k, &dec) {
-                (NodeKind::Other(orig), NodeKind::Other(back)) => {
+                (NodeKind::Custom(orig), NodeKind::Custom(back)) => {
                     assert_eq!(back, orig);
                 }
                 _ => assert_eq!(format!("{:?}", k), format!("{:?}", dec)),
@@ -348,8 +348,8 @@ mod tests {
         prop_oneof![
             Just(NodeKind::Start),
             Just(NodeKind::End),
-            base.clone().prop_map(NodeKind::Other),
-            base.prop_map(|s| NodeKind::Other(format!("Other:{s}"))),
+            base.clone().prop_map(NodeKind::Custom),
+            base.prop_map(|s| NodeKind::Custom(format!("Other:{s}"))),
         ]
     }
 

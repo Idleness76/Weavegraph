@@ -6,7 +6,7 @@
 //!
 //! What You'll Learn:
 //! 1. Modern Message Construction: Using convenience constructors and the builder pattern
-//! 2. State Management: Working with versioned state and snapshots  
+//! 2. State Management: Working with versioned state and snapshots
 //! 3. Graph Building: Creating workflows with nodes and edges
 //! 4. Barrier Operations: Manual state updates and version management
 //! 5. Error Handling: Validation and expected failure scenarios
@@ -149,34 +149,31 @@ async fn demo() -> Result<()> {
 
     let app = GraphBuilder::new()
         .add_node(
-            NodeKind::Other("Initializer".into()),
+            NodeKind::Custom("Initializer".into()),
             SimpleNode::new("Initializer"),
         )
         .add_node(
-            NodeKind::Other("ProcessorA".into()),
+            NodeKind::Custom("ProcessorA".into()),
             SimpleNode::new("ProcessorA"),
         )
         .add_node(
-            NodeKind::Other("ProcessorB".into()),
+            NodeKind::Custom("ProcessorB".into()),
             SimpleNode::new("ProcessorB"),
         )
-        .add_node(NodeKind::End, SimpleNode::new("End"))
         // Create a processing pipeline: Start -> A -> B -> End
-        .add_edge(NodeKind::Start, NodeKind::Other("Initializer".into()))
+        .add_edge(NodeKind::Start, NodeKind::Custom("Initializer".into()))
         .add_edge(
-            NodeKind::Other("Initializer".into()),
-            NodeKind::Other("ProcessorA".into()),
+            NodeKind::Custom("Initializer".into()),
+            NodeKind::Custom("ProcessorA".into()),
         )
         .add_edge(
-            NodeKind::Other("ProcessorA".into()),
-            NodeKind::Other("ProcessorB".into()),
+            NodeKind::Custom("ProcessorA".into()),
+            NodeKind::Custom("ProcessorB".into()),
         )
-        .add_edge(NodeKind::Other("ProcessorB".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("ProcessorB".into()), NodeKind::End)
         // Add a secondary path: Start -> B (for demonstration of fan-out)
-        .add_edge(NodeKind::Start, NodeKind::Other("ProcessorB".into()))
-        .set_entry(NodeKind::Start)
-        .compile()
-        .map_err(|e| miette::miette!("Graph compilation failed: {e:?}"))?;
+        .add_edge(NodeKind::Start, NodeKind::Custom("ProcessorB".into()))
+        .compile();
 
     println!("   ✓ Graph compiled successfully");
     println!("   ✓ Nodes: Initializer, ProcessorA, ProcessorB, End");
@@ -274,8 +271,8 @@ async fn demo() -> Result<()> {
     };
 
     let run_ids = vec![
-        NodeKind::Other("VirtualA".into()),
-        NodeKind::Other("VirtualB".into()),
+        NodeKind::Custom("VirtualA".into()),
+        NodeKind::Custom("VirtualB".into()),
     ];
 
     let updated_channels = app
@@ -322,27 +319,8 @@ async fn demo() -> Result<()> {
     // ✅ STEP 6: Error Handling Demonstrations
     println!("\n❌ Step 6: Demonstrating error handling and validation");
 
-    // Test 1: Missing entry point
-    println!("   🧪 Test 1: Graph without entry point");
-    match GraphBuilder::new()
-        .add_node(NodeKind::Start, SimpleNode::new("Start"))
-        .add_node(NodeKind::End, SimpleNode::new("End"))
-        .add_edge(NodeKind::Start, NodeKind::End)
-        .compile()
-    {
-        Err(e) => println!("   ✓ Expected error caught: {e:?}"),
-        Ok(_) => println!("   ❌ Unexpected success - should have failed!"),
-    }
-
-    // Test 2: Entry point not registered as node
-    println!("   🧪 Test 2: Entry point not registered as node");
-    match GraphBuilder::new()
-        .set_entry(NodeKind::Other("NonExistentNode".into()))
-        .compile()
-    {
-        Err(e) => println!("   ✓ Expected error caught: {e:?}"),
-        Ok(_) => println!("   ❌ Unexpected success - should have failed!"),
-    }
+    // (Removed obsolete test: entry point validation no longer enforced. Start/End are virtual.)
+    println!("   🧪 Skipping deprecated entry-point error test (Start/End now virtual).");
 
     // Test 3: Version saturation behavior
     println!("   🧪 Test 3: Version saturation behavior");

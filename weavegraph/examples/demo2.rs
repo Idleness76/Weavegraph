@@ -155,56 +155,55 @@ async fn run_demo2() -> miette::Result<()> {
 
     let app = GraphBuilder::new()
         .add_node(
-            NodeKind::Other("Initializer".into()),
+            NodeKind::Custom("Initializer".into()),
             SchedulerDemoNode::new("Initializer", 50),
         )
         .add_node(
-            NodeKind::Other("Analyzer".into()),
+            NodeKind::Custom("Analyzer".into()),
             SchedulerDemoNode::new("Analyzer", 200),
         )
         .add_node(
-            NodeKind::Other("ProcessorA".into()),
+            NodeKind::Custom("ProcessorA".into()),
             SchedulerDemoNode::new("ProcessorA", 150),
         )
         .add_node(
-            NodeKind::Other("ProcessorB".into()),
+            NodeKind::Custom("ProcessorB".into()),
             SchedulerDemoNode::new("ProcessorB", 100),
         )
         .add_node(
-            NodeKind::Other("Synthesizer".into()),
+            NodeKind::Custom("Synthesizer".into()),
             SchedulerDemoNode::new("Synthesizer", 300),
         )
-        .add_node(NodeKind::End, SchedulerDemoNode::new("End", 75))
+        // (Removed concrete End node registration – End is virtual)
         // Create complex dependency graph:
         // Start fans out to Analyzer and ProcessorA
-        .add_edge(NodeKind::Start, NodeKind::Other("Initializer".into()))
+        .add_edge(NodeKind::Start, NodeKind::Custom("Initializer".into()))
         .add_edge(
-            NodeKind::Other("Initializer".into()),
-            NodeKind::Other("Analyzer".into()),
+            NodeKind::Custom("Initializer".into()),
+            NodeKind::Custom("Analyzer".into()),
         )
         .add_edge(
-            NodeKind::Other("Initializer".into()),
-            NodeKind::Other("ProcessorA".into()),
+            NodeKind::Custom("Initializer".into()),
+            NodeKind::Custom("ProcessorA".into()),
         )
         // Analyzer feeds into ProcessorB
         .add_edge(
-            NodeKind::Other("Analyzer".into()),
-            NodeKind::Other("ProcessorB".into()),
+            NodeKind::Custom("Analyzer".into()),
+            NodeKind::Custom("ProcessorB".into()),
         )
         // Both ProcessorA and ProcessorB feed into Synthesizer
         .add_edge(
-            NodeKind::Other("ProcessorA".into()),
-            NodeKind::Other("Synthesizer".into()),
+            NodeKind::Custom("ProcessorA".into()),
+            NodeKind::Custom("Synthesizer".into()),
         )
         .add_edge(
-            NodeKind::Other("ProcessorB".into()),
-            NodeKind::Other("Synthesizer".into()),
+            NodeKind::Custom("ProcessorB".into()),
+            NodeKind::Custom("Synthesizer".into()),
         )
         // Synthesizer feeds into End
-        .add_edge(NodeKind::Other("Synthesizer".into()), NodeKind::End)
-        .set_entry(NodeKind::Start)
-        .compile()
-        .map_err(|e| miette::miette!("Graph compilation failed: {e:?}"))?;
+        .add_edge(NodeKind::Custom("Synthesizer".into()), NodeKind::End)
+        // .set_entry(NodeKind::Start) // removed: Start is virtual, no explicit entry required
+        .compile();
 
     println!("   ✓ Complex graph compiled successfully");
     println!("   ✓ Nodes: Start → [Analyzer, ProcessorA] → ProcessorB → Synthesizer → End");

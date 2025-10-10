@@ -14,10 +14,10 @@ async fn test_superstep_propagates_node_error() {
     let mut state = SchedulerState::default();
     let mut nodes: FxHashMap<NodeKind, Arc<dyn Node>> = FxHashMap::default();
     nodes.insert(
-        NodeKind::Other("FAIL".into()),
+        NodeKind::Custom("FAIL".into()),
         Arc::new(FailingNode::default()),
     );
-    let frontier = vec![NodeKind::Other("FAIL".into())];
+    let frontier = vec![NodeKind::Custom("FAIL".into())];
     let snap = create_test_snapshot(1, 1);
 
     let event_bus = EventBus::default();
@@ -75,9 +75,9 @@ async fn test_superstep_skips_end_and_nochange() {
     let mut state = SchedulerState::default();
     let nodes = make_test_registry();
     let frontier = vec![
-        NodeKind::Other("A".into()),
+        NodeKind::Custom("A".into()),
         NodeKind::End,
-        NodeKind::Other("B".into()),
+        NodeKind::Custom("B".into()),
     ];
     let event_bus = EventBus::default();
 
@@ -97,8 +97,8 @@ async fn test_superstep_skips_end_and_nochange() {
 
     // All ran except End
     let ran1: std::collections::HashSet<_> = res1.ran_nodes.iter().cloned().collect();
-    assert!(ran1.contains(&NodeKind::Other("A".into())));
-    assert!(ran1.contains(&NodeKind::Other("B".into())));
+    assert!(ran1.contains(&NodeKind::Custom("A".into())));
+    assert!(ran1.contains(&NodeKind::Custom("B".into())));
     assert!(!ran1.contains(&NodeKind::End));
     assert!(res1.skipped_nodes.contains(&NodeKind::End));
     assert_eq!(res1.outputs.len(), 2);
@@ -119,8 +119,8 @@ async fn test_superstep_skips_end_and_nochange() {
 
     // Both A and B plus End appear in skipped (version-gated or End)
     let skipped2: std::collections::HashSet<_> = res2.skipped_nodes.iter().cloned().collect();
-    assert!(skipped2.contains(&NodeKind::Other("A".into())));
-    assert!(skipped2.contains(&NodeKind::Other("B".into())));
+    assert!(skipped2.contains(&NodeKind::Custom("A".into())));
+    assert!(skipped2.contains(&NodeKind::Custom("B".into())));
     assert!(skipped2.contains(&NodeKind::End));
     assert!(res2.outputs.is_empty());
 
@@ -138,8 +138,8 @@ async fn test_superstep_skips_end_and_nochange() {
         .await
         .unwrap();
     let ran3: std::collections::HashSet<_> = res3.ran_nodes.iter().cloned().collect();
-    assert!(ran3.contains(&NodeKind::Other("A".into())));
-    assert!(ran3.contains(&NodeKind::Other("B".into())));
+    assert!(ran3.contains(&NodeKind::Custom("A".into())));
+    assert!(ran3.contains(&NodeKind::Custom("B".into())));
     assert_eq!(res3.outputs.len(), 2);
 }
 
@@ -148,7 +148,7 @@ async fn test_superstep_outputs_order_agnostic() {
     // Build two nodes with different delays to encourage out-of-order completion.
     let nodes = make_delayed_registry();
 
-    let frontier = vec![NodeKind::Other("A".into()), NodeKind::Other("B".into())];
+    let frontier = vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())];
     let snap = create_test_snapshot(1, 1);
     let sched = Scheduler::new(2);
     let mut state = SchedulerState::default();
@@ -168,13 +168,13 @@ async fn test_superstep_outputs_order_agnostic() {
     // ran_nodes preserves scheduling order (frontier order, after gating)
     assert_eq!(
         res.ran_nodes,
-        vec![NodeKind::Other("A".into()), NodeKind::Other("B".into())]
+        vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())]
     );
 
     // outputs may arrive in any order; validate by ID set, not sequence
     let ids: std::collections::HashSet<_> = res.outputs.iter().map(|(id, _)| id.clone()).collect();
     let expected: std::collections::HashSet<_> =
-        [NodeKind::Other("A".into()), NodeKind::Other("B".into())]
+        [NodeKind::Custom("A".into()), NodeKind::Custom("B".into())]
             .into_iter()
             .collect();
     assert_eq!(ids, expected);
@@ -185,7 +185,7 @@ async fn test_superstep_serialized_with_limit_1() {
     // Two nodes with different delays, but concurrency limit 1 forces serial execution.
     let nodes = make_delayed_registry();
 
-    let frontier = vec![NodeKind::Other("A".into()), NodeKind::Other("B".into())];
+    let frontier = vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())];
     let snap = create_test_snapshot(1, 1);
     let sched = Scheduler::new(1); // force serial execution
     let mut state = SchedulerState::default();
@@ -205,7 +205,7 @@ async fn test_superstep_serialized_with_limit_1() {
     // ran_nodes preserves scheduling order
     assert_eq!(
         res.ran_nodes,
-        vec![NodeKind::Other("A".into()), NodeKind::Other("B".into())]
+        vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())]
     );
 
     // outputs must be in the same order as ran_nodes

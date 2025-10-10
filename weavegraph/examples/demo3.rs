@@ -263,7 +263,7 @@ impl Node for ContentEnhancerNode {
 ///
 /// This demo showcases:
 /// - **External LLM Integration**: Using Ollama for content generation
-/// - **Modern Runtime Config**: SQLite checkpointing with session management  
+/// - **Modern Runtime Config**: SQLite checkpointing with session management
 /// - **Conditional Workflows**: Dynamic routing based on iteration count
 /// - **State Persistence**: Checkpoint-based resumable execution
 /// - **Error Handling**: Robust management of external service calls
@@ -353,25 +353,25 @@ async fn demo() -> Result<()> {
 
     let app = GraphBuilder::new()
         .add_node(
-            NodeKind::Other("ContentGenerator".into()),
+            NodeKind::Custom("ContentGenerator".into()),
             ContentGeneratorNode,
         )
         .add_node(
-            NodeKind::Other("ContentEnhancer".into()),
+            NodeKind::Custom("ContentEnhancer".into()),
             ContentEnhancerNode,
         )
         // Start flows to content generator
-        .add_edge(NodeKind::Start, NodeKind::Other("ContentGenerator".into()))
+        .add_edge(NodeKind::Start, NodeKind::Custom("ContentGenerator".into()))
         // Generator flows to enhancer
         .add_edge(
-            NodeKind::Other("ContentGenerator".into()),
-            NodeKind::Other("ContentEnhancer".into()),
+            NodeKind::Custom("ContentGenerator".into()),
+            NodeKind::Custom("ContentEnhancer".into()),
         )
         // Conditional edge: enhancer loops back to itself or goes to end
         .add_conditional_edge(
-            NodeKind::Other("ContentEnhancer".into()),
+            NodeKind::Custom("ContentEnhancer".into()),
             NodeKind::End,
-            NodeKind::Other("ContentEnhancer".into()),
+            NodeKind::Custom("ContentEnhancer".into()),
             Arc::new(|snapshot: StateSnapshot| {
                 // Continue enhancing if we haven't reached target iterations
                 let current_iterations = serde_json::from_value::<i32>(
@@ -396,10 +396,9 @@ async fn demo() -> Result<()> {
                 current_iterations >= target_iterations
             }),
         )
-        .set_entry(NodeKind::Start)
+        // .set_entry(NodeKind::Start)  // removed: Start is virtual; no explicit entry required
         .with_runtime_config(runtime_config)
-        .compile()
-        .map_err(|e| miette::miette!("Graph compilation failed: {e:?}"))?;
+        .compile();
 
     println!("   ✓ LLM workflow graph compiled successfully");
     println!("   ✓ Nodes: ContentGenerator → ContentEnhancer (conditional loop) → End");

@@ -39,11 +39,10 @@ use tracing::instrument;
 /// #
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let app = GraphBuilder::new()
-///     .add_node(NodeKind::Start, MyNode)
-///     .add_node(NodeKind::End, MyNode)
-///     .add_edge(NodeKind::Start, NodeKind::End)
-///     .set_entry(NodeKind::Start)
-///     .compile()?;
+///     .add_node(NodeKind::Custom("process".into()), MyNode)
+///     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
+///     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
+///     .compile();
 ///
 /// let initial_state = VersionedState::new_with_user_message("Hello");
 /// let final_state = app.invoke(initial_state).await?;
@@ -227,7 +226,7 @@ impl App {
     ///     messages: Some(vec![Message::assistant("test")]),
     ///     ..Default::default()
     /// }];
-    /// let updated_channels = app.apply_barrier(state, &[NodeKind::Start], partials).await
+    /// let updated_channels = app.apply_barrier(state, &[NodeKind::Custom("process".into())], partials).await
     ///     .map_err(|e| format!("Error: {}", e))?;
     /// println!("Updated channels: {:?}", updated_channels);
     /// # Ok(())
@@ -245,7 +244,7 @@ impl App {
         let mut errors_all: Vec<crate::channels::errors::ErrorEvent> = Vec::new();
 
         for (i, p) in node_partials.iter().enumerate() {
-            let fallback = NodeKind::Other("?".to_string());
+            let fallback = NodeKind::Custom("?".to_string());
             let nid = run_ids.get(i).unwrap_or(&fallback);
 
             if let Some(ms) = &p.messages {

@@ -354,28 +354,26 @@ async fn main() -> Result<()> {
 
     let app = GraphBuilder::new()
         .add_node(
-            NodeKind::Other("bootstrapper".into()),
+            NodeKind::Custom("bootstrapper".into()),
             InputBootstrapperNode,
         )
         .add_node(
-            NodeKind::Other("refiner".into()),
+            NodeKind::Custom("refiner".into()),
             OllamaIterativeRefinerNode { max_iterations: 2 },
         )
-        .add_node(NodeKind::End, SummaryPublisherNode)
-        .add_edge(NodeKind::Start, NodeKind::Other("bootstrapper".into()))
+        // End node is virtual; no concrete registration needed
+        .add_edge(NodeKind::Start, NodeKind::Custom("bootstrapper".into()))
         .add_edge(
-            NodeKind::Other("bootstrapper".into()),
-            NodeKind::Other("refiner".into()),
+            NodeKind::Custom("bootstrapper".into()),
+            NodeKind::Custom("refiner".into()),
         )
         .add_conditional_edge(
-            NodeKind::Other("refiner".into()),
-            NodeKind::Other("refiner".into()),
+            NodeKind::Custom("refiner".into()),
+            NodeKind::Custom("refiner".into()),
             NodeKind::End,
             Arc::clone(&refinement_predicate),
         )
-        .set_entry(NodeKind::Start)
-        .compile()
-        .map_err(|e| miette::miette!("Ollama workflow compilation failed: {e:?}"))?;
+        .compile();
 
     println!("   ✓ Ollama streaming workflow compiled");
     println!("   ✓ Pipeline: Bootstrapper → Refiner (iterative) → End");
