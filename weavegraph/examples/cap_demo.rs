@@ -57,7 +57,7 @@ impl Node for InputBootstrapperNode {
 
         ctx.emit(
             "bootstrap_user_input",
-            &format!("User input: {}", user_input),
+            format!("User input: {}", user_input),
         )?;
 
         let initial_content = format!(
