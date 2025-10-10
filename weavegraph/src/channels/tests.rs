@@ -40,12 +40,12 @@ fn ladder_error_serde_roundtrip() {
 fn error_scope_enum_variants_serde() {
     // Node scope with kind encoded externally as string
     let node = ErrorScope::Node {
-        kind: "Other:Parser".into(),
+        kind: "Custom:Parser".into(),
         step: 42,
     };
     let ser_node = serde_json::to_value(&node).unwrap();
     assert_eq!(ser_node["scope"], "node");
-    assert_eq!(ser_node["kind"], "Other:Parser");
+    assert_eq!(ser_node["kind"], "Custom:Parser");
     assert_eq!(ser_node["step"], 42);
 
     // Scheduler

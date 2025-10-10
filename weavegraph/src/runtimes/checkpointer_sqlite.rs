@@ -46,7 +46,7 @@ The checkpoint data maps to database tables as follows:
 NodeKinds are encoded as strings for JSON storage:
 - `Start` → `"Start"`
 - `End` → `"End"`
-- `Other(name)` → `"Other:<name>"`
+- `Custom(name)` → `"Custom:<name>"`
 */
 
 use std::sync::Arc;

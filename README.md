@@ -1,5 +1,10 @@
 # Weavegraph
 
+> NOTE: `NodeKind::Start` and `NodeKind::End` are virtual structural endpoints.  
+> You never register them with `add_node`; attempts to do so are ignored with a warning.  
+> Define only your executable (custom) nodes and connect them with edges from `Start` and to `End`.
+
+
 [![Crates.io](https://img.shields.io/crates/v/weavegraph.svg)](https://crates.io/crates/weavegraph)
 [![Documentation](https://docs.rs/weavegraph/badge.svg)](https://docs.rs/weavegraph)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -65,18 +70,20 @@ impl Node for GreetingNode {
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
-    // Build a simple graph
-    let graph = GraphBuilder::new()
-        .add_node("greet", GreetingNode)
-        .set_entry_point("greet")
-        .build()?;
+    // Build a simple graph with a virtual Start -> greet -> End topology.
+    use weavegraph::types::NodeKind;
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("greet".into()), GreetingNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("greet".into()))
+        .add_edge(NodeKind::Custom("greet".into()), NodeKind::End)
+        .compile();
 
     // Create initial state and run
     let state = VersionedState::new_with_user_message("Hello, system!");
-    let result = graph.invoke(state).await?;
+    let result = app.invoke(state).await?;
 
     // Access results
-    for message in result.messages {
+    for message in result.messages.snapshot() {
         println!("{}: {}", message.role, message.content);
     }
 
@@ -145,8 +152,11 @@ let graph = GraphBuilder::new()
             "respond"
         }
     })
-    .set_entry_point("input")
-    .build()?;
+    // Virtual Start/End: connect from Start and into End explicitly.
+    .add_edge(NodeKind::Start, NodeKind::Custom("input".into()))
+    .add_edge(NodeKind::Custom("input".into()), NodeKind::Custom("analyze".into()))
+    .add_edge(NodeKind::Custom("respond".into()), NodeKind::End)
+    .compile();
 ```
 
 ## 🔧 Examples

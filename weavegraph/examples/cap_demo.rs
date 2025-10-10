@@ -303,6 +303,7 @@ impl Node for OllamaIterativeRefinerNode {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct SummaryPublisherNode;
 
 #[async_trait]

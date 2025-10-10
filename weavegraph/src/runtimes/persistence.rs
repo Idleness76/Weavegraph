@@ -328,7 +328,8 @@ mod tests {
             NodeKind::Start,
             NodeKind::End,
             NodeKind::Custom("Alpha".into()),
-            NodeKind::Custom("Other:Nested".into()),
+            // Forward-compat style previously used "Other:Nested"; updated to "Custom:Nested"
+            NodeKind::Custom("Custom:Nested".into()),
         ];
         for k in kinds {
             let enc = k.encode();
@@ -349,7 +350,7 @@ mod tests {
             Just(NodeKind::Start),
             Just(NodeKind::End),
             base.clone().prop_map(NodeKind::Custom),
-            base.prop_map(|s| NodeKind::Custom(format!("Other:{s}"))),
+            base.prop_map(|s| NodeKind::Custom(format!("Custom:{s}"))),
         ]
     }
 

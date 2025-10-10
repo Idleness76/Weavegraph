@@ -662,6 +662,7 @@ mod tests {
 
     // Simple test nodes for runner testing
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     struct NodeA;
 
     #[async_trait]
@@ -686,6 +687,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     struct NodeB;
 
     #[async_trait]
@@ -1020,7 +1022,7 @@ mod tests {
 
         // Verify it's the failing node "X"
         if let crate::channels::errors::ErrorScope::Node { kind, step } = &error_event.scope {
-            assert_eq!(kind, "Other:X");
+            assert_eq!(kind, "Custom:X");
             assert_eq!(*step, 1);
         }
     }

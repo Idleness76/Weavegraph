@@ -232,20 +232,6 @@ impl Default for GraphBuilder {
     }
 }
 
-#[derive(Debug)]
-struct VirtualNode;
-
-#[async_trait::async_trait]
-impl Node for VirtualNode {
-    async fn run(
-        &self,
-        _snapshot: crate::state::StateSnapshot,
-        _ctx: crate::node::NodeContext,
-    ) -> Result<crate::node::NodePartial, crate::node::NodeError> {
-        Ok(crate::node::NodePartial::default())
-    }
-}
-
 impl GraphBuilder {
     /// Creates a new, empty graph builder.
     ///
@@ -333,6 +319,12 @@ impl GraphBuilder {
 
     /// Adds a node to the graph.
     ///
+    /// NOTE: `NodeKind::Start` and `NodeKind::End` are virtual structural endpoints.
+    /// If either is passed to `add_node`, the registration is ignored and a warning
+    /// is emitted. They are not stored in the node registry and are never executed;
+    /// the scheduler skips them automatically while still allowing edges from
+    /// `Start` and to `End` for topology.
+    ///
     /// Registers a node implementation with the given identifier. Each node
     /// must have a unique [`NodeKind`] identifier within the graph. The node
     /// implementation must implement the [`Node`] trait.
@@ -370,16 +362,19 @@ impl GraphBuilder {
     /// ```
     #[must_use]
     pub fn add_node(mut self, id: NodeKind, node: impl Node + 'static) -> Self {
-        if id.is_start() || id.is_end() {
-            // Virtual nodes should not have concrete implementations supplied.
-            // We log a warning (once per GraphBuilder path) and ensure a placeholder exists.
-            tracing::warn!(?id, "Ignoring registration of virtual node; Start/End are virtual and managed automatically");
-            self.nodes
-                .entry(id)
-                .or_insert_with(|| Arc::new(VirtualNode));
-            return self;
+        // Ignore attempts to register virtual Start/End node kinds; emit a warning.
+        match id {
+            NodeKind::Start | NodeKind::End => {
+                tracing::warn!(
+                    ?id,
+                    "Ignoring registration of virtual node kind (Start/End are virtual)"
+                );
+                // Do not insert into registry.
+            }
+            _ => {
+                self.nodes.insert(id, Arc::new(node));
+            }
         }
-        self.nodes.insert(id, Arc::new(node));
         self
     }
 
@@ -518,30 +513,7 @@ impl GraphBuilder {
     ///
     /// // App is ready for execution
     /// ```
-    pub fn compile(mut self) -> App {
-        // Auto-inject virtual placeholder nodes if Start/End appear in topology
-        let mut needed: Vec<NodeKind> = Vec::new();
-        for (from, tos) in &self.edges {
-            if from.is_start() || from.is_end() {
-                needed.push(from.clone());
-            }
-            for t in tos {
-                if t.is_start() || t.is_end() {
-                    needed.push(t.clone());
-                }
-            }
-        }
-        for ce in &self.conditional_edges {
-            for k in [&ce.from, &ce.yes, &ce.no] {
-                if k.is_start() || k.is_end() {
-                    needed.push(k.clone());
-                }
-            }
-        }
-        for k in needed {
-            self.nodes.entry(k).or_insert_with(|| Arc::new(VirtualNode));
-        }
-
+    pub fn compile(self) -> App {
         App::from_parts(
             self.nodes,
             self.edges,
@@ -678,11 +650,8 @@ mod tests {
     /// that the resulting App contains the expected nodes and edges.
     fn test_compile() {
         let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
-        // Start/End are virtual; no concrete node registrations required.
         let app = gb.compile();
-        assert_eq!(app.nodes().len(), 2);
-        assert!(app.nodes().contains_key(&NodeKind::Start));
-        assert!(app.nodes().contains_key(&NodeKind::End));
+        // Only edge topology is guaranteed when using virtual Start/End.
         assert_eq!(app.edges().len(), 1);
         assert!(app
             .edges()
@@ -710,7 +679,8 @@ mod tests {
     fn test_compile_entry_not_registered() {
         let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
         let app = gb.compile();
-        assert!(app.edges().contains_key(&NodeKind::Start));
+        // Virtual Start/End: verify edge topology only
+        assert_eq!(app.edges().len(), 1);
     }
 
     #[test]

@@ -31,7 +31,7 @@
 //!
 //! // Encode for persistence
 //! let encoded = custom.encode();
-//! assert_eq!(encoded, "Other:ProcessData");
+//! assert_eq!(encoded, "Custom:ProcessData");
 //!
 //! // Work with channels
 //! let msg_channel = ChannelType::Message;
@@ -97,21 +97,21 @@ impl NodeKind {
     /// The encoding format is human-readable and forward-compatible:
     /// - `Start` → `"Start"`
     /// - `End` → `"End"`
-    /// - `Other("X")` → `"Other:X"`
+    /// - `Custom("X")` → `"Custom:X"`
     ///
     /// # Examples
     ///
     /// ```rust
     /// # use weavegraph::types::NodeKind;
     /// assert_eq!(NodeKind::Start.encode(), "Start");
-    /// assert_eq!(NodeKind::Custom("Processor".to_string()).encode(), "Other:Processor");
+    /// assert_eq!(NodeKind::Custom("Processor".to_string()).encode(), "Custom:Processor");
     /// ```
     #[must_use]
     pub fn encode(&self) -> String {
         match self {
             NodeKind::Start => "Start".to_string(),
             NodeKind::End => "End".to_string(),
-            NodeKind::Custom(s) => format!("Other:{s}"),
+            NodeKind::Custom(s) => format!("Custom:{s}"),
         }
     }
 
@@ -125,7 +125,7 @@ impl NodeKind {
     /// ```rust
     /// # use weavegraph::types::NodeKind;
     /// assert_eq!(NodeKind::decode("Start"), NodeKind::Start);
-    /// assert_eq!(NodeKind::decode("Other:Processor"), NodeKind::Custom("Processor".to_string()));
+    /// assert_eq!(NodeKind::decode("Custom:Processor"), NodeKind::Custom("Processor".to_string()));
     ///
     /// // Forward compatibility - unknown formats become Other
     /// assert_eq!(NodeKind::decode("Unknown"), NodeKind::Custom("Unknown".to_string()));
@@ -135,7 +135,7 @@ impl NodeKind {
             NodeKind::Start
         } else if s == "End" {
             NodeKind::End
-        } else if let Some(rest) = s.strip_prefix("Other:") {
+        } else if let Some(rest) = s.strip_prefix("Custom:") {
             NodeKind::Custom(rest.to_string())
         } else {
             NodeKind::Custom(s.to_string())
@@ -244,7 +244,10 @@ mod tests {
         let test_cases = vec![
             (NodeKind::Start, "Start"),
             (NodeKind::End, "End"),
-            (NodeKind::Custom("Processor".to_string()), "Other:Processor"),
+            (
+                NodeKind::Custom("Processor".to_string()),
+                "Custom:Processor",
+            ),
         ];
 
         for (node, expected) in test_cases {
