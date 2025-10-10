@@ -88,8 +88,8 @@ use crate::types::*;
 
 /// Predicate function for conditional edge routing.
 ///
-/// Takes a [`StateSnapshot`] and returns the target node name to determine
-/// which node should be executed next. Predicates are used with
+/// Takes a [`StateSnapshot`] and returns target node names to determine
+/// which nodes should be executed next. Predicates are used with
 /// [`GraphBuilder::add_conditional_edge`] to create dynamic routing based
 /// on the current state.
 ///
@@ -102,28 +102,29 @@ use crate::types::*;
 /// // Route based on message count
 /// let route_by_messages: EdgePredicate = Arc::new(|snapshot| {
 ///     if snapshot.messages.len() > 5 {
-///         "many_messages".to_string()
+///         vec!["many_messages".to_string()]
 ///     } else {
-///         "few_messages".to_string()
+///         vec!["few_messages".to_string()]
 ///     }
 /// });
 ///
-/// // Route based on extra data
+/// // Route based on extra data - fan out to multiple nodes
 /// let route_by_error: EdgePredicate = Arc::new(|snapshot| {
 ///     if snapshot.extra.get("error").is_some() {
-///         "error_handler".to_string()
+///         vec!["error_handler".to_string(), "logger".to_string()]
 ///     } else {
-///         "normal_flow".to_string()
+///         vec!["normal_flow".to_string()]
 ///     }
 /// });
 /// ```
-pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> String + Send + Sync + 'static>;
+pub type EdgePredicate =
+    Arc<dyn Fn(crate::state::StateSnapshot) -> Vec<String> + Send + Sync + 'static>;
 
 /// A conditional edge that routes based on a predicate function.
 ///
 /// Conditional edges allow dynamic routing in workflows based on the current
 /// state. When the scheduler encounters a conditional edge, it evaluates the
-/// predicate function and routes to the returned target node.
+/// predicate function and routes to the returned target nodes.
 ///
 /// # Examples
 ///
@@ -134,9 +135,9 @@ pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> String + Sen
 ///
 /// let predicate: EdgePredicate = Arc::new(|snapshot| {
 ///     if snapshot.messages.len() > 5 {
-///         "many_messages".to_string()
+///         vec!["many_messages".to_string()]
 ///     } else {
-///         "few_messages".to_string()
+///         vec!["few_messages".to_string()]
 ///     }
 /// });
 /// let edge = ConditionalEdge {
@@ -262,12 +263,12 @@ impl GraphBuilder {
     /// Conditional edges enable dynamic routing based on the current state.
     /// When execution reaches the `from` node, the `predicate` function is
     /// evaluated with the current [`StateSnapshot`] and returns the target
-    /// node name for routing.
+    /// node names for routing.
     ///
     /// # Parameters
     ///
     /// - `from`: The source node for the conditional edge
-    /// - `predicate`: Function that determines target node based on state
+    /// - `predicate`: Function that determines target nodes based on state
     ///
     /// # Examples
     ///
@@ -286,9 +287,9 @@ impl GraphBuilder {
     ///
     /// let predicate: EdgePredicate = Arc::new(|snapshot| {
     ///     if snapshot.messages.len() > 5 {
-    ///         "many_messages".to_string()
+    ///         vec!["many_messages".to_string()]
     ///     } else {
-    ///         "few_messages".to_string()
+    ///         vec!["few_messages".to_string()]
     ///     }
     /// });
     ///
@@ -556,7 +557,7 @@ mod tests {
     fn test_add_conditional_edge() {
         use crate::state::StateSnapshot;
         let route_to_y: super::EdgePredicate =
-            std::sync::Arc::new(|_s: StateSnapshot| "Y".to_string());
+            std::sync::Arc::new(|_s: StateSnapshot| vec!["Y".to_string()]);
         let gb = super::GraphBuilder::new()
             .add_node(super::NodeKind::Custom("Y".into()), NodeA)
             .add_node(super::NodeKind::Custom("N".into()), NodeA)
@@ -564,7 +565,7 @@ mod tests {
         assert_eq!(gb.conditional_edges.len(), 1);
         let ce = &gb.conditional_edges[0];
         assert_eq!(ce.from, super::NodeKind::Start);
-        // Predicate should return "Y"
+        // Predicate should return ["Y"]
         let snap = StateSnapshot {
             messages: vec![],
             messages_version: 1,
@@ -573,7 +574,7 @@ mod tests {
             errors: vec![],
             errors_version: 1,
         };
-        assert_eq!((ce.predicate)(snap), "Y");
+        assert_eq!((ce.predicate)(snap), vec!["Y".to_string()]);
     }
 
     #[test]
