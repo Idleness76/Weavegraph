@@ -518,10 +518,34 @@ impl AppRunner {
             for ce in conditional_edges.iter().filter(|ce| &ce.from == id) {
                 println!("running conditional edge from {:?}", ce.from);
                 let target_name = (ce.predicate)(snapshot.clone());
-                let target = NodeKind::Custom(target_name.clone());
+
+                // Convert target name to NodeKind
+                let target = if target_name == "End" {
+                    NodeKind::End
+                } else if target_name == "Start" {
+                    NodeKind::Start
+                } else {
+                    NodeKind::Custom(target_name.clone())
+                };
+
                 println!("conditional edge routing to {:?}", &target);
-                if !next_frontier.contains(&target) {
-                    next_frontier.push(target);
+
+                // Validate that the target node exists or is a virtual endpoint
+                let is_valid_target = match &target {
+                    NodeKind::End | NodeKind::Start => true, // Virtual endpoints are always valid
+                    NodeKind::Custom(_) => {
+                        // Check if the node is registered in the app
+                        self.app.nodes().contains_key(&target)
+                    }
+                };
+
+                if is_valid_target {
+                    if !next_frontier.contains(&target) {
+                        next_frontier.push(target);
+                    }
+                } else {
+                    // Log a warning but don't fail the execution
+                    println!("Warning: Conditional edge target '{}' does not exist in the graph. Skipping.", target_name);
                 }
             }
         }
