@@ -46,7 +46,7 @@ The checkpoint data maps to database tables as follows:
 NodeKinds are encoded as strings for JSON storage:
 - `Start` → `"Start"`
 - `End` → `"End"`
-- `Other(name)` → `"Other:<name>"`
+- `Custom(name)` → `"Custom:<name>"`
 */
 
 use std::sync::Arc;
@@ -484,10 +484,10 @@ impl SQLiteCheckpointer {
 
         // Query with pagination
         let select_sql = format!(
-            r#"SELECT 
+            r#"SELECT
                 session_id, step, state_json, frontier_json, versions_seen_json,
                 ran_nodes_json, skipped_nodes_json, updated_channels_json, created_at
-               FROM steps 
+               FROM steps
                WHERE {where_clause}
                ORDER BY step DESC
                LIMIT {limit} OFFSET {offset}"#
@@ -969,7 +969,7 @@ mod tests {
             versions_seen: FxHashMap::default(),
             concurrency_limit: 2,
             created_at: Utc::now(),
-            ran_nodes: vec![NodeKind::Start, NodeKind::Other("TestNode".into())],
+            ran_nodes: vec![NodeKind::Start, NodeKind::Custom("TestNode".into())],
             skipped_nodes: vec![NodeKind::End],
             updated_channels: vec!["messages".to_string(), "extra".to_string()],
         };
@@ -991,7 +991,7 @@ mod tests {
         let loaded = &result.checkpoints[0];
         assert_eq!(
             loaded.ran_nodes,
-            vec![NodeKind::Start, NodeKind::Other("TestNode".into())]
+            vec![NodeKind::Start, NodeKind::Custom("TestNode".into())]
         );
         assert_eq!(loaded.skipped_nodes, vec![NodeKind::End]);
         assert_eq!(
@@ -1087,7 +1087,7 @@ mod tests {
                 ran_nodes: if step <= 5 {
                     vec![NodeKind::Start]
                 } else {
-                    vec![NodeKind::Other("TestNode".into())]
+                    vec![NodeKind::Custom("TestNode".into())]
                 },
                 skipped_nodes: vec![NodeKind::End],
                 updated_channels: vec!["messages".to_string()],

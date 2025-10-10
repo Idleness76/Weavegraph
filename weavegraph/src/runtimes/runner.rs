@@ -662,6 +662,7 @@ mod tests {
 
     // Simple test nodes for runner testing
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     struct NodeA;
 
     #[async_trait]
@@ -686,6 +687,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
+    #[allow(dead_code)]
     struct NodeB;
 
     #[async_trait]
@@ -711,13 +713,11 @@ mod tests {
 
     fn make_test_app() -> App {
         let mut builder = GraphBuilder::new();
-        builder = builder.add_node(NodeKind::Start, NodeA);
-        builder = builder.add_node(NodeKind::Other("test".into()), TestNode { name: "test" });
-        builder = builder.add_node(NodeKind::End, NodeB);
-        builder = builder.add_edge(NodeKind::Start, NodeKind::Other("test".into()));
-        builder = builder.add_edge(NodeKind::Other("test".into()), NodeKind::End);
-        builder = builder.set_entry(NodeKind::Start);
-        builder.compile().unwrap()
+        builder = builder.add_node(NodeKind::Custom("test".into()), TestNode { name: "test" });
+        // NodeKind::End is virtual; no concrete node registration needed
+        builder = builder.add_edge(NodeKind::Start, NodeKind::Custom("test".into()));
+        builder = builder.add_edge(NodeKind::Custom("test".into()), NodeKind::End);
+        builder.compile()
     }
 
     #[tokio::test]
@@ -726,18 +726,18 @@ mod tests {
         let pred: EdgePredicate =
             std::sync::Arc::new(|snap: StateSnapshot| snap.extra.contains_key("go_yes"));
         let gb = GraphBuilder::new()
-            .add_node(NodeKind::Start, TestNode { name: "start" })
-            .add_node(NodeKind::Other("Y".into()), TestNode { name: "yes path" })
-            .add_node(NodeKind::Other("N".into()), TestNode { name: "no path" })
-            .add_edge(NodeKind::Start, NodeKind::Start) // Add unconditional edge to START itself for initial frontier
+            .add_node(NodeKind::Custom("Root".into()), TestNode { name: "root" })
+            .add_node(NodeKind::Custom("Y".into()), TestNode { name: "yes path" })
+            .add_node(NodeKind::Custom("N".into()), TestNode { name: "no path" })
+            // Edge from virtual Start to an actual executable root node so conditional routing can trigger
+            .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
             .add_conditional_edge(
-                NodeKind::Start,
-                NodeKind::Other("Y".into()),
-                NodeKind::Other("N".into()),
+                NodeKind::Custom("Root".into()),
+                NodeKind::Custom("Y".into()),
+                NodeKind::Custom("N".into()),
                 pred.clone(),
-            )
-            .set_entry(NodeKind::Start);
-        let app = gb.compile().unwrap();
+            );
+        let app = gb.compile();
         let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
         // State with go_yes present
         let mut state = VersionedState::new_with_user_message("hi");
@@ -758,8 +758,8 @@ mod tests {
             .await
             .unwrap();
         if let StepResult::Completed(rep) = report {
-            assert!(rep.next_frontier.contains(&NodeKind::Other("Y".into())));
-            assert!(!rep.next_frontier.contains(&NodeKind::Other("N".into())));
+            assert!(rep.next_frontier.contains(&NodeKind::Custom("Y".into())));
+            assert!(!rep.next_frontier.contains(&NodeKind::Custom("N".into())));
         } else {
             panic!("Expected completed step");
         }
@@ -778,8 +778,8 @@ mod tests {
             .await
             .unwrap();
         if let StepResult::Completed(rep2) = report2 {
-            assert!(rep2.next_frontier.contains(&NodeKind::Other("N".into())));
-            assert!(!rep2.next_frontier.contains(&NodeKind::Other("Y".into())));
+            assert!(rep2.next_frontier.contains(&NodeKind::Custom("N".into())));
+            assert!(!rep2.next_frontier.contains(&NodeKind::Custom("Y".into())));
         } else {
             panic!("Expected completed step");
         }
@@ -865,7 +865,7 @@ mod tests {
 
         // Set interrupt before the test node
         let options = StepOptions {
-            interrupt_before: vec![NodeKind::Other("test".into())],
+            interrupt_before: vec![NodeKind::Custom("test".into())],
             ..Default::default()
         };
 
@@ -895,7 +895,7 @@ mod tests {
 
         // Set interrupt after the "test" node (which runs in the first step)
         let options = StepOptions {
-            interrupt_after: vec![NodeKind::Other("test".into())],
+            interrupt_after: vec![NodeKind::Custom("test".into())],
             ..Default::default()
         };
 
@@ -985,11 +985,11 @@ mod tests {
     #[tokio::test]
     async fn test_error_event_appended_on_failure() {
         let mut gb = GraphBuilder::new();
-        gb = gb.add_node(NodeKind::Start, NodeA);
-        gb = gb.add_node(NodeKind::Other("X".into()), FailingNode::default());
-        gb = gb.add_edge(NodeKind::Start, NodeKind::Other("X".into()));
-        gb = gb.set_entry(NodeKind::Start);
-        let app = gb.compile().unwrap();
+
+        gb = gb.add_node(NodeKind::Custom("X".into()), FailingNode::default());
+        gb = gb.add_edge(NodeKind::Start, NodeKind::Custom("X".into()));
+
+        let app = gb.compile();
         let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
         let initial_state = VersionedState::new_with_user_message("hello");
 
@@ -1022,7 +1022,7 @@ mod tests {
 
         // Verify it's the failing node "X"
         if let crate::channels::errors::ErrorScope::Node { kind, step } = &error_event.scope {
-            assert_eq!(kind, "Other:X");
+            assert_eq!(kind, "Custom:X");
             assert_eq!(*step, 1);
         }
     }

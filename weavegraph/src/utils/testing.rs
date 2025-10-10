@@ -145,11 +145,11 @@ impl Node for RichNode {
 pub fn make_test_registry() -> FxHashMap<NodeKind, Arc<dyn Node>> {
     let mut registry = FxHashMap::default();
     registry.insert(
-        NodeKind::Other("A".into()),
+        NodeKind::Custom("A".into()),
         Arc::new(TestNode { name: "A" }) as Arc<dyn Node>,
     );
     registry.insert(
-        NodeKind::Other("B".into()),
+        NodeKind::Custom("B".into()),
         Arc::new(TestNode { name: "B" }) as Arc<dyn Node>,
     );
     registry.insert(
@@ -165,14 +165,14 @@ pub fn make_test_registry() -> FxHashMap<NodeKind, Arc<dyn Node>> {
 pub fn make_delayed_registry() -> FxHashMap<NodeKind, Arc<dyn Node>> {
     let mut registry = FxHashMap::default();
     registry.insert(
-        NodeKind::Other("A".into()),
+        NodeKind::Custom("A".into()),
         Arc::new(DelayedNode {
             name: "A",
             delay_ms: 30,
         }) as Arc<dyn Node>,
     );
     registry.insert(
-        NodeKind::Other("B".into()),
+        NodeKind::Custom("B".into()),
         Arc::new(DelayedNode {
             name: "B",
             delay_ms: 1,

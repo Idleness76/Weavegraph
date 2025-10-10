@@ -278,37 +278,36 @@ pub async fn run_demo5() -> Result<()> {
     let generate_node = GenerateAnswerNode;
 
     let app = GraphBuilder::new()
-        .add_node(NodeKind::Other("Scrape".into()), scrape_node)
-        .add_node(NodeKind::Other("Chunk".into()), chunk_node)
-        .add_node(NodeKind::Other("Store".into()), store_node)
-        .add_node(NodeKind::Other("Retrieve".into()), retrieve_node)
-        .add_node(NodeKind::Other("GenerateAnswer".into()), generate_node)
-        .add_edge(NodeKind::Start, NodeKind::Other("Scrape".into()))
+        .add_node(NodeKind::Custom("Scrape".into()), scrape_node)
+        .add_node(NodeKind::Custom("Chunk".into()), chunk_node)
+        .add_node(NodeKind::Custom("Store".into()), store_node)
+        .add_node(NodeKind::Custom("Retrieve".into()), retrieve_node)
+        .add_node(NodeKind::Custom("GenerateAnswer".into()), generate_node)
+        .add_edge(NodeKind::Start, NodeKind::Custom("Scrape".into()))
         .add_edge(
-            NodeKind::Other("Scrape".into()),
-            NodeKind::Other("Chunk".into()),
+            NodeKind::Custom("Scrape".into()),
+            NodeKind::Custom("Chunk".into()),
         )
         .add_edge(
-            NodeKind::Other("Chunk".into()),
-            NodeKind::Other("Store".into()),
+            NodeKind::Custom("Chunk".into()),
+            NodeKind::Custom("Store".into()),
         )
         .add_edge(
-            NodeKind::Other("Store".into()),
-            NodeKind::Other("Retrieve".into()),
+            NodeKind::Custom("Store".into()),
+            NodeKind::Custom("Retrieve".into()),
         )
         .add_edge(
-            NodeKind::Other("Retrieve".into()),
-            NodeKind::Other("GenerateAnswer".into()),
+            NodeKind::Custom("Retrieve".into()),
+            NodeKind::Custom("GenerateAnswer".into()),
         )
-        .add_edge(NodeKind::Other("GenerateAnswer".into()), NodeKind::End)
-        .set_entry(NodeKind::Start)
+        .add_edge(NodeKind::Custom("GenerateAnswer".into()), NodeKind::End)
+        // .set_entry(NodeKind::Start)  // removed: Start is virtual; explicit entry no longer required
         .with_runtime_config(RuntimeConfig {
             session_id: Some("scrape6".to_string()),
             checkpointer: Some(CheckpointerType::SQLite),
             sqlite_db_name: None,
         })
-        .compile()
-        .map_err(|err| miette::miette!("{err:?}"))?;
+        .compile();
 
     let initial_state = VersionedState::new_with_user_message(&query);
 

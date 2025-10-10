@@ -78,7 +78,7 @@ use tracing::instrument;
 ///     println!("Executed {} nodes, skipped {}",
 ///              result.ran_nodes.len(),
 ///              result.skipped_nodes.len());
-///     
+///
 ///     for (node_kind, partial) in &result.outputs {
 ///         if let Some(messages) = &partial.messages {
 ///             println!("Node {:?} produced {} messages", node_kind, messages.len());
@@ -225,7 +225,7 @@ pub enum SchedulerError {
     ///
     /// # Fields
     /// - `kind`: The type of node that failed
-    /// - `step`: The workflow step number when the failure occurred  
+    /// - `step`: The workflow step number when the failure occurred
     /// - `source`: The underlying `NodeError` that caused the failure
     #[error("node run error at step {step} for {kind:?}: {source}")]
     #[diagnostic(code(weavegraph::scheduler::node))]
@@ -476,9 +476,9 @@ impl Scheduler {
     /// let nodes = FxHashMap::default(); // Node registry
     /// let event_bus = EventBus::default();
     ///
-    /// let frontier = vec![NodeKind::Start, NodeKind::Other("process".into())];
+    /// let frontier = vec![NodeKind::Start, NodeKind::Custom("process".into())];
     /// let snapshot = StateSnapshot {
-    ///     messages: vec![],
+    ///     messages: vec![], // initial messages
     ///     messages_version: 1,
     ///     extra: FxHashMap::default(),
     ///     extra_version: 1,
@@ -519,7 +519,8 @@ impl Scheduler {
     ) -> Result<StepRunResult, SchedulerError> {
         // Partition frontier into to_run vs skipped using a skip predicate and version gating.
         let channels = Self::channel_versions(&snap);
-        let skip_predicate = |k: &NodeKind| matches!(k, NodeKind::End);
+        // Skip virtual Start and End nodes (they are not executed, only structural)
+        let skip_predicate = |k: &NodeKind| matches!(k, NodeKind::Start | NodeKind::End);
         let mut to_run: Vec<NodeKind> = Vec::new();
         let mut skipped_kinds: Vec<NodeKind> = Vec::new();
         for k in frontier.into_iter() {

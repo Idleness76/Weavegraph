@@ -79,14 +79,13 @@ impl Node for StreamingGeneratorNode {
         ctx.emit("streaming_start", "Initializing streaming LLM generation")?;
 
         // Extract user input with validation
-        let user_prompt =
-            snapshot
-                .messages
-                .iter()
-                .find(|msg| msg.has_role(Message::USER))
-                .ok_or(NodeError::MissingInput {
-                    what: "user_prompt",
-                })?;
+        let user_prompt = snapshot
+            .messages
+            .iter()
+            .find(|msg| msg.has_role(Message::USER))
+            .ok_or(NodeError::MissingInput {
+                what: "user_prompt",
+            })?;
 
         ctx.emit(
             "prompt_extracted",
@@ -826,26 +825,24 @@ async fn demo() -> Result<()> {
 
     let app = GraphBuilder::new()
         .add_node(
-            NodeKind::Other("StreamingGenerator".into()),
+            NodeKind::Custom("StreamingGenerator".into()),
             StreamingGeneratorNode,
         )
         .add_node(
-            NodeKind::Other("StreamingEnhancer".into()),
+            NodeKind::Custom("StreamingEnhancer".into()),
             StreamingEnhancerNode,
         )
         .add_edge(
             NodeKind::Start,
-            NodeKind::Other("StreamingGenerator".into()),
+            NodeKind::Custom("StreamingGenerator".into()),
         )
         .add_edge(
-            NodeKind::Other("StreamingGenerator".into()),
-            NodeKind::Other("StreamingEnhancer".into()),
+            NodeKind::Custom("StreamingGenerator".into()),
+            NodeKind::Custom("StreamingEnhancer".into()),
         )
-        .add_edge(NodeKind::Other("StreamingEnhancer".into()), NodeKind::End)
-        .set_entry(NodeKind::Start)
+        .add_edge(NodeKind::Custom("StreamingEnhancer".into()), NodeKind::End)
         .with_runtime_config(runtime_config)
-        .compile()
-        .map_err(|e| miette::miette!("Advanced workflow compilation failed: {e:?}"))?;
+        .compile();
 
     println!("   ✓ Streaming workflow compiled");
     println!("   ✓ Pipeline: Generator → Enhancer → End");

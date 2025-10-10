@@ -26,12 +26,12 @@
 //!
 //! // Create different types of nodes
 //! let start = NodeKind::Start;
-//! let custom = NodeKind::Other("ProcessData".to_string());
+//! let custom = NodeKind::Custom("ProcessData".to_string());
 //! let end = NodeKind::End;
 //!
 //! // Encode for persistence
 //! let encoded = custom.encode();
-//! assert_eq!(encoded, "Other:ProcessData");
+//! assert_eq!(encoded, "Custom:ProcessData");
 //!
 //! // Work with channels
 //! let msg_channel = ChannelType::Message;
@@ -62,7 +62,7 @@ use std::fmt;
 /// let end = NodeKind::End;
 ///
 /// // Custom application nodes
-/// let processor = NodeKind::Other("DataProcessor".to_string());
+/// let processor = NodeKind::Custom("DataProcessor".to_string());
 ///
 /// // Persistence round-trip
 /// let encoded = processor.encode();
@@ -73,13 +73,14 @@ use std::fmt;
 pub enum NodeKind {
     /// Entry point node that begins workflow execution.
     ///
-    /// Start nodes have no incoming edges and serve as the initial
+    /// Start nodes are virtual nodes that should not be implemented, they have no incoming edges and serve as the initial
     /// frontier for workflow execution.
+    /// The first edge for each graph execution must start from a virtual Start node.
     Start,
 
     /// Terminal node that completes workflow execution.
     ///
-    /// End nodes typically have no outgoing edges and signal
+    /// End nodes are virtual nodes that should not be implemented, they have no outgoing edges and signal
     /// the completion of a workflow branch.
     End,
 
@@ -87,7 +88,7 @@ pub enum NodeKind {
     ///
     /// The string should be descriptive and unique within the workflow.
     /// Common patterns include function names, service names, or step descriptions.
-    Other(String),
+    Custom(String),
 }
 
 impl NodeKind {
@@ -96,21 +97,21 @@ impl NodeKind {
     /// The encoding format is human-readable and forward-compatible:
     /// - `Start` → `"Start"`
     /// - `End` → `"End"`
-    /// - `Other("X")` → `"Other:X"`
+    /// - `Custom("X")` → `"Custom:X"`
     ///
     /// # Examples
     ///
     /// ```rust
     /// # use weavegraph::types::NodeKind;
     /// assert_eq!(NodeKind::Start.encode(), "Start");
-    /// assert_eq!(NodeKind::Other("Processor".to_string()).encode(), "Other:Processor");
+    /// assert_eq!(NodeKind::Custom("Processor".to_string()).encode(), "Custom:Processor");
     /// ```
     #[must_use]
     pub fn encode(&self) -> String {
         match self {
             NodeKind::Start => "Start".to_string(),
             NodeKind::End => "End".to_string(),
-            NodeKind::Other(s) => format!("Other:{s}"),
+            NodeKind::Custom(s) => format!("Custom:{s}"),
         }
     }
 
@@ -124,20 +125,20 @@ impl NodeKind {
     /// ```rust
     /// # use weavegraph::types::NodeKind;
     /// assert_eq!(NodeKind::decode("Start"), NodeKind::Start);
-    /// assert_eq!(NodeKind::decode("Other:Processor"), NodeKind::Other("Processor".to_string()));
+    /// assert_eq!(NodeKind::decode("Custom:Processor"), NodeKind::Custom("Processor".to_string()));
     ///
     /// // Forward compatibility - unknown formats become Other
-    /// assert_eq!(NodeKind::decode("Unknown"), NodeKind::Other("Unknown".to_string()));
+    /// assert_eq!(NodeKind::decode("Unknown"), NodeKind::Custom("Unknown".to_string()));
     /// ```
     pub fn decode(s: &str) -> Self {
         if s == "Start" {
             NodeKind::Start
         } else if s == "End" {
             NodeKind::End
-        } else if let Some(rest) = s.strip_prefix("Other:") {
-            NodeKind::Other(rest.to_string())
+        } else if let Some(rest) = s.strip_prefix("Custom:") {
+            NodeKind::Custom(rest.to_string())
         } else {
-            NodeKind::Other(s.to_string())
+            NodeKind::Custom(s.to_string())
         }
     }
 
@@ -156,7 +157,7 @@ impl NodeKind {
     /// Returns `true` if this is a custom [`Other`](Self::Other) node.
     #[must_use]
     pub fn is_custom(&self) -> bool {
-        matches!(self, Self::Other(_))
+        matches!(self, Self::Custom(_))
     }
 }
 
@@ -165,7 +166,7 @@ impl fmt::Display for NodeKind {
         match self {
             Self::Start => write!(f, "Start"),
             Self::End => write!(f, "End"),
-            Self::Other(name) => write!(f, "{}", name),
+            Self::Custom(name) => write!(f, "{}", name),
         }
     }
 }
@@ -232,7 +233,7 @@ mod tests {
         assert!(NodeKind::End.is_end());
         assert!(!NodeKind::End.is_custom());
 
-        let custom = NodeKind::Other("Test".to_string());
+        let custom = NodeKind::Custom("Test".to_string());
         assert!(!custom.is_start());
         assert!(!custom.is_end());
         assert!(custom.is_custom());
@@ -243,7 +244,10 @@ mod tests {
         let test_cases = vec![
             (NodeKind::Start, "Start"),
             (NodeKind::End, "End"),
-            (NodeKind::Other("Processor".to_string()), "Other:Processor"),
+            (
+                NodeKind::Custom("Processor".to_string()),
+                "Custom:Processor",
+            ),
         ];
 
         for (node, expected) in test_cases {
@@ -260,7 +264,7 @@ mod tests {
         assert_eq!(NodeKind::Start.to_string(), "Start");
         assert_eq!(NodeKind::End.to_string(), "End");
         assert_eq!(
-            NodeKind::Other("DataProcessor".to_string()).to_string(),
+            NodeKind::Custom("DataProcessor".to_string()).to_string(),
             "DataProcessor"
         );
 
@@ -275,7 +279,7 @@ mod tests {
         let nodes = vec![
             NodeKind::Start,
             NodeKind::End,
-            NodeKind::Other("TestNode".to_string()),
+            NodeKind::Custom("TestNode".to_string()),
         ];
         for node in nodes {
             let serialized = serde_json::to_string(&node).unwrap();

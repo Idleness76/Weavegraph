@@ -114,7 +114,7 @@ async fn test_error_persistence_with_step_report() {
     let session_state = SessionState {
         state,
         step: 5,
-        frontier: vec![NodeKind::Other("ProcessingNode".to_string())],
+        frontier: vec![NodeKind::Custom("ProcessingNode".to_string())],
         scheduler: Scheduler::new(8),
         scheduler_state: SchedulerState::default(),
     };
@@ -124,11 +124,11 @@ async fn test_error_persistence_with_step_report() {
         step: 5,
         ran_nodes: vec![
             NodeKind::Start,
-            NodeKind::Other("ProcessingNode".to_string()),
+            NodeKind::Custom("ProcessingNode".to_string()),
         ],
         skipped_nodes: vec![NodeKind::End],
         updated_channels: vec!["messages", "errors", "extra"],
-        next_frontier: vec![NodeKind::Other("ProcessingNode".to_string())],
+        next_frontier: vec![NodeKind::Custom("ProcessingNode".to_string())],
         state_versions: StateVersions {
             messages_version: 2,
             extra_version: 1,
@@ -170,7 +170,7 @@ async fn test_error_persistence_with_step_report() {
     assert!(loaded_checkpoint.ran_nodes.contains(&NodeKind::Start));
     assert!(loaded_checkpoint
         .ran_nodes
-        .contains(&NodeKind::Other("ProcessingNode".to_string())));
+        .contains(&NodeKind::Custom("ProcessingNode".to_string())));
     assert_eq!(loaded_checkpoint.skipped_nodes, vec![NodeKind::End]);
     assert_eq!(loaded_checkpoint.updated_channels.len(), 3);
 
@@ -251,7 +251,7 @@ async fn test_error_persistence_with_pagination() {
             ran_nodes: if step <= 5 {
                 vec![NodeKind::Start]
             } else {
-                vec![NodeKind::Other("TestNode".to_string())]
+                vec![NodeKind::Custom("TestNode".to_string())]
             },
             skipped_nodes: vec![NodeKind::End],
             updated_channels: vec!["messages".to_string(), "errors".to_string()],
@@ -517,13 +517,13 @@ async fn test_complex_error_serialization() {
         session_id: "complex_serialization_session".to_string(),
         step: 100,
         state,
-        frontier: vec![NodeKind::Other("NextProcessor".to_string())],
+        frontier: vec![NodeKind::Custom("NextProcessor".to_string())],
         versions_seen: FxHashMap::default(),
         concurrency_limit: 4,
         created_at: Utc::now(),
         ran_nodes: vec![
             NodeKind::Start,
-            NodeKind::Other("DataProcessor".to_string()),
+            NodeKind::Custom("DataProcessor".to_string()),
         ],
         skipped_nodes: vec![],
         updated_channels: vec![
@@ -559,7 +559,7 @@ async fn test_complex_error_serialization() {
     assert_eq!(loaded_checkpoint.ran_nodes.len(), 2);
     assert!(loaded_checkpoint
         .ran_nodes
-        .contains(&NodeKind::Other("DataProcessor".to_string())));
+        .contains(&NodeKind::Custom("DataProcessor".to_string())));
 
     // Verify complex error was preserved
     let errors = loaded_checkpoint.state.errors.snapshot();
@@ -649,9 +649,9 @@ async fn test_error_filtering_by_execution_metadata() {
             concurrency_limit: 2,
             created_at: Utc::now(),
             ran_nodes: if step <= 2 {
-                vec![NodeKind::Other("StartupNode".to_string())]
+                vec![NodeKind::Custom("StartupNode".to_string())]
             } else {
-                vec![NodeKind::Other("ProcessingNode".to_string())]
+                vec![NodeKind::Custom("ProcessingNode".to_string())]
             },
             skipped_nodes: vec![NodeKind::End],
             updated_channels: vec!["messages".to_string(), "errors".to_string()],
@@ -665,7 +665,7 @@ async fn test_error_filtering_by_execution_metadata() {
 
     // Filter by ran node (StartupNode - should get steps 1-2)
     let query = StepQuery {
-        ran_node: Some(NodeKind::Other("StartupNode".to_string())),
+        ran_node: Some(NodeKind::Custom("StartupNode".to_string())),
         ..Default::default()
     };
 
@@ -692,7 +692,7 @@ async fn test_error_filtering_by_execution_metadata() {
 
     // Filter by ran node (ProcessingNode - should get steps 3-5)
     let query = StepQuery {
-        ran_node: Some(NodeKind::Other("ProcessingNode".to_string())),
+        ran_node: Some(NodeKind::Custom("ProcessingNode".to_string())),
         ..Default::default()
     };
 
