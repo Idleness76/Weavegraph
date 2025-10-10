@@ -44,6 +44,7 @@ use crate::state::StateSnapshot;
 /// ```rust,no_run
 /// use weavegraph::node::{Node, NodeContext, NodePartial, NodeError};
 /// use weavegraph::state::StateSnapshot;
+/// use weavegraph::channels::errors::{ErrorEvent, LadderError};
 /// use async_trait::async_trait;
 ///
 /// struct ValidationNode {
@@ -54,13 +55,25 @@ use crate::state::StateSnapshot;
 /// impl Node for ValidationNode {
 ///     async fn run(&self, snapshot: StateSnapshot, ctx: NodeContext) -> Result<NodePartial, NodeError> {
 ///         ctx.emit("validation", "Starting validation")?;
-///
+///         
 ///         for field in &self.required_fields {
 ///             if !snapshot.extra.contains_key(field) {
 ///                 return Err(NodeError::ValidationFailed(format!("Missing field: {}", field)));
 ///             }
 ///         }
-///
+///         
+///         // Demonstrate the fluent API for success with warnings
+///         if snapshot.messages.is_empty() {
+///             let warning = ErrorEvent {
+///                 error: LadderError {
+///                     message: "No messages to validate, but continuing".to_string(),
+///                     ..Default::default()
+///                 },
+///                 ..Default::default()
+///             };
+///             return Ok(NodePartial::new().with_errors(vec![warning]));
+///         }
+///         
 ///         Ok(NodePartial::default())
 ///     }
 /// }
@@ -129,15 +142,32 @@ impl NodeContext {
 /// ```rust
 /// use weavegraph::node::NodePartial;
 /// use weavegraph::message::Message;
+/// use weavegraph::channels::errors::{ErrorEvent, LadderError};
 /// use serde_json::json;
 /// use weavegraph::utils::collections::new_extra_map;
 ///
-/// // Essential constructors
+/// // Simple message-only response
 /// let partial = NodePartial::new().with_messages(vec![Message::assistant("Done")]);
 ///
+/// // Rich response with metadata
 /// let mut extra = new_extra_map();
 /// extra.insert("status".to_string(), json!("success"));
-/// let partial = NodePartial::new().with_extra(extra);
+/// extra.insert("duration_ms".to_string(), json!(150));
+/// let partial = NodePartial::new()
+///     .with_messages(vec![Message::assistant("Processing complete")])
+///     .with_extra(extra);
+///
+/// // Response with warnings
+/// let errors = vec![ErrorEvent {
+///     error: LadderError {
+///         message: "Low confidence result".to_string(),
+///         ..Default::default()
+///     },
+///     ..Default::default()
+/// }];
+/// let partial = NodePartial::new()
+///     .with_messages(vec![Message::assistant("Result with warnings")])
+///     .with_errors(errors);
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct NodePartial {
@@ -155,7 +185,7 @@ impl NodePartial {
             ..Default::default()
         }
     }
-    /// Create a `NodePartial` with multiple messages.
+    /// Create a `NodePartial` with one or more messages.
     #[must_use]
     pub fn with_messages(mut self, messages: Vec<Message>) -> Self {
         self.messages = Some(messages);
@@ -169,7 +199,7 @@ impl NodePartial {
         self
     }
 
-    /// Create a `NodePartial` with multiple errors.
+    /// Create a `NodePartial` with one or more errors.
     #[must_use]
     pub fn with_errors(mut self, errors: Vec<ErrorEvent>) -> Self {
         self.errors = Some(errors);

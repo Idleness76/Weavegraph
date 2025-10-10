@@ -5,7 +5,7 @@ This document demonstrates the streamlined `NodePartial` API in action, showing 
 ## Key Patterns Demonstrated
 
 - **Fatal vs Recoverable Errors**: Use `Err(NodeError)` for fatal errors that stop workflow execution, `NodePartial.errors` for recoverable ones that get logged but allow processing to continue
-- **Explicit Field Assignment**: Use the focused constructors (`with_messages`, `with_extra`, `with_errors`) then assign additional fields when combining multiple aspects
+- **Fluent API Construction**: Use the fluent pattern `NodePartial::new().with_messages().with_extra().with_errors()` to build responses in a readable, chainable way
 - **Conditional Returns**: Different scenarios can return different combinations of data without API bloat
 - **Error Accumulation**: Collect multiple errors during processing and return them all in a single response
 - **Rich Context**: Use extra data to provide detailed metadata about the processing results
@@ -107,7 +107,7 @@ impl DataProcessorNode {
 }
 ```
 
-**Key insight**: Start with the primary constructor, then explicitly assign additional fields. No magic, no hidden complexity.
+**Key insight**: The fluent API pattern with `NodePartial::new().with_*()` makes complex combinations readable and explicit. No magic, no hidden complexity.
 
 
 ## 3. Complete Multi-faceted Response
@@ -161,16 +161,18 @@ impl Node for ComprehensiveAnalyzerNode {
         }
 
         // Combine everything - notice how readable this is
-        let mut partial = NodePartial::new()
-            .with_messages(messages)
-            .with_extra(extra);
-
-        if !errors.is_empty() {
-            partial.errors = Some(errors);
-        }
-
         ctx.emit("completed", "Analysis completed successfully")?;
-        Ok(partial)
+        
+        if !errors.is_empty() {
+            Ok(NodePartial::new()
+                .with_messages(messages)
+                .with_extra(extra)
+                .with_errors(errors))
+        } else {
+            Ok(NodePartial::new()
+                .with_messages(messages)
+                .with_extra(extra))
+        }
     }
 }
 
@@ -278,7 +280,7 @@ impl Node for ConditionalProcessorNode {
 
 The examples above demonstrate that **removing complexity from the API** doesn't limit functionality - it clarifies it. Each example shows:
 
-1. **One obvious way** to create each type of response
-2. **Explicit composition** when combining multiple aspects
-3. **Clear intent** at every step
-4. **No choice paralysis** between different builder methods
+1. **One obvious way** to create each type of response using the fluent API
+2. **Readable chaining** with `NodePartial::new().with_*()` for combining aspects
+3. **Clear intent** at every step with explicit method calls
+4. **No choice paralysis** - one consistent pattern for all scenarios
