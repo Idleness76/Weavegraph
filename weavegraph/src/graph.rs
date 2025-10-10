@@ -53,9 +53,9 @@
 //! // Create a predicate that routes based on message count
 //! let route_by_messages: EdgePredicate = Arc::new(|snapshot| {
 //!     if snapshot.messages.len() > 5 {
-//!         "process".to_string()
+//!         vec!["process".to_string()]
 //!     } else {
-//!         "skip".to_string()
+//!         vec!["skip".to_string()]
 //!     }
 //! });
 //!
