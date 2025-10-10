@@ -51,8 +51,12 @@
 //! use std::sync::Arc;
 //!
 //! // Create a predicate that routes based on message count
-//! let has_messages: EdgePredicate = Arc::new(|snapshot| {
-//!     !snapshot.messages.is_empty()
+//! let route_by_messages: EdgePredicate = Arc::new(|snapshot| {
+//!     if snapshot.messages.len() > 5 {
+//!         "process".to_string()
+//!     } else {
+//!         "skip".to_string()
+//!     }
 //! });
 //!
 //! # struct MyNode;
@@ -68,12 +72,7 @@
 //!     .add_node(NodeKind::Custom("skip".into()), MyNode)
 //!     // Basic structural edge from virtual Start
 //!     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
-//!     .add_conditional_edge(
-//!         NodeKind::Start,
-//!         NodeKind::Custom("process".into()), // If predicate returns true
-//!         NodeKind::Custom("skip".into()),    // If predicate returns false
-//!         has_messages,
-//!     )
+//!     .add_conditional_edge(NodeKind::Start, route_by_messages)
 //!     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
 //!     .add_edge(NodeKind::Custom("skip".into()), NodeKind::End)
 //!     .compile();
@@ -87,21 +86,12 @@ use crate::node::*;
 use crate::runtimes::RuntimeConfig;
 use crate::types::*;
 
-/// Errors that can occur during graph compilation.
-///
-/// These errors indicate problems with the graph structure or configuration
-/// that prevent it from being compiled into an executable [`App`].
-// (removed obsolete derive previously attached to now-removed GraphCompileError)
-// (Removed) GraphCompileError: entry point validation no longer required because
-// Start/End are purely virtual. Graph compilation now always succeeds unless
-// future structural validations are added (e.g., cycle detection).
-
 /// Predicate function for conditional edge routing.
 ///
-/// Takes a [`StateSnapshot`] and returns `true` or `false` to determine
-/// which branch of a conditional edge should be taken. Predicates are
-/// used with [`GraphBuilder::add_conditional_edge`] to create dynamic
-/// routing based on the current state.
+/// Takes a [`StateSnapshot`] and returns the target node name to determine
+/// which node should be executed next. Predicates are used with
+/// [`GraphBuilder::add_conditional_edge`] to create dynamic routing based
+/// on the current state.
 ///
 /// # Examples
 ///
@@ -110,22 +100,30 @@ use crate::types::*;
 /// use std::sync::Arc;
 ///
 /// // Route based on message count
-/// let has_messages: EdgePredicate = Arc::new(|snapshot| {
-///     !snapshot.messages.is_empty()
+/// let route_by_messages: EdgePredicate = Arc::new(|snapshot| {
+///     if snapshot.messages.len() > 5 {
+///         "many_messages".to_string()
+///     } else {
+///         "few_messages".to_string()
+///     }
 /// });
 ///
 /// // Route based on extra data
-/// let has_error_flag: EdgePredicate = Arc::new(|snapshot| {
-///     snapshot.extra.get("error").is_some()
+/// let route_by_error: EdgePredicate = Arc::new(|snapshot| {
+///     if snapshot.extra.get("error").is_some() {
+///         "error_handler".to_string()
+///     } else {
+///         "normal_flow".to_string()
+///     }
 /// });
 /// ```
-pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> bool + Send + Sync + 'static>;
+pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> String + Send + Sync + 'static>;
 
 /// A conditional edge that routes based on a predicate function.
 ///
 /// Conditional edges allow dynamic routing in workflows based on the current
 /// state. When the scheduler encounters a conditional edge, it evaluates the
-/// predicate function and routes to either the `yes` or `no` target node.
+/// predicate function and routes to the returned target node.
 ///
 /// # Examples
 ///
@@ -134,11 +132,15 @@ pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> bool + Send 
 /// use weavegraph::types::NodeKind;
 /// use std::sync::Arc;
 ///
-/// let predicate: EdgePredicate = Arc::new(|_| true);
+/// let predicate: EdgePredicate = Arc::new(|snapshot| {
+///     if snapshot.messages.len() > 5 {
+///         "many_messages".to_string()
+///     } else {
+///         "few_messages".to_string()
+///     }
+/// });
 /// let edge = ConditionalEdge {
 ///     from: NodeKind::Start,
-///     yes: NodeKind::Custom("success".into()),
-///     no: NodeKind::Custom("failure".into()),
 ///     predicate,
 /// };
 /// ```
@@ -146,11 +148,7 @@ pub type EdgePredicate = Arc<dyn Fn(crate::state::StateSnapshot) -> bool + Send 
 pub struct ConditionalEdge {
     /// The source node for this conditional edge.
     pub from: NodeKind,
-    /// The target node when the predicate returns `true`.
-    pub yes: NodeKind,
-    /// The target node when the predicate returns `false`.
-    pub no: NodeKind,
-    /// The predicate function that determines routing.
+    /// The predicate function that determines target node.
     pub predicate: EdgePredicate,
 }
 
@@ -263,15 +261,13 @@ impl GraphBuilder {
     ///
     /// Conditional edges enable dynamic routing based on the current state.
     /// When execution reaches the `from` node, the `predicate` function is
-    /// evaluated with the current [`StateSnapshot`]. If it returns `true`,
-    /// execution continues to the `yes` node; if `false`, to the `no` node.
+    /// evaluated with the current [`StateSnapshot`] and returns the target
+    /// node name for routing.
     ///
     /// # Parameters
     ///
     /// - `from`: The source node for the conditional edge
-    /// - `yes`: Target node when predicate returns `true`
-    /// - `no`: Target node when predicate returns `false`
-    /// - `predicate`: Function that determines routing based on state
+    /// - `predicate`: Function that determines target node based on state
     ///
     /// # Examples
     ///
@@ -289,33 +285,22 @@ impl GraphBuilder {
     /// # }
     ///
     /// let predicate: EdgePredicate = Arc::new(|snapshot| {
-    ///     snapshot.messages.len() > 5
+    ///     if snapshot.messages.len() > 5 {
+    ///         "many_messages".to_string()
+    ///     } else {
+    ///         "few_messages".to_string()
+    ///     }
     /// });
     ///
     /// let builder = GraphBuilder::new()
     ///     .add_node(NodeKind::Custom("many_messages".into()), MyNode)
     ///     .add_node(NodeKind::Custom("few_messages".into()), MyNode)
-    ///     .add_conditional_edge(
-    ///         NodeKind::Start,
-    ///         NodeKind::Custom("many_messages".into()),
-    ///         NodeKind::Custom("few_messages".into()),
-    ///         predicate,
-    ///     );
+    ///     .add_conditional_edge(NodeKind::Start, predicate);
     /// ```
     #[must_use]
-    pub fn add_conditional_edge(
-        mut self,
-        from: NodeKind,
-        yes: NodeKind,
-        no: NodeKind,
-        predicate: EdgePredicate,
-    ) -> Self {
-        self.conditional_edges.push(ConditionalEdge {
-            from,
-            yes,
-            no,
-            predicate,
-        });
+    pub fn add_conditional_edge(mut self, from: NodeKind, predicate: EdgePredicate) -> Self {
+        self.conditional_edges
+            .push(ConditionalEdge { from, predicate });
         self
     }
 
@@ -542,10 +527,8 @@ mod tests {
             _snapshot: crate::state::StateSnapshot,
             _ctx: crate::node::NodeContext,
         ) -> Result<crate::node::NodePartial, crate::node::NodeError> {
-            Ok(crate::node::NodePartial {
-                messages: Some(vec![Message::assistant("NodeA executed")]),
-                ..Default::default()
-            })
+            Ok(crate::node::NodePartial::new()
+                .with_messages(vec![Message::assistant("NodeA executed")]))
         }
     }
 
@@ -559,10 +542,8 @@ mod tests {
             _snapshot: crate::state::StateSnapshot,
             _ctx: crate::node::NodeContext,
         ) -> Result<crate::node::NodePartial, crate::node::NodeError> {
-            Ok(crate::node::NodePartial {
-                messages: Some(vec![Message::assistant("NodeB executed")]),
-                ..Default::default()
-            })
+            Ok(crate::node::NodePartial::new()
+                .with_messages(vec![Message::assistant("NodeB executed")]))
         }
     }
 
@@ -570,27 +551,20 @@ mod tests {
     /// Tests adding conditional edges to a graph builder.
     ///
     /// Verifies that conditional edges are properly stored and that predicates
-    /// can be evaluated correctly. This test uses a simple always-true predicate
-    /// and validates the edge structure.
+    /// can be evaluated correctly. This test uses a simple predicate that returns
+    /// a target node name and validates the edge structure.
     fn test_add_conditional_edge() {
         use crate::state::StateSnapshot;
-        let always_true: super::EdgePredicate = std::sync::Arc::new(|_s: StateSnapshot| true);
+        let route_to_y: super::EdgePredicate =
+            std::sync::Arc::new(|_s: StateSnapshot| "Y".to_string());
         let gb = super::GraphBuilder::new()
-            .add_node(super::NodeKind::Start, NodeA)
             .add_node(super::NodeKind::Custom("Y".into()), NodeA)
             .add_node(super::NodeKind::Custom("N".into()), NodeA)
-            .add_conditional_edge(
-                super::NodeKind::Start,
-                super::NodeKind::Custom("Y".into()),
-                super::NodeKind::Custom("N".into()),
-                always_true.clone(),
-            );
+            .add_conditional_edge(super::NodeKind::Start, route_to_y.clone());
         assert_eq!(gb.conditional_edges.len(), 1);
         let ce = &gb.conditional_edges[0];
         assert_eq!(ce.from, super::NodeKind::Start);
-        assert_eq!(ce.yes, super::NodeKind::Custom("Y".into()));
-        assert_eq!(ce.no, super::NodeKind::Custom("N".into()));
-        // Predicate should return true
+        // Predicate should return "Y"
         let snap = StateSnapshot {
             messages: vec![],
             messages_version: 1,
@@ -599,7 +573,7 @@ mod tests {
             errors: vec![],
             errors_version: 1,
         };
-        assert!((ce.predicate)(snap));
+        assert_eq!((ce.predicate)(snap), "Y");
     }
 
     #[test]

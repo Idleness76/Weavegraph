@@ -517,15 +517,11 @@ impl AppRunner {
             // Conditional edges
             for ce in conditional_edges.iter().filter(|ce| &ce.from == id) {
                 println!("running conditional edge from {:?}", ce.from);
-                let target = if (ce.predicate)(snapshot.clone()) {
-                    println!("conditional edge routing to {:?}", &ce.yes);
-                    &ce.yes
-                } else {
-                    println!("conditional edge routing to {:?}", &ce.no);
-                    &ce.no
-                };
-                if !next_frontier.contains(target) {
-                    next_frontier.push(target.clone());
+                let target_name = (ce.predicate)(snapshot.clone());
+                let target = NodeKind::Custom(target_name.clone());
+                println!("conditional edge routing to {:?}", &target);
+                if !next_frontier.contains(&target) {
+                    next_frontier.push(target);
                 }
             }
         }
@@ -722,21 +718,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_conditional_edge_routing() {
-        // Predicate: true if extra contains key "go_yes"
-        let pred: EdgePredicate =
-            std::sync::Arc::new(|snap: StateSnapshot| snap.extra.contains_key("go_yes"));
+        // Predicate: returns "Y" if extra contains key "go_yes", else "N"
+        let pred: EdgePredicate = std::sync::Arc::new(|snap: StateSnapshot| {
+            if snap.extra.contains_key("go_yes") {
+                "Y".to_string()
+            } else {
+                "N".to_string()
+            }
+        });
         let gb = GraphBuilder::new()
             .add_node(NodeKind::Custom("Root".into()), TestNode { name: "root" })
             .add_node(NodeKind::Custom("Y".into()), TestNode { name: "yes path" })
             .add_node(NodeKind::Custom("N".into()), TestNode { name: "no path" })
             // Edge from virtual Start to an actual executable root node so conditional routing can trigger
             .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
-            .add_conditional_edge(
-                NodeKind::Custom("Root".into()),
-                NodeKind::Custom("Y".into()),
-                NodeKind::Custom("N".into()),
-                pred.clone(),
-            );
+            .add_conditional_edge(NodeKind::Custom("Root".into()), pred.clone());
         let app = gb.compile();
         let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
         // State with go_yes present
