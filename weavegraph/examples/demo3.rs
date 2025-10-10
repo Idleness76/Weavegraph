@@ -370,8 +370,6 @@ async fn demo() -> Result<()> {
         // Conditional edge: enhancer loops back to itself or goes to end
         .add_conditional_edge(
             NodeKind::Custom("ContentEnhancer".into()),
-            NodeKind::End,
-            NodeKind::Custom("ContentEnhancer".into()),
             Arc::new(|snapshot: StateSnapshot| {
                 // Continue enhancing if we haven't reached target iterations
                 let current_iterations = serde_json::from_value::<i32>(
@@ -392,8 +390,12 @@ async fn demo() -> Result<()> {
                 )
                 .unwrap_or(2);
 
-                // Return true to continue to End, false to loop back to enhancer
-                current_iterations >= target_iterations
+                // Return target node name based on iteration count
+                if current_iterations >= target_iterations {
+                    "End".to_string()
+                } else {
+                    "ContentEnhancer".to_string()
+                }
             }),
         )
         // .set_entry(NodeKind::Start)  // removed: Start is virtual; no explicit entry required

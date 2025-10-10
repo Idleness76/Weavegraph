@@ -78,7 +78,13 @@ impl App {
     /// Returns a reference to the conditional edges in this graph.
     ///
     /// Conditional edges enable dynamic routing based on runtime state,
-    /// allowing workflows to branch based on computed conditions.
+    /// allowing workflows to branch based on computed conditions. Predicates
+    /// return a String which is interpreted as the next target node:
+    /// - "End" and "Start" are recognized as virtual endpoints
+    /// - any other string is treated as the name of a custom node
+    ///
+    /// At runtime, targets are validated before being pushed to the frontier.
+    /// Unknown custom targets are skipped with a warning, preserving progress.
     ///
     /// # Returns
     /// A slice of conditional edge specifications.

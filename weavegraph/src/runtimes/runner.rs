@@ -517,15 +517,35 @@ impl AppRunner {
             // Conditional edges
             for ce in conditional_edges.iter().filter(|ce| &ce.from == id) {
                 println!("running conditional edge from {:?}", ce.from);
-                let target = if (ce.predicate)(snapshot.clone()) {
-                    println!("conditional edge routing to {:?}", &ce.yes);
-                    &ce.yes
+                let target_name = (ce.predicate)(snapshot.clone());
+
+                // Convert target name to NodeKind
+                let target = if target_name == "End" {
+                    NodeKind::End
+                } else if target_name == "Start" {
+                    NodeKind::Start
                 } else {
-                    println!("conditional edge routing to {:?}", &ce.no);
-                    &ce.no
+                    NodeKind::Custom(target_name.clone())
                 };
-                if !next_frontier.contains(target) {
-                    next_frontier.push(target.clone());
+
+                println!("conditional edge routing to {:?}", &target);
+
+                // Validate that the target node exists or is a virtual endpoint
+                let is_valid_target = match &target {
+                    NodeKind::End | NodeKind::Start => true, // Virtual endpoints are always valid
+                    NodeKind::Custom(_) => {
+                        // Check if the node is registered in the app
+                        self.app.nodes().contains_key(&target)
+                    }
+                };
+
+                if is_valid_target {
+                    if !next_frontier.contains(&target) {
+                        next_frontier.push(target);
+                    }
+                } else {
+                    // Log a warning but don't fail the execution
+                    println!("Warning: Conditional edge target '{}' does not exist in the graph. Skipping.", target_name);
                 }
             }
         }
@@ -722,21 +742,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_conditional_edge_routing() {
-        // Predicate: true if extra contains key "go_yes"
-        let pred: EdgePredicate =
-            std::sync::Arc::new(|snap: StateSnapshot| snap.extra.contains_key("go_yes"));
+        // Predicate: returns "Y" if extra contains key "go_yes", else "N"
+        let pred: EdgePredicate = std::sync::Arc::new(|snap: StateSnapshot| {
+            if snap.extra.contains_key("go_yes") {
+                "Y".to_string()
+            } else {
+                "N".to_string()
+            }
+        });
         let gb = GraphBuilder::new()
             .add_node(NodeKind::Custom("Root".into()), TestNode { name: "root" })
             .add_node(NodeKind::Custom("Y".into()), TestNode { name: "yes path" })
             .add_node(NodeKind::Custom("N".into()), TestNode { name: "no path" })
             // Edge from virtual Start to an actual executable root node so conditional routing can trigger
             .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
-            .add_conditional_edge(
-                NodeKind::Custom("Root".into()),
-                NodeKind::Custom("Y".into()),
-                NodeKind::Custom("N".into()),
-                pred.clone(),
-            );
+            .add_conditional_edge(NodeKind::Custom("Root".into()), pred.clone());
         let app = gb.compile();
         let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
         // State with go_yes present

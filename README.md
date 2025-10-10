@@ -60,11 +60,7 @@ impl Node for GreetingNode {
 
         let greeting = Message::assistant("Hello! How can I help you today?");
 
-        Ok(NodePartial {
-            messages: Some(vec![greeting]),
-            extra: None,
-            errors: None,
-        })
+        Ok(NodePartial::new().with_messages(vec![greeting]))
     }
 }
 
@@ -139,25 +135,70 @@ Declarative workflow definition with conditional routing:
 
 ```rust
 use weavegraph::graph::GraphBuilder;
+use weavegraph::types::NodeKind;
+use std::sync::Arc;
 
 let graph = GraphBuilder::new()
-    .add_node("input", InputProcessorNode)
-    .add_node("analyze", AnalyzerNode)
-    .add_node("respond", ResponseNode)
-    .add_edge("input", "analyze")
-    .add_conditional_edge("analyze", |state| {
-        if state.extra.contains_key("needs_escalation") {
-            "escalate"
-        } else {
-            "respond"
-        }
-    })
-    // Virtual Start/End: connect from Start and into End explicitly.
+    .add_node(NodeKind::Custom("input".into()), InputProcessorNode)
+    .add_node(NodeKind::Custom("analyze".into()), AnalyzerNode)
+    .add_node(NodeKind::Custom("respond".into()), ResponseNode)
+    .add_node(NodeKind::Custom("escalate".into()), EscalateNode)
+    // Virtual Start/End: connect from Start and into End explicitly
     .add_edge(NodeKind::Start, NodeKind::Custom("input".into()))
     .add_edge(NodeKind::Custom("input".into()), NodeKind::Custom("analyze".into()))
+  .add_conditional_edge(
+    NodeKind::Custom("analyze".into()),
+    Arc::new(|state| {
+      if state.extra.contains_key("needs_escalation") {
+        "escalate".to_string()
+      } else {
+        "respond".to_string()
+      }
+    })
+  )
     .add_edge(NodeKind::Custom("respond".into()), NodeKind::End)
+    .add_edge(NodeKind::Custom("escalate".into()), NodeKind::End)
     .compile();
 ```
+
+Note: Conditional predicates must return the name of a valid next node or a virtual endpoint. The runtime accepts:
+- Custom nodes by name (e.g., "respond", "escalate") that were registered via add_node
+- The virtual endpoints "Start" and "End"
+If a predicate returns an unknown target, the route is skipped and a warning is logged.
+
+### Conditional Edges
+
+Use conditional edges to route dynamically based on runtime state. Predicates return the name of the next node (String), allowing flexible, non-binary routing.
+
+Compact example:
+
+```rust
+use std::sync::Arc;
+use weavegraph::graph::{GraphBuilder, EdgePredicate};
+use weavegraph::types::NodeKind;
+
+let route: EdgePredicate = Arc::new(|snap| {
+  if snap.extra.contains_key("needs_escalation") {
+    "escalate".to_string()
+  } else {
+    "respond".to_string()
+  }
+});
+
+let app = GraphBuilder::new()
+  .add_node(NodeKind::Custom("analyze".into()), AnalyzeNode)
+  .add_node(NodeKind::Custom("respond".into()), RespondNode)
+  .add_node(NodeKind::Custom("escalate".into()), EscalateNode)
+  .add_edge(NodeKind::Start, NodeKind::Custom("analyze".into()))
+  .add_conditional_edge(NodeKind::Custom("analyze".into()), route)
+  .add_edge(NodeKind::Custom("respond".into()), NodeKind::End)
+  .add_edge(NodeKind::Custom("escalate".into()), NodeKind::End)
+  .compile();
+```
+
+Troubleshooting:
+- If nothing happens after a node with a conditional edge, ensure the predicate returns a valid target name matching a registered node, or the virtual endpoints "Start"/"End".
+- For readability, use small helper predicates (EdgePredicate) and unit test them with sample StateSnapshots.
 
 ## 🔧 Examples
 

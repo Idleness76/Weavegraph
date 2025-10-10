@@ -57,7 +57,7 @@ impl Node for InputBootstrapperNode {
 
         ctx.emit(
             "bootstrap_user_input",
-            &format!("User input: {}", user_input),
+            format!("User input: {}", user_input),
         )?;
 
         let initial_content = format!(
@@ -344,11 +344,17 @@ async fn main() -> Result<()> {
         .build();
 
     let refinement_predicate: EdgePredicate = Arc::new(|snapshot: StateSnapshot| {
-        snapshot
+        let needs_refinement = snapshot
             .extra
             .get("needs_more_refinement")
             .and_then(|value| value.as_bool())
-            .unwrap_or(false)
+            .unwrap_or(false);
+
+        if needs_refinement {
+            "refiner".to_string()
+        } else {
+            "End".to_string()
+        }
     });
 
     println!("🔗 Building Ollama streaming workflow with iterative refinement");
@@ -370,8 +376,6 @@ async fn main() -> Result<()> {
         )
         .add_conditional_edge(
             NodeKind::Custom("refiner".into()),
-            NodeKind::Custom("refiner".into()),
-            NodeKind::End,
             Arc::clone(&refinement_predicate),
         )
         .compile();
