@@ -517,35 +517,37 @@ impl AppRunner {
             // Conditional edges
             for ce in conditional_edges.iter().filter(|ce| &ce.from == id) {
                 println!("running conditional edge from {:?}", ce.from);
-                let target_name = (ce.predicate)(snapshot.clone());
+                let target_names = (ce.predicate)(snapshot.clone());
 
-                // Convert target name to NodeKind
-                let target = if target_name == "End" {
-                    NodeKind::End
-                } else if target_name == "Start" {
-                    NodeKind::Start
-                } else {
-                    NodeKind::Custom(target_name.clone())
-                };
+                for target_name in target_names {
+                    // Convert target name to NodeKind
+                    let target = if target_name == "End" {
+                        NodeKind::End
+                    } else if target_name == "Start" {
+                        NodeKind::Start
+                    } else {
+                        NodeKind::Custom(target_name.clone())
+                    };
 
-                println!("conditional edge routing to {:?}", &target);
+                    println!("conditional edge routing to {:?}", &target);
 
-                // Validate that the target node exists or is a virtual endpoint
-                let is_valid_target = match &target {
-                    NodeKind::End | NodeKind::Start => true, // Virtual endpoints are always valid
-                    NodeKind::Custom(_) => {
-                        // Check if the node is registered in the app
-                        self.app.nodes().contains_key(&target)
+                    // Validate that the target node exists or is a virtual endpoint
+                    let is_valid_target = match &target {
+                        NodeKind::End | NodeKind::Start => true, // Virtual endpoints are always valid
+                        NodeKind::Custom(_) => {
+                            // Check if the node is registered in the app
+                            self.app.nodes().contains_key(&target)
+                        }
+                    };
+
+                    if is_valid_target {
+                        if !next_frontier.contains(&target) {
+                            next_frontier.push(target);
+                        }
+                    } else {
+                        // Log a warning but don't fail the execution
+                        println!("Warning: Conditional edge target '{}' does not exist in the graph. Skipping.", target_name);
                     }
-                };
-
-                if is_valid_target {
-                    if !next_frontier.contains(&target) {
-                        next_frontier.push(target);
-                    }
-                } else {
-                    // Log a warning but don't fail the execution
-                    println!("Warning: Conditional edge target '{}' does not exist in the graph. Skipping.", target_name);
                 }
             }
         }
@@ -742,12 +744,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_conditional_edge_routing() {
-        // Predicate: returns "Y" if extra contains key "go_yes", else "N"
+        // Predicate: returns ["Y"] if extra contains key "go_yes", else ["N"]
         let pred: EdgePredicate = std::sync::Arc::new(|snap: StateSnapshot| {
             if snap.extra.contains_key("go_yes") {
-                "Y".to_string()
+                vec!["Y".to_string()]
             } else {
-                "N".to_string()
+                vec!["N".to_string()]
             }
         });
         let gb = GraphBuilder::new()
@@ -1000,6 +1002,126 @@ mod tests {
 
         // Clean up environment variable
         std::env::remove_var("WEAVEGRAPH_SQLITE_URL");
+    }
+
+    #[tokio::test]
+    async fn test_multi_target_conditional_edge() {
+        // Predicate: returns multiple targets based on state
+        let multi_pred: EdgePredicate = std::sync::Arc::new(|snap: StateSnapshot| {
+            if snap.extra.contains_key("fan_out") {
+                vec!["A".to_string(), "B".to_string(), "C".to_string()]
+            } else {
+                vec!["Single".to_string()]
+            }
+        });
+
+        let gb = GraphBuilder::new()
+            .add_node(NodeKind::Custom("Root".into()), TestNode { name: "root" })
+            .add_node(NodeKind::Custom("A".into()), TestNode { name: "A" })
+            .add_node(NodeKind::Custom("B".into()), TestNode { name: "B" })
+            .add_node(NodeKind::Custom("C".into()), TestNode { name: "C" })
+            .add_node(
+                NodeKind::Custom("Single".into()),
+                TestNode { name: "single" },
+            )
+            .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
+            .add_conditional_edge(NodeKind::Custom("Root".into()), multi_pred);
+
+        let app = gb.compile();
+        let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+
+        // Test multi-target case
+        let mut state = VersionedState::new_with_user_message("test");
+        state
+            .extra
+            .get_mut()
+            .insert("fan_out".to_string(), serde_json::json!(true));
+
+        runner
+            .create_session("multi_test".to_string(), state)
+            .await
+            .unwrap();
+
+        // First step: Root node executes
+        let step1 = runner
+            .run_step("multi_test", StepOptions::default())
+            .await
+            .unwrap();
+        if let StepResult::Completed(report) = step1 {
+            assert_eq!(report.ran_nodes, vec![NodeKind::Custom("Root".into())]);
+            assert_eq!(report.next_frontier.len(), 3);
+            assert!(report.next_frontier.contains(&NodeKind::Custom("A".into())));
+            assert!(report.next_frontier.contains(&NodeKind::Custom("B".into())));
+            assert!(report.next_frontier.contains(&NodeKind::Custom("C".into())));
+        } else {
+            panic!("Expected completed step");
+        }
+
+        // Test single target case
+        let state2 = VersionedState::new_with_user_message("test2");
+        runner
+            .create_session("single_test".to_string(), state2)
+            .await
+            .unwrap();
+
+        let step2 = runner
+            .run_step("single_test", StepOptions::default())
+            .await
+            .unwrap();
+        if let StepResult::Completed(report) = step2 {
+            assert_eq!(
+                report.next_frontier,
+                vec![NodeKind::Custom("Single".into())]
+            );
+        } else {
+            panic!("Expected completed step");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_conditional_edge_with_invalid_targets() {
+        // Predicate returns mix of valid and invalid targets
+        let mixed_pred: EdgePredicate = std::sync::Arc::new(|_snap: StateSnapshot| {
+            vec![
+                "Valid".to_string(),
+                "Invalid".to_string(),
+                "End".to_string(),
+            ]
+        });
+
+        let gb = GraphBuilder::new()
+            .add_node(NodeKind::Custom("Root".into()), TestNode { name: "root" })
+            .add_node(NodeKind::Custom("Valid".into()), TestNode { name: "valid" })
+            // Note: "Invalid" node is not added
+            .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
+            .add_conditional_edge(NodeKind::Custom("Root".into()), mixed_pred);
+
+        let app = gb.compile();
+        let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+
+        let state = VersionedState::new_with_user_message("test");
+        runner
+            .create_session("mixed_test".to_string(), state)
+            .await
+            .unwrap();
+
+        let step = runner
+            .run_step("mixed_test", StepOptions::default())
+            .await
+            .unwrap();
+        if let StepResult::Completed(report) = step {
+            // Should only contain valid targets
+            assert_eq!(report.next_frontier.len(), 2);
+            assert!(report
+                .next_frontier
+                .contains(&NodeKind::Custom("Valid".into())));
+            assert!(report.next_frontier.contains(&NodeKind::End));
+            assert!(!report
+                .next_frontier
+                .contains(&NodeKind::Custom("Invalid".into())));
+        } else {
+            panic!("Expected completed step");
+        }
     }
 
     #[tokio::test]

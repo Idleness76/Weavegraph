@@ -351,9 +351,9 @@ async fn main() -> Result<()> {
             .unwrap_or(false);
 
         if needs_refinement {
-            "refiner".to_string()
+            vec!["refiner".to_string()]
         } else {
-            "End".to_string()
+            vec!["End".to_string()]
         }
     });
 

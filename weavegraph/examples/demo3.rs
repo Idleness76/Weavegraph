@@ -392,9 +392,9 @@ async fn demo() -> Result<()> {
 
                 // Return target node name based on iteration count
                 if current_iterations >= target_iterations {
-                    "End".to_string()
+                    vec!["End".to_string()]
                 } else {
-                    "ContentEnhancer".to_string()
+                    vec!["ContentEnhancer".to_string()]
                 }
             }),
         )

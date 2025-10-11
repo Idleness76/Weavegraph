@@ -168,7 +168,7 @@ If a predicate returns an unknown target, the route is skipped and a warning is 
 
 ### Conditional Edges
 
-Use conditional edges to route dynamically based on runtime state. Predicates return the name of the next node (String), allowing flexible, non-binary routing.
+Use conditional edges to route dynamically based on runtime state. Predicates return target node names (Vec<String>), allowing flexible routing to single or multiple nodes.
 
 Compact example:
 
@@ -179,9 +179,9 @@ use weavegraph::types::NodeKind;
 
 let route: EdgePredicate = Arc::new(|snap| {
   if snap.extra.contains_key("needs_escalation") {
-    "escalate".to_string()
+    vec!["escalate".to_string()]
   } else {
-    "respond".to_string()
+    vec!["respond".to_string()]
   }
 });
 
@@ -197,7 +197,7 @@ let app = GraphBuilder::new()
 ```
 
 Troubleshooting:
-- If nothing happens after a node with a conditional edge, ensure the predicate returns a valid target name matching a registered node, or the virtual endpoints "Start"/"End".
+- If nothing happens after a node with a conditional edge, ensure the predicate returns valid target names matching registered nodes, or the virtual endpoints "Start"/"End".
 - For readability, use small helper predicates (EdgePredicate) and unit test them with sample StateSnapshots.
 
 ## 🔧 Examples
