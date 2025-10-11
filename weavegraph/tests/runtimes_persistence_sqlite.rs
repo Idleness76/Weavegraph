@@ -3,15 +3,17 @@ use rustc_hash::FxHashMap;
 use weavegraph::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use weavegraph::channels::Channel;
 use weavegraph::runtimes::{Checkpoint, Checkpointer, SQLiteCheckpointer, StepQuery};
-use weavegraph::state::VersionedState;
 use weavegraph::types::NodeKind;
+
+mod common;
+use common::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_sqlite_checkpointer_roundtrip() {
     let cp = SQLiteCheckpointer::connect("sqlite::memory:")
         .await
         .expect("connect sqlite memory");
-    let mut state = VersionedState::new_with_user_message("hello");
+    let mut state = state_with_user("hello");
     state
         .extra
         .get_mut()
@@ -54,6 +56,7 @@ async fn test_sqlite_checkpointer_roundtrip() {
         Some(1)
     );
     assert_eq!(loaded.state.messages.snapshot()[0].role, "user");
+    assert_extra_has(&loaded.state, "k");
     assert_eq!(
         loaded.state.extra.snapshot().get("k"),
         Some(&serde_json::json!(42))
@@ -67,7 +70,7 @@ async fn test_list_sessions_and_empty_load() {
         .expect("connect");
     for i in 0..3 {
         let s_id = format!("s{i}");
-        let state = VersionedState::new_with_user_message("x");
+        let state = state_with_user("x");
         let cp_struct = Checkpoint {
             session_id: s_id.clone(),
             step: 1,
@@ -100,7 +103,7 @@ async fn test_step_execution_metadata_query_and_pagination() {
         .expect("connect");
 
     for step in 1..=5 {
-        let state = VersionedState::new_with_user_message(&format!("step {step}"));
+        let state = state_with_user(&format!("step {step}"));
         let checkpoint = Checkpoint {
             session_id: "paginate_session".into(),
             step,
@@ -145,7 +148,7 @@ async fn test_error_persistence_roundtrip() {
     let cp = SQLiteCheckpointer::connect("sqlite::memory:")
         .await
         .expect("connect");
-    let mut state = VersionedState::new_with_user_message("err");
+    let mut state = state_with_user("err");
     let err = ErrorEvent {
         when: Utc::now(),
         scope: ErrorScope::App,

@@ -1,10 +1,5 @@
-use async_trait::async_trait;
-use rustc_hash::FxHashMap;
-use serde_json::json;
 use weavegraph::channels::Channel;
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
-use weavegraph::message::Message;
-use weavegraph::node::{NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{
     AppRunner, CheckpointerType, PausedReason, SessionInit, StepOptions, StepResult,
 };
@@ -12,56 +7,10 @@ use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 use weavegraph::utils::testing::{FailingNode, TestNode};
 
-// Simple test nodes for runner testing (copied to keep tests self-contained)
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct NodeA;
+mod common;
+use common::*;
 
-#[async_trait]
-impl weavegraph::node::Node for NodeA {
-    async fn run(
-        &self,
-        _snapshot: StateSnapshot,
-        _ctx: NodeContext,
-    ) -> Result<NodePartial, NodeError> {
-        let mut extra = FxHashMap::default();
-        extra.insert("node_a_executed".into(), json!(true));
-
-        Ok(NodePartial {
-            messages: Some(vec![Message {
-                role: "assistant".into(),
-                content: "NodeA executed".into(),
-            }]),
-            extra: Some(extra),
-            ..Default::default()
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct NodeB;
-
-#[async_trait]
-impl weavegraph::node::Node for NodeB {
-    async fn run(
-        &self,
-        _snapshot: StateSnapshot,
-        _ctx: NodeContext,
-    ) -> Result<NodePartial, NodeError> {
-        let mut extra = FxHashMap::default();
-        extra.insert("node_b_executed".into(), json!(true));
-
-        Ok(NodePartial {
-            messages: Some(vec![Message {
-                role: "assistant".into(),
-                content: "NodeB executed".into(),
-            }]),
-            extra: Some(extra),
-            ..Default::default()
-        })
-    }
-}
+// Removed ad-hoc NodeA/NodeB; using common TestNode/FailingNode helpers instead.
 
 fn make_test_app() -> weavegraph::app::App {
     let mut builder = GraphBuilder::new();
@@ -88,7 +37,7 @@ async fn test_conditional_edge_routing() {
         .add_conditional_edge(NodeKind::Custom("Root".into()), pred.clone());
     let app = gb.compile();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    let mut state = VersionedState::new_with_user_message("hi");
+    let mut state = state_with_user("hi");
     state
         .extra
         .get_mut()
@@ -111,7 +60,7 @@ async fn test_conditional_edge_routing() {
     } else {
         panic!("Expected completed step");
     }
-    let state2 = VersionedState::new_with_user_message("hi");
+    let state2 = state_with_user("hi");
     match runner
         .create_session("sess2".to_string(), state2.clone())
         .await
@@ -136,7 +85,7 @@ async fn test_conditional_edge_routing() {
 async fn test_create_session() {
     let app = make_test_app();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    let initial_state = VersionedState::new_with_user_message("hello");
+    let initial_state = state_with_user("hello");
 
     let result = runner
         .create_session("test_session".into(), initial_state)
@@ -150,7 +99,7 @@ async fn test_create_session() {
 async fn test_run_step_basic() {
     let app = make_test_app();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    let initial_state = VersionedState::new_with_user_message("hello");
+    let initial_state = state_with_user("hello");
 
     assert_eq!(
         runner
@@ -192,15 +141,16 @@ async fn test_run_until_complete() {
     assert!(result.is_ok());
 
     let final_state = result.unwrap();
-    assert_eq!(final_state.messages.len(), 2); // user + test node message
-    assert_eq!(final_state.messages.version(), 2);
+    // user + test node message
+    assert_eq!(final_state.messages.len(), 2);
+    assert_message_contains(&final_state, "ran:test:step:1");
 }
 
 #[tokio::test]
 async fn test_interrupt_before() {
     let app = make_test_app();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    let initial_state = VersionedState::new_with_user_message("hello");
+    let initial_state = state_with_user("hello");
 
     assert_eq!(
         runner
@@ -229,7 +179,7 @@ async fn test_interrupt_before() {
 async fn test_interrupt_after() {
     let app = make_test_app();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    let initial_state = VersionedState::new_with_user_message("hello");
+    let initial_state = state_with_user("hello");
 
     assert_eq!(
         runner
@@ -266,7 +216,7 @@ async fn test_resume_from_checkpoint() {
     );
 
     let mut runner1 = AppRunner::new(app.clone(), CheckpointerType::SQLite).await;
-    let initial_state = VersionedState::new_with_user_message("hello from checkpoint test");
+    let initial_state = state_with_user("hello from checkpoint test");
 
     let session_id = "checkpoint_test_session";
     assert_eq!(
@@ -337,7 +287,7 @@ async fn test_multi_target_conditional_edge() {
     let app = gb.compile();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
 
-    let mut state = VersionedState::new_with_user_message("test");
+    let mut state = state_with_user("test");
     state
         .extra
         .get_mut()
@@ -361,7 +311,7 @@ async fn test_multi_target_conditional_edge() {
         panic!("Expected completed step");
     }
 
-    let state2 = VersionedState::new_with_user_message("test2");
+    let state2 = state_with_user("test2");
     runner
         .create_session("single_test".to_string(), state2)
         .await
@@ -399,7 +349,7 @@ async fn test_conditional_edge_with_invalid_targets() {
     let app = gb.compile();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
 
-    let state = VersionedState::new_with_user_message("test");
+    let state = state_with_user("test");
     runner
         .create_session("mixed_test".to_string(), state)
         .await
@@ -431,7 +381,7 @@ async fn test_error_event_appended_on_failure() {
 
     let app = gb.compile();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    let initial_state = VersionedState::new_with_user_message("hello");
+    let initial_state = state_with_user("hello");
 
     assert!(matches!(
         runner

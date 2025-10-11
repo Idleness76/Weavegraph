@@ -7,12 +7,13 @@ use weavegraph::types::NodeKind;
 #[test]
 fn test_add_conditional_edge() {
     let route_to_y: EdgePredicate = std::sync::Arc::new(|_s| vec!["Y".to_string()]);
-    let gb = GraphBuilder::new()
+    let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("Y".into()), NoopNode)
         .add_node(NodeKind::Custom("N".into()), NoopNode)
-        .add_conditional_edge(NodeKind::Start, route_to_y.clone());
-    assert_eq!(gb.conditional_edges.len(), 1);
-    let ce = &gb.conditional_edges[0];
+        .add_conditional_edge(NodeKind::Start, route_to_y.clone())
+        .compile();
+    assert_eq!(app.conditional_edges().len(), 1);
+    let ce = &app.conditional_edges()[0];
     assert_eq!(ce.from, NodeKind::Start);
     let snap = empty_snapshot();
     assert_eq!((ce.predicate)(snap), vec!["Y".to_string()]);
@@ -20,29 +21,31 @@ fn test_add_conditional_edge() {
 
 #[test]
 fn test_graph_builder_new() {
-    let gb = GraphBuilder::new();
-    assert!(gb.nodes.is_empty());
-    assert!(gb.edges.is_empty());
-    assert!(gb.conditional_edges.is_empty());
+    let app = GraphBuilder::new().compile();
+    assert!(app.nodes().is_empty());
+    assert!(app.edges().is_empty());
+    assert!(app.conditional_edges().is_empty());
 }
 
 #[test]
 fn test_add_node() {
-    let gb = GraphBuilder::new()
+    let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("A".into()), NoopNode)
-        .add_node(NodeKind::Custom("B".into()), NoopNode);
-    assert_eq!(gb.nodes.len(), 2);
-    assert!(gb.nodes.contains_key(&NodeKind::Custom("A".into())));
-    assert!(gb.nodes.contains_key(&NodeKind::Custom("B".into())));
+        .add_node(NodeKind::Custom("B".into()), NoopNode)
+        .compile();
+    assert_eq!(app.nodes().len(), 2);
+    assert!(app.nodes().contains_key(&NodeKind::Custom("A".into())));
+    assert!(app.nodes().contains_key(&NodeKind::Custom("B".into())));
 }
 
 #[test]
 fn test_add_edge() {
-    let gb = GraphBuilder::new()
+    let app = GraphBuilder::new()
         .add_edge(NodeKind::Start, NodeKind::End)
-        .add_edge(NodeKind::Start, NodeKind::Custom("C".to_string()));
-    assert_eq!(gb.edges.len(), 1);
-    let edges = gb.edges.get(&NodeKind::Start).unwrap();
+        .add_edge(NodeKind::Start, NodeKind::Custom("C".to_string()))
+        .compile();
+    assert_eq!(app.edges().len(), 1);
+    let edges = app.edges().get(&NodeKind::Start).unwrap();
     assert_eq!(edges.len(), 2);
     assert!(edges.contains(&NodeKind::End));
     assert!(edges.contains(&NodeKind::Custom("C".to_string())));
@@ -85,10 +88,11 @@ fn test_nodekind_other_variant() {
 
 #[test]
 fn test_duplicate_edges() {
-    let gb = GraphBuilder::new()
+    let app = GraphBuilder::new()
         .add_edge(NodeKind::Start, NodeKind::End)
-        .add_edge(NodeKind::Start, NodeKind::End);
-    let edges = gb.edges.get(&NodeKind::Start).unwrap();
+        .add_edge(NodeKind::Start, NodeKind::End)
+        .compile();
+    let edges = app.edges().get(&NodeKind::Start).unwrap();
     let count = edges.iter().filter(|k| **k == NodeKind::End).count();
     assert_eq!(count, 2);
 }
