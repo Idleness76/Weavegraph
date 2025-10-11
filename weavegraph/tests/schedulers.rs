@@ -3,9 +3,8 @@ use std::sync::Arc;
 use weavegraph::event_bus::EventBus;
 use weavegraph::schedulers::scheduler::{Scheduler, SchedulerState, StepRunResult};
 use weavegraph::types::NodeKind;
-use weavegraph::utils::testing::{
-    create_test_snapshot, make_delayed_registry, make_test_registry, FailingNode,
-};
+mod common;
+use common::{create_test_snapshot, make_delayed_registry, make_test_registry, FailingNode};
 
 #[tokio::test]
 async fn test_superstep_propagates_node_error() {

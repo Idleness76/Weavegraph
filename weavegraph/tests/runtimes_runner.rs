@@ -5,7 +5,6 @@ use weavegraph::runtimes::{
 };
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
-use weavegraph::utils::testing::{FailingNode, TestNode};
 
 mod common;
 use common::*;

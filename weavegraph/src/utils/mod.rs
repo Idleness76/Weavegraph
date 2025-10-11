@@ -64,5 +64,4 @@ pub mod id_generator;
 pub mod json_ext;
 pub mod merge_inspector;
 pub mod message_id_helpers;
-pub mod testing;
 pub mod type_guards;
