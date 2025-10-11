@@ -40,7 +40,7 @@
 //!
 //! ```
 //! use weavegraph::{
-//!     graph::GraphBuilder,
+//!     graphs::GraphBuilder,
 //!     node::{Node, NodeContext, NodePartial},
 //!     message::Message,
 //!     state::VersionedState,
@@ -135,7 +135,7 @@
 //! - [`message`] - Message types and construction utilities
 //! - [`state`] - Versioned state management and snapshots  
 //! - [`node`] - Node trait and execution primitives
-//! - [`graph`] - Workflow graph definition and compilation
+//! - [`graphs`] - Workflow graph definition and compilation
 //! - [`schedulers`] - Concurrent execution and dependency resolution
 //! - [`runtimes`] - High-level execution runtime and checkpointing
 //! - [`channels`] - Channel-based state storage and versioning
@@ -144,7 +144,7 @@
 pub mod app;
 pub mod channels;
 pub mod event_bus;
-pub mod graph;
+pub mod graphs;
 pub mod message;
 pub mod node;
 pub mod reducers;

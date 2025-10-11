@@ -37,7 +37,7 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::instrument;
 use weavegraph::channels::{errors::pretty_print, Channel};
-use weavegraph::graph::GraphBuilder;
+use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};

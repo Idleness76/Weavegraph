@@ -29,7 +29,7 @@ use tracing::instrument;
 
 use weavegraph::channels::errors::{pretty_print, ErrorEvent, ErrorScope, LadderError};
 use weavegraph::channels::Channel;
-use weavegraph::graph::{EdgePredicate, GraphBuilder};
+use weavegraph::graphs::{EdgePredicate, GraphBuilder};
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};

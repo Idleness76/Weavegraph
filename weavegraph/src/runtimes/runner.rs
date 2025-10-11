@@ -673,7 +673,7 @@ impl AppRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{EdgePredicate, GraphBuilder};
+    use crate::graphs::{EdgePredicate, GraphBuilder};
     use crate::message::Message;
     use crate::node::{NodeContext, NodeError, NodePartial};
     use crate::state::{StateSnapshot, VersionedState};
