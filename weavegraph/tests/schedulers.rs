@@ -1,18 +1,17 @@
-use super::scheduler::{Scheduler, SchedulerState, StepRunResult};
-use crate::event_bus::EventBus;
-use crate::node::{Node, NodeError};
-use crate::types::NodeKind;
-use crate::utils::testing::{
-    create_test_snapshot, make_delayed_registry, make_test_registry, FailingNode,
-};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
+use weavegraph::event_bus::EventBus;
+use weavegraph::schedulers::scheduler::{Scheduler, SchedulerState, StepRunResult};
+use weavegraph::types::NodeKind;
+use weavegraph::utils::testing::{
+    create_test_snapshot, make_delayed_registry, make_test_registry, FailingNode,
+};
 
 #[tokio::test]
 async fn test_superstep_propagates_node_error() {
     let sched = Scheduler::new(4);
     let mut state = SchedulerState::default();
-    let mut nodes: FxHashMap<NodeKind, Arc<dyn Node>> = FxHashMap::default();
+    let mut nodes: FxHashMap<NodeKind, Arc<dyn weavegraph::node::Node>> = FxHashMap::default();
     nodes.insert(
         NodeKind::Custom("FAIL".into()),
         Arc::new(FailingNode::default()),
@@ -32,8 +31,8 @@ async fn test_superstep_propagates_node_error() {
         )
         .await;
     match res {
-        Err(super::scheduler::SchedulerError::NodeRun {
-            source: NodeError::MissingInput { what },
+        Err(weavegraph::schedulers::scheduler::SchedulerError::NodeRun {
+            source: weavegraph::node::NodeError::MissingInput { what },
             ..
         }) => {
             assert_eq!(what, "test_key");
@@ -49,7 +48,7 @@ async fn test_superstep_propagates_node_error() {
 fn test_should_run_and_record_seen() {
     let sched = Scheduler::new(4);
     let mut state = SchedulerState::default();
-    let id = "Other(\"A\")"; // format!("{:?}", NodeKind::Other("A".into()))
+    let id = "Other(\"A\")"; // legacy label encoding used in versions_seen
 
     // No record -> should run
     let snap1 = create_test_snapshot(1, 1);
@@ -145,9 +144,7 @@ async fn test_superstep_skips_end_and_nochange() {
 
 #[tokio::test]
 async fn test_superstep_outputs_order_agnostic() {
-    // Build two nodes with different delays to encourage out-of-order completion.
     let nodes = make_delayed_registry();
-
     let frontier = vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())];
     let snap = create_test_snapshot(1, 1);
     let sched = Scheduler::new(2);
@@ -182,12 +179,10 @@ async fn test_superstep_outputs_order_agnostic() {
 
 #[tokio::test]
 async fn test_superstep_serialized_with_limit_1() {
-    // Two nodes with different delays, but concurrency limit 1 forces serial execution.
     let nodes = make_delayed_registry();
-
     let frontier = vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())];
     let snap = create_test_snapshot(1, 1);
-    let sched = Scheduler::new(1); // force serial execution
+    let sched = Scheduler::new(1);
     let mut state = SchedulerState::default();
     let event_bus = EventBus::default();
     let res = sched
@@ -202,13 +197,11 @@ async fn test_superstep_serialized_with_limit_1() {
         .await
         .unwrap();
 
-    // ran_nodes preserves scheduling order
     assert_eq!(
         res.ran_nodes,
         vec![NodeKind::Custom("A".into()), NodeKind::Custom("B".into())]
     );
 
-    // outputs must be in the same order as ran_nodes
     let output_ids: Vec<_> = res.outputs.iter().map(|(id, _)| id.clone()).collect();
     assert_eq!(output_ids, res.ran_nodes);
 }
