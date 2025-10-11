@@ -1,4 +1,4 @@
-use weavegraph::runtimes::{SessionId, StepNumber};
+use weavegraph::runtimes::types::*;
 
 #[test]
 fn test_session_id_creation() {
@@ -11,6 +11,7 @@ fn test_session_id_creation() {
 fn test_session_id_generation() {
     let id1 = SessionId::generate();
     let id2 = SessionId::generate();
+    // Generated IDs should be different
     assert_ne!(id1, id2);
 }
 
@@ -30,5 +31,5 @@ fn test_step_number_arithmetic() {
 fn test_step_number_saturation() {
     let max_step = StepNumber::new(u64::MAX);
     let next = max_step.next();
-    assert_eq!(next.value(), u64::MAX);
+    assert_eq!(next.value(), u64::MAX); // Should saturate, not overflow
 }
