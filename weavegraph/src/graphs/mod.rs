@@ -82,7 +82,6 @@
 mod builder;
 mod compilation;
 mod edges;
-mod tests;
 
 // Public re-exports for backward compatibility
 pub use builder::GraphBuilder;
