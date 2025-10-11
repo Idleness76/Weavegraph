@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use rustc_hash::FxHashMap;
 use serde_json::json;
@@ -11,6 +13,33 @@ use weavegraph::types::NodeKind;
 #[derive(Debug, Clone)]
 pub struct TestNode {
     pub name: &'static str,
+}
+
+// Example usage to avoid dead_code warning
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_testnode_construction() {
+        let node = TestNode { name: "example" };
+        let (sender, _receiver) = flume::unbounded();
+        let ctx = NodeContext {
+            node_id: "test_node".to_string(),
+            step: 1,
+            event_bus_sender: sender,
+        };
+        let snapshot = StateSnapshot {
+            messages: vec![],
+            messages_version: 1,
+            extra: FxHashMap::default(),
+            extra_version: 1,
+            errors: vec![],
+            errors_version: 1,
+        };
+        let result = node.run(snapshot, ctx).await;
+        assert!(result.is_ok());
+    }
 }
 
 #[async_trait]

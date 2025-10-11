@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -36,5 +38,21 @@ impl Node for NoopNode {
         _ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
         Ok(NodePartial::default())
+    }
+}
+
+// Example usage to avoid dead_code warning
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_message_node_construction() {
+        let _node = SimpleMessageNode::new("Hello, world!");
+    }
+
+    #[test]
+    fn test_noop_node_construction() {
+        let _node = NoopNode;
     }
 }

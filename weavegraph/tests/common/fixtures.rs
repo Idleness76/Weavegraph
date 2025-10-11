@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde_json::Value;
 use weavegraph::channels::Channel;
 use weavegraph::state::{StateSnapshot, VersionedState};
