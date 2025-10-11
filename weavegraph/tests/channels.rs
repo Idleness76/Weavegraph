@@ -1,9 +1,9 @@
-use super::errors::*;
-use super::ErrorsChannel;
-use crate::channels::Channel;
-use crate::types::ChannelType;
 use chrono::{TimeZone, Utc};
 use serde_json::json;
+
+use weavegraph::channels::errors::*;
+use weavegraph::channels::{Channel, ErrorsChannel};
+use weavegraph::types::ChannelType;
 
 /********************
  * LadderError tests
@@ -38,7 +38,6 @@ fn ladder_error_serde_roundtrip() {
 
 #[test]
 fn error_scope_enum_variants_serde() {
-    // Node scope with kind encoded externally as string
     let node = ErrorScope::Node {
         kind: "Custom:Parser".into(),
         step: 42,
@@ -48,12 +47,10 @@ fn error_scope_enum_variants_serde() {
     assert_eq!(ser_node["kind"], "Custom:Parser");
     assert_eq!(ser_node["step"], 42);
 
-    // Scheduler
     let sch = ErrorScope::Scheduler { step: 10 };
     let ser_sch = serde_json::to_value(&sch).unwrap();
     assert_eq!(ser_sch["scope"], "scheduler");
 
-    // Runner
     let run = ErrorScope::Runner {
         session: "abc".into(),
         step: 7,
@@ -61,12 +58,10 @@ fn error_scope_enum_variants_serde() {
     let ser_run = serde_json::to_value(&run).unwrap();
     assert_eq!(ser_run["scope"], "runner");
 
-    // App
     let app = ErrorScope::App;
     let ser_app = serde_json::to_value(&app).unwrap();
     assert_eq!(ser_app["scope"], "app");
 
-    // Roundtrip
     assert_eq!(
         serde_json::from_value::<ErrorScope>(ser_node).unwrap(),
         node
@@ -99,7 +94,6 @@ fn error_event_defaults_and_roundtrip() {
 #[test]
 fn error_event_defaults_are_empty_when_missing() {
     let when = Utc.with_ymd_and_hms(2024, 5, 6, 7, 8, 9).unwrap();
-    // Internally tagged enums nested inside a struct are encoded as an object with the tag inside
     let v = json!({
         "when": when,
         "scope": {"scope": "app"},
@@ -149,7 +143,6 @@ fn errors_channel_basics() {
     assert_eq!(ch.len(), 0);
     assert!(ch.is_empty());
 
-    // insert a couple of events
     let when = Utc::now();
     ch.get_mut().push(ErrorEvent {
         when,
@@ -197,13 +190,8 @@ fn errors_channel_new_constructor() {
     assert_eq!(ch.snapshot(), vec![e]);
 }
 
-/********************
- * Optional CLI pretty demo (non-fatal)
- ********************/
-
 #[test]
 fn optional_cli_pretty_demo() {
-    // This test just ensures pretty_print output can be produced without panics
     let when = Utc.with_ymd_and_hms(2024, 2, 2, 2, 2, 2).unwrap();
     let events = vec![ErrorEvent {
         when,
@@ -214,7 +202,6 @@ fn optional_cli_pretty_demo() {
     }];
 
     let out = pretty_print(&events);
-    // print to stdout for showcase effect when running `cargo test -q`
     println!("\n=== Errors pretty showcase ===\n{}", out);
     assert!(out.contains("display"));
 }

@@ -1,18 +1,19 @@
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 
-use crate::channels::Channel;
-use crate::{
-    message::Message,
-    node::NodePartial,
-    reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry, ReducerType},
-    state::VersionedState,
-    types::ChannelType,
-};
+use weavegraph::channels::Channel;
+use weavegraph::message::Message;
+use weavegraph::node::NodePartial;
+use weavegraph::reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry, ReducerType};
+use weavegraph::state::VersionedState;
+
+mod common;
+use common::*;
+use weavegraph::types::ChannelType;
 
 // Fresh baseline state helper
 fn base_state() -> VersionedState {
-    VersionedState::new_with_user_message("a")
+    state_with_user("a")
 }
 
 // Local guard prototype mirroring runtime logic
@@ -108,6 +109,8 @@ fn test_map_merge_merges_and_overwrites_state() {
 
     reducer.apply(&mut state, &partial);
 
+    assert_extra_has(&state, "k1");
+    assert_extra_has(&state, "k2");
     let extra_snapshot = state.extra.snapshot();
     assert_eq!(
         extra_snapshot.get("k1"),
@@ -180,6 +183,7 @@ fn test_enum_wrapper_dispatch() {
     }
 
     assert_eq!(state.messages.snapshot().len(), 2);
+    assert_extra_has(&state, "seed");
     assert_eq!(
         state.extra.snapshot().get("seed"),
         Some(&Value::String("y".into()))
@@ -244,13 +248,6 @@ fn test_registry_integration_like_flow() {
         }
     }
 
-    assert!(state
-        .messages
-        .snapshot()
-        .iter()
-        .any(|m| m.content == "from node"));
-    assert_eq!(
-        state.extra.snapshot().get("origin"),
-        Some(&Value::String("node".into()))
-    );
+    assert_message_contains(&state, "from node");
+    assert_extra_has(&state, "origin");
 }

@@ -43,9 +43,6 @@ mod checkpointer_sqlite_helpers;
 pub mod persistence;
 pub mod runner;
 pub mod runtime_config;
-
-#[cfg(test)]
-mod error_persistence_tests;
 pub mod types;
 
 pub use checkpointer::{

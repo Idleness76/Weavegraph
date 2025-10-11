@@ -4,8 +4,6 @@ pub mod errors;
 mod errors_channel;
 mod extras;
 mod messages;
-#[cfg(test)]
-mod tests;
 
 pub use errors::*;
 pub use errors_channel::ErrorsChannel;
