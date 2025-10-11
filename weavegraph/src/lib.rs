@@ -40,7 +40,7 @@
 //!
 //! ```
 //! use weavegraph::{
-//!     graph::GraphBuilder,
+//!     graphs::GraphBuilder,
 //!     node::{Node, NodeContext, NodePartial},
 //!     message::Message,
 //!     state::VersionedState,
@@ -145,10 +145,6 @@ pub mod app;
 pub mod channels;
 pub mod event_bus;
 pub mod graphs;
-pub mod graph {
-    //! Re-export for backward compatibility - prefer `graphs` module for new code
-    pub use crate::graphs::*;
-}
 pub mod message;
 pub mod node;
 pub mod reducers;

@@ -32,7 +32,7 @@ use crate::types::NodeKind;
 ///
 /// ## Simple Linear Workflow
 /// ```
-/// use weavegraph::graph::GraphBuilder;
+/// use weavegraph::graphs::GraphBuilder;
 /// use weavegraph::types::NodeKind;
 ///
 /// # struct MyNode;
@@ -52,7 +52,7 @@ use crate::types::NodeKind;
 ///
 /// ## Complex Workflow with Fan-out
 /// ```
-/// use weavegraph::graph::GraphBuilder;
+/// use weavegraph::graphs::GraphBuilder;
 /// use weavegraph::types::NodeKind;
 ///
 /// # struct MyNode;
@@ -101,7 +101,7 @@ impl GraphBuilder {
     /// # Examples
     ///
     /// ```
-    /// use weavegraph::graph::GraphBuilder;
+    /// use weavegraph::graphs::GraphBuilder;
     ///
     /// let builder = GraphBuilder::new();
     /// // Add nodes, edges, and configuration...
@@ -131,7 +131,7 @@ impl GraphBuilder {
     /// # Examples
     ///
     /// ```
-    /// use weavegraph::graph::{GraphBuilder, EdgePredicate};
+    /// use weavegraph::graphs::{GraphBuilder, EdgePredicate};
     /// use weavegraph::types::NodeKind;
     /// use std::sync::Arc;
     ///
@@ -183,7 +183,7 @@ impl GraphBuilder {
     /// # Examples
     ///
     /// ```
-    /// use weavegraph::graph::GraphBuilder;
+    /// use weavegraph::graphs::GraphBuilder;
     /// use weavegraph::types::NodeKind;
     /// use weavegraph::node::{Node, NodeContext, NodePartial, NodeError};
     /// use weavegraph::state::StateSnapshot;
@@ -240,7 +240,7 @@ impl GraphBuilder {
     /// # Examples
     ///
     /// ```
-    /// use weavegraph::graph::GraphBuilder;
+    /// use weavegraph::graphs::GraphBuilder;
     /// use weavegraph::types::NodeKind;
     ///
     /// # struct MyNode;
@@ -259,7 +259,7 @@ impl GraphBuilder {
     ///
     /// ## Fan-out Pattern
     /// ```
-    /// use weavegraph::graph::GraphBuilder;
+    /// use weavegraph::graphs::GraphBuilder;
     /// use weavegraph::types::NodeKind;
     ///
     /// # struct MyNode;
@@ -295,7 +295,7 @@ impl GraphBuilder {
     /// # Examples
     ///
     /// ```
-    /// use weavegraph::graph::GraphBuilder;
+    /// use weavegraph::graphs::GraphBuilder;
     /// use weavegraph::runtimes::RuntimeConfig;
     ///
     /// # struct MyNode;

@@ -26,7 +26,7 @@ impl super::builder::GraphBuilder {
     /// # Examples
     ///
     /// ```
-    /// use weavegraph::graph::GraphBuilder;
+    /// use weavegraph::graphs::GraphBuilder;
     /// use weavegraph::types::NodeKind;
     ///
     /// # struct MyNode;

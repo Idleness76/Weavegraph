@@ -134,7 +134,7 @@ let state = VersionedState::builder()
 Declarative workflow definition with conditional routing:
 
 ```rust
-use weavegraph::graph::GraphBuilder;
+use weavegraph::graphs::GraphBuilder;
 use weavegraph::types::NodeKind;
 use std::sync::Arc;
 
@@ -174,7 +174,7 @@ Compact example:
 
 ```rust
 use std::sync::Arc;
-use weavegraph::graph::{GraphBuilder, EdgePredicate};
+use weavegraph::graphs::{GraphBuilder, EdgePredicate};
 use weavegraph::types::NodeKind;
 
 let route: EdgePredicate = Arc::new(|snap| {

@@ -47,7 +47,7 @@ use weavegraph::channels::{
     errors::{pretty_print, ErrorEvent, ErrorScope, LadderError},
     Channel,
 };
-use weavegraph::graph::GraphBuilder;
+use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};

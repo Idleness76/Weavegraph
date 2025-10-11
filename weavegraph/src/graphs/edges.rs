@@ -17,7 +17,7 @@ use std::sync::Arc;
 /// # Examples
 ///
 /// ```
-/// use weavegraph::graph::EdgePredicate;
+/// use weavegraph::graphs::EdgePredicate;
 /// use std::sync::Arc;
 ///
 /// // Route based on message count
@@ -50,7 +50,7 @@ pub type EdgePredicate =
 /// # Examples
 ///
 /// ```
-/// use weavegraph::graph::{ConditionalEdge, EdgePredicate};
+/// use weavegraph::graphs::{ConditionalEdge, EdgePredicate};
 /// use weavegraph::types::NodeKind;
 /// use std::sync::Arc;
 ///

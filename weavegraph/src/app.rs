@@ -22,7 +22,7 @@ use tracing::instrument;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use weavegraph::graph::GraphBuilder;
+/// use weavegraph::graphs::GraphBuilder;
 /// use weavegraph::runtimes::CheckpointerType;
 /// use weavegraph::state::VersionedState;
 /// use weavegraph::types::NodeKind;

@@ -21,7 +21,7 @@ use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use weavegraph::channels::Channel;
-use weavegraph::graph::GraphBuilder;
+use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};

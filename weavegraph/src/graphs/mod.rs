@@ -16,7 +16,7 @@
 //! # Quick Start
 //!
 //! ```
-//! use weavegraph::graph::GraphBuilder;
+//! use weavegraph::graphs::GraphBuilder;
 //! use weavegraph::types::NodeKind;
 //! use weavegraph::node::{Node, NodeContext, NodePartial, NodeError};
 //! use weavegraph::state::StateSnapshot;
@@ -46,7 +46,7 @@
 //! ## Conditional Routing
 //!
 //! ```
-//! use weavegraph::graph::{GraphBuilder, EdgePredicate};
+//! use weavegraph::graphs::{GraphBuilder, EdgePredicate};
 //! use weavegraph::types::NodeKind;
 //! use std::sync::Arc;
 //!
