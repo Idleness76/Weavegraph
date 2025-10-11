@@ -33,6 +33,3 @@ pub enum ReducerError {
     #[diagnostic(code(weavegraph::reducers::apply))]
     Apply(String),
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,14 +1,12 @@
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 
-use crate::channels::Channel;
-use crate::{
-    message::Message,
-    node::NodePartial,
-    reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry, ReducerType},
-    state::VersionedState,
-    types::ChannelType,
-};
+use weavegraph::channels::Channel;
+use weavegraph::message::Message;
+use weavegraph::node::NodePartial;
+use weavegraph::reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry, ReducerType};
+use weavegraph::state::VersionedState;
+use weavegraph::types::ChannelType;
 
 // Fresh baseline state helper
 fn base_state() -> VersionedState {
