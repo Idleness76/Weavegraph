@@ -53,7 +53,7 @@ use tracing::instrument;
 pub struct App {
     nodes: FxHashMap<NodeKind, Arc<dyn Node>>,
     edges: FxHashMap<NodeKind, Vec<NodeKind>>,
-    conditional_edges: Vec<crate::graph::ConditionalEdge>,
+    conditional_edges: Vec<crate::graphs::ConditionalEdge>,
     reducer_registry: ReducerRegistry,
     runtime_config: RuntimeConfig,
 }
@@ -63,7 +63,7 @@ impl App {
     pub(crate) fn from_parts(
         nodes: FxHashMap<NodeKind, Arc<dyn Node>>,
         edges: FxHashMap<NodeKind, Vec<NodeKind>>,
-        conditional_edges: Vec<crate::graph::ConditionalEdge>,
+        conditional_edges: Vec<crate::graphs::ConditionalEdge>,
         runtime_config: RuntimeConfig,
     ) -> Self {
         App {
@@ -89,7 +89,7 @@ impl App {
     /// # Returns
     /// A slice of conditional edge specifications.
     #[must_use]
-    pub fn conditional_edges(&self) -> &Vec<crate::graph::ConditionalEdge> {
+    pub fn conditional_edges(&self) -> &Vec<crate::graphs::ConditionalEdge> {
         &self.conditional_edges
     }
 
