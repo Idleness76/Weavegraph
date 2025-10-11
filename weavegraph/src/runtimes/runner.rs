@@ -1,17 +1,18 @@
-use rustc_hash::FxHashMap;
-use std::sync::Arc;
-
-use super::checkpointer::{restore_session_state, Checkpoint, Checkpointer, CheckpointerError};
 use crate::app::App;
 use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::channels::Channel;
 use crate::event_bus::EventBus;
 use crate::node::NodePartial;
-use crate::runtimes::{CheckpointerType, InMemoryCheckpointer};
+use crate::runtimes::CheckpointerType;
+use crate::runtimes::{
+    restore_session_state, Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer,
+};
 use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
 use crate::state::VersionedState;
 use crate::types::NodeKind;
 use miette::Diagnostic;
+use rustc_hash::FxHashMap;
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::instrument;
 
