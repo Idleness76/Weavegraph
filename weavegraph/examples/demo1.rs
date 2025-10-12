@@ -169,7 +169,7 @@ async fn demo() -> Result<()> {
         .add_edge(NodeKind::Custom("ProcessorB".into()), NodeKind::End)
         // Add a secondary path: Start -> B (for demonstration of fan-out)
         .add_edge(NodeKind::Start, NodeKind::Custom("ProcessorB".into()))
-        .compile();
+        .compile()?;
 
     println!("   ✓ Graph compiled successfully");
     println!("   ✓ Nodes: Initializer, ProcessorA, ProcessorB, End");

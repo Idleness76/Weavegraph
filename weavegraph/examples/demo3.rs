@@ -400,7 +400,7 @@ async fn demo() -> Result<()> {
         )
         // .set_entry(NodeKind::Start)  // removed: Start is virtual; no explicit entry required
         .with_runtime_config(runtime_config)
-        .compile();
+        .compile()?;
 
     println!("   ✓ LLM workflow graph compiled successfully");
     println!("   ✓ Nodes: ContentGenerator → ContentEnhancer (conditional loop) → End");

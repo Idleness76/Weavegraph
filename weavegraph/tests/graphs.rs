@@ -11,7 +11,8 @@ fn test_add_conditional_edge() {
         .add_node(NodeKind::Custom("Y".into()), NoopNode)
         .add_node(NodeKind::Custom("N".into()), NoopNode)
         .add_conditional_edge(NodeKind::Start, route_to_y.clone())
-        .compile();
+        .compile()
+        .unwrap();
     assert_eq!(app.conditional_edges().len(), 1);
     let ce = &app.conditional_edges()[0];
     assert_eq!(ce.from(), &NodeKind::Start);
@@ -21,10 +22,9 @@ fn test_add_conditional_edge() {
 
 #[test]
 fn test_graph_builder_new() {
-    let app = GraphBuilder::new().compile();
-    assert!(app.nodes().is_empty());
-    assert!(app.edges().is_empty());
-    assert!(app.conditional_edges().is_empty());
+    let err = GraphBuilder::new().compile().err().unwrap();
+    // Expect MissingEntry; structural validation prevents compiling empty graphs
+    let _ = err; // just ensure it returns an error; specific variant tested elsewhere
 }
 
 #[test]
@@ -32,7 +32,9 @@ fn test_add_node() {
     let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("A".into()), NoopNode)
         .add_node(NodeKind::Custom("B".into()), NoopNode)
-        .compile();
+        .add_edge(NodeKind::Start, NodeKind::End)
+        .compile()
+        .unwrap();
     assert_eq!(app.nodes().len(), 2);
     assert!(app.nodes().contains_key(&NodeKind::Custom("A".into())));
     assert!(app.nodes().contains_key(&NodeKind::Custom("B".into())));
@@ -41,9 +43,11 @@ fn test_add_node() {
 #[test]
 fn test_add_edge() {
     let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("C".to_string()), NoopNode)
         .add_edge(NodeKind::Start, NodeKind::End)
         .add_edge(NodeKind::Start, NodeKind::Custom("C".to_string()))
-        .compile();
+        .compile()
+        .unwrap();
     assert_eq!(app.edges().len(), 1);
     let edges = app.edges().get(&NodeKind::Start).unwrap();
     assert_eq!(edges.len(), 2);
@@ -54,7 +58,7 @@ fn test_add_edge() {
 #[test]
 fn test_compile() {
     let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
-    let app = gb.compile();
+    let app = gb.compile().unwrap();
     assert_eq!(app.edges().len(), 1);
     assert!(app
         .edges()
@@ -66,14 +70,14 @@ fn test_compile() {
 #[test]
 fn test_compile_missing_entry() {
     let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
-    let app = gb.compile();
+    let app = gb.compile().unwrap();
     assert!(app.edges().get(&NodeKind::Start).is_some());
 }
 
 #[test]
 fn test_compile_entry_not_registered() {
     let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
-    let app = gb.compile();
+    let app = gb.compile().unwrap();
     assert_eq!(app.edges().len(), 1);
 }
 
@@ -91,7 +95,8 @@ fn test_duplicate_edges() {
     let app = GraphBuilder::new()
         .add_edge(NodeKind::Start, NodeKind::End)
         .add_edge(NodeKind::Start, NodeKind::End)
-        .compile();
+        .compile()
+        .unwrap();
     let edges = app.edges().get(&NodeKind::Start).unwrap();
     let count = edges.iter().filter(|k| **k == NodeKind::End).count();
     assert_eq!(count, 2);
@@ -100,7 +105,7 @@ fn test_duplicate_edges() {
 #[test]
 fn test_builder_fluent_api() {
     let final_builder = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
-    let _app = final_builder.compile();
+    let _app = final_builder.compile().unwrap();
 }
 
 #[test]
@@ -113,5 +118,5 @@ fn test_runtime_config_integration() {
         .add_edge(NodeKind::Start, NodeKind::End)
         .with_runtime_config(config);
 
-    let _app = builder.compile();
+    let _app = builder.compile().unwrap();
 }

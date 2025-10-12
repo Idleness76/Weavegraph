@@ -224,4 +224,15 @@ impl GraphBuilder {
             self.runtime_config,
         )
     }
+
+    // Internal read-only accessors for validation in sibling modules
+    pub(super) fn nodes_ref(&self) -> &FxHashMap<NodeKind, Arc<dyn Node>> {
+        &self.nodes
+    }
+    pub(super) fn edges_ref(&self) -> &FxHashMap<NodeKind, Vec<NodeKind>> {
+        &self.edges
+    }
+    pub(super) fn conditional_edges_ref(&self) -> &Vec<ConditionalEdge> {
+        &self.conditional_edges
+    }
 }

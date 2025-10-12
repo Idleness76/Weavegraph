@@ -378,7 +378,7 @@ async fn main() -> Result<()> {
             NodeKind::Custom("refiner".into()),
             Arc::clone(&refinement_predicate),
         )
-        .compile();
+        .compile()?;
 
     println!("   ✓ Ollama streaming workflow compiled");
     println!("   ✓ Pipeline: Bootstrapper → Refiner (iterative) → End");

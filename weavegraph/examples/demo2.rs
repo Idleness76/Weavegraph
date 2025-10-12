@@ -201,7 +201,7 @@ async fn run_demo2() -> miette::Result<()> {
         // Synthesizer feeds into End
         .add_edge(NodeKind::Custom("Synthesizer".into()), NodeKind::End)
         // .set_entry(NodeKind::Start) // removed: Start is virtual, no explicit entry required
-        .compile();
+        .compile()?;
 
     println!("   ✓ Complex graph compiled successfully");
     println!("   ✓ Nodes: Start → [Analyzer, ProcessorA] → ProcessorB → Synthesizer → End");
