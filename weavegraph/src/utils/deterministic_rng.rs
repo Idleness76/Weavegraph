@@ -212,5 +212,3 @@ impl RngRegistry {
         self.rngs.is_empty()
     }
 }
-
-// Inline tests moved to tests/utils.rs

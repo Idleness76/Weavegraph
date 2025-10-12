@@ -442,5 +442,3 @@ pub mod id_utils {
             .unwrap_or_else(|| "unknown".to_string())
     }
 }
-
-// Inline tests moved to tests/utils.rs

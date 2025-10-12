@@ -340,5 +340,3 @@ impl App {
         Ok(updated)
     }
 }
-
-// Inline App tests migrated to tests/app.rs

@@ -670,5 +670,3 @@ impl AppRunner {
         self.sessions.keys().collect()
     }
 }
-
-// Inline tests for runner moved to tests/runtimes_runner.rs

@@ -463,5 +463,3 @@ where
 {
     serde_json::from_str(json).map_err(|e| error_mapper(e, context))
 }
-
-// Inline tests moved to tests/utils.rs

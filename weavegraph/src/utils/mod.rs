@@ -10,7 +10,6 @@
 //! - [`clock`]: Injectable time sources for checkpoints and time-based operations  
 //! - [`deterministic_rng`]: Deterministic random number generation for testing
 //! - [`id_generator`]: ID generation utilities for runs, steps, nodes, and sessions
-//! - [`testing`]: Shared testing utilities and test node implementations
 //! - [`json_ext`]: JSON manipulation utilities and extensions
 //! - [`merge_inspector`]: State merge debugging and inspection tools *(placeholder)*
 //! - [`message_id_helpers`]: Message and tool-call ID generation *(placeholder)*
