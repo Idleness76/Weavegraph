@@ -76,13 +76,13 @@ use crate::types::NodeKind;
 /// ```
 pub struct GraphBuilder {
     /// Registry of all nodes in the graph, keyed by their identifier.
-    pub nodes: FxHashMap<NodeKind, Arc<dyn Node>>,
+    nodes: FxHashMap<NodeKind, Arc<dyn Node>>,
     /// Unconditional edges defining static graph topology.
-    pub edges: FxHashMap<NodeKind, Vec<NodeKind>>,
+    edges: FxHashMap<NodeKind, Vec<NodeKind>>,
     /// Conditional edges for dynamic routing based on state.
-    pub conditional_edges: Vec<ConditionalEdge>,
+    conditional_edges: Vec<ConditionalEdge>,
     /// Runtime configuration for the compiled application.
-    pub runtime_config: RuntimeConfig,
+    runtime_config: RuntimeConfig,
 }
 
 impl Default for GraphBuilder {
@@ -319,5 +319,22 @@ impl GraphBuilder {
     pub fn with_runtime_config(mut self, runtime_config: RuntimeConfig) -> Self {
         self.runtime_config = runtime_config;
         self
+    }
+
+    /// Extracts the components for compilation (internal use only).
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        FxHashMap<NodeKind, Arc<dyn Node>>,
+        FxHashMap<NodeKind, Vec<NodeKind>>,
+        Vec<ConditionalEdge>,
+        RuntimeConfig,
+    ) {
+        (
+            self.nodes,
+            self.edges,
+            self.conditional_edges,
+            self.runtime_config,
+        )
     }
 }

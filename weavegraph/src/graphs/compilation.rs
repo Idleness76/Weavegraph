@@ -46,11 +46,7 @@ impl super::builder::GraphBuilder {
     /// // App is ready for execution
     /// ```
     pub fn compile(self) -> App {
-        App::from_parts(
-            self.nodes,
-            self.edges,
-            self.conditional_edges,
-            self.runtime_config,
-        )
+        let (nodes, edges, conditional_edges, runtime_config) = self.into_parts();
+        App::from_parts(nodes, edges, conditional_edges, runtime_config)
     }
 }
