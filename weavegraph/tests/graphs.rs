@@ -14,9 +14,9 @@ fn test_add_conditional_edge() {
         .compile();
     assert_eq!(app.conditional_edges().len(), 1);
     let ce = &app.conditional_edges()[0];
-    assert_eq!(ce.from, NodeKind::Start);
+    assert_eq!(ce.from(), &NodeKind::Start);
     let snap = empty_snapshot();
-    assert_eq!((ce.predicate)(snap), vec!["Y".to_string()]);
+    assert_eq!((ce.predicate())(snap), vec!["Y".to_string()]);
 }
 
 #[test]

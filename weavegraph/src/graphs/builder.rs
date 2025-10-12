@@ -159,7 +159,7 @@ impl GraphBuilder {
     #[must_use]
     pub fn add_conditional_edge(mut self, from: NodeKind, predicate: EdgePredicate) -> Self {
         self.conditional_edges
-            .push(ConditionalEdge { from, predicate });
+            .push(ConditionalEdge::new(from, predicate));
         self
     }
 

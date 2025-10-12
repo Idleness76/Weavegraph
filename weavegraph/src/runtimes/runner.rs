@@ -516,9 +516,9 @@ impl AppRunner {
                 }
             }
             // Conditional edges
-            for ce in conditional_edges.iter().filter(|ce| &ce.from == id) {
-                println!("running conditional edge from {:?}", ce.from);
-                let target_names = (ce.predicate)(snapshot.clone());
+            for ce in conditional_edges.iter().filter(|ce| ce.from() == id) {
+                println!("running conditional edge from {:?}", ce.from());
+                let target_names = (ce.predicate())(snapshot.clone());
 
                 for target_name in target_names {
                     // Convert target name to NodeKind
