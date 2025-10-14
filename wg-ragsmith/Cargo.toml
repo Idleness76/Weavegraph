@@ -15,7 +15,7 @@ categories = [
     "api-bindings",
 ]
 rust-version = "1.83"
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
 async-trait = "0.1"
