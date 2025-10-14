@@ -3,19 +3,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use wg_ragsmith::ingestion::{chunk_response_to_ingestion, fetch_html, DocumentCache, ResumeTracker};
-use wg_ragsmith::semantic_chunking::embeddings::MockEmbeddingProvider;
-use wg_ragsmith::semantic_chunking::service::{
-    ChunkDocumentRequest, ChunkSource, SemanticChunkingService,
-};
-use wg_ragsmith::stores::sqlite::SqliteChunkStore;
-use wg_ragsmith::types::RagError;
 use reqwest::Client;
 use rig::embeddings::embedding::{Embedding, EmbeddingError, EmbeddingModel};
 use scraper::{Html, Selector};
 use tokio::fs;
 use tracing_subscriber::FmtSubscriber;
 use url::Url;
+use wg_ragsmith::ingestion::{
+    chunk_response_to_ingestion, fetch_html, DocumentCache, ResumeTracker,
+};
+use wg_ragsmith::semantic_chunking::embeddings::MockEmbeddingProvider;
+use wg_ragsmith::semantic_chunking::service::{
+    ChunkDocumentRequest, ChunkSource, SemanticChunkingService,
+};
+use wg_ragsmith::stores::sqlite::SqliteChunkStore;
+use wg_ragsmith::types::RagError;
 
 #[tokio::main]
 async fn main() -> Result<(), RagError> {

@@ -7,16 +7,7 @@ license = "MIT"
 repository = "https://github.com/Idleness76/weavegraph"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/wg-ragsmith"
-keywords = [
-    "rag",
-    "semantic-chunking",
-    "embeddings",
-    "nlp",
-    "retrieval",
-    "chunking",
-    "ai",
-    "vector-search",
-]
+keywords = ["rag", "semantic-chunking", "nlp", "chunking", "vector-search"]
 categories = [
     "algorithms",
     "data-structures",
