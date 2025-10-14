@@ -7,7 +7,7 @@ edition = "2021"
 license = "MIT"
 
 repository = "https://github.com/Idleness76/weavegraph"
-readme = "README.md"
+readme = "../README.md"
 keywords = ["graph", "workflow", "concurrency", "agents", "tracing"]
 categories = ["concurrency", "data-structures", "algorithms"]
 rust-version = "1.83"
