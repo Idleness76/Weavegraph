@@ -11,7 +11,10 @@ use common::*;
 
 fn make_app() -> weavegraph::app::App {
     // Minimal app via GraphBuilder; node graph is irrelevant for apply_barrier
-    GraphBuilder::new().compile()
+    GraphBuilder::new()
+        .add_edge(NodeKind::Start, NodeKind::End)
+        .compile()
+        .unwrap()
 }
 
 #[tokio::test]

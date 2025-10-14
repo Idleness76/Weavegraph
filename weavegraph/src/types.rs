@@ -171,6 +171,17 @@ impl fmt::Display for NodeKind {
     }
 }
 
+// Developer Experience: allow using string literals where a NodeKind is expected.
+impl From<&str> for NodeKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "Start" => NodeKind::Start,
+            "End" => NodeKind::End,
+            other => NodeKind::Custom(other.to_string()),
+        }
+    }
+}
+
 /// Identifies the type of data channel used for state management.
 ///
 /// `ChannelType` represents the different categories of state data that

@@ -711,5 +711,3 @@ impl<V> StringMapExt<V> for FxHashMap<String, V> {
         self.entry(key).and_modify(update_fn).or_insert(value);
     }
 }
-
-// Inline tests moved to tests/utils.rs

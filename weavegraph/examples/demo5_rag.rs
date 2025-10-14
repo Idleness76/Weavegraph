@@ -307,7 +307,7 @@ pub async fn run_demo5() -> Result<()> {
             checkpointer: Some(CheckpointerType::SQLite),
             sqlite_db_name: None,
         })
-        .compile();
+        .compile()?;
 
     let initial_state = VersionedState::new_with_user_message(&query);
 

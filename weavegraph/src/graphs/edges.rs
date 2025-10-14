@@ -47,6 +47,12 @@ pub type EdgePredicate =
 /// state. When the scheduler encounters a conditional edge, it evaluates the
 /// predicate function and routes to the returned target nodes.
 ///
+/// # Purpose
+///
+/// This type encapsulates conditional routing logic to enable clean builder patterns
+/// and maintain consistency with other edge types. The private fields ensure that
+/// conditional edges are constructed through proper APIs rather than direct field access.
+///
 /// # Examples
 ///
 /// ```
@@ -61,15 +67,55 @@ pub type EdgePredicate =
 ///         vec!["few_messages".to_string()]
 ///     }
 /// });
-/// let edge = ConditionalEdge {
-///     from: NodeKind::Start,
-///     predicate,
-/// };
+/// let edge = ConditionalEdge::new(NodeKind::Start, predicate);
 /// ```
 #[derive(Clone)]
 pub struct ConditionalEdge {
     /// The source node for this conditional edge.
-    pub from: NodeKind,
+    from: NodeKind,
     /// The predicate function that determines target node.
-    pub predicate: EdgePredicate,
+    predicate: EdgePredicate,
+}
+
+impl ConditionalEdge {
+    /// Creates a new conditional edge.
+    ///
+    /// This is the preferred way to construct conditional edges, providing a clean
+    /// API that works with the builder pattern while ensuring proper encapsulation.
+    ///
+    /// # Parameters
+    ///
+    /// - `from`: The source node identifier
+    /// - `predicate`: The routing predicate function
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use weavegraph::graphs::{ConditionalEdge, EdgePredicate};
+    /// use weavegraph::types::NodeKind;
+    /// use std::sync::Arc;
+    ///
+    /// let predicate: EdgePredicate = Arc::new(|snapshot| {
+    ///     vec!["target_node".to_string()]
+    /// });
+    ///
+    /// let edge = ConditionalEdge::new(NodeKind::Custom("source".into()), predicate.clone());
+    /// let edge2 = ConditionalEdge::new(NodeKind::Start, predicate);
+    /// ```
+    pub fn new(from: impl Into<NodeKind>, predicate: EdgePredicate) -> Self {
+        Self {
+            from: from.into(),
+            predicate,
+        }
+    }
+
+    /// Returns the source node of this conditional edge.
+    pub fn from(&self) -> &NodeKind {
+        &self.from
+    }
+
+    /// Returns the predicate function of this conditional edge.
+    pub fn predicate(&self) -> &EdgePredicate {
+        &self.predicate
+    }
 }

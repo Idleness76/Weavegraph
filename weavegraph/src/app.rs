@@ -42,7 +42,7 @@ use tracing::instrument;
 ///     .add_node(NodeKind::Custom("process".into()), MyNode)
 ///     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
 ///     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
-///     .compile();
+///     .compile()?;
 ///
 /// let initial_state = VersionedState::new_with_user_message("Hello");
 /// let final_state = app.invoke(initial_state).await?;
@@ -340,5 +340,3 @@ impl App {
         Ok(updated)
     }
 }
-
-// Inline App tests migrated to tests/app.rs

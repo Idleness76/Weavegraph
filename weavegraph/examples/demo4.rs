@@ -110,7 +110,7 @@ impl Node for StreamingGeneratorNode {
             .agent("gemini-2.5-flash")
             .preamble("You are a senior technical writing expert. Create comprehensive, well-structured content that demonstrates deep expertise and clarity.")
             .temperature(0.8)
-            .additional_params(serde_json::to_value(cfg).unwrap())
+            .additional_params(serde_json::to_value(cfg)? )
             .build();
 
         ctx.emit(
@@ -435,7 +435,7 @@ impl Node for StreamingEnhancerNode {
             .agent("gemini-2.5-flash")
             .preamble("You are an expert content editor and technical writer. Enhance the given content by adding depth, examples, structure, and engagement while maintaining accuracy and clarity.")
             .temperature(0.7)
-            .additional_params(serde_json::to_value(cfg).unwrap())
+            .additional_params(serde_json::to_value(cfg)? )
             .build();
 
         // Create sophisticated enhancement prompt
@@ -842,7 +842,7 @@ async fn demo() -> Result<()> {
         )
         .add_edge(NodeKind::Custom("StreamingEnhancer".into()), NodeKind::End)
         .with_runtime_config(runtime_config)
-        .compile();
+        .compile()?;
 
     println!("   ✓ Streaming workflow compiled");
     println!("   ✓ Pipeline: Generator → Enhancer → End");

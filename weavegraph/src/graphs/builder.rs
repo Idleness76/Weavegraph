@@ -30,7 +30,7 @@ use crate::types::NodeKind;
 ///
 /// # Examples
 ///
-/// ## Simple Linear Workflow
+/// ## Basic Usage
 /// ```
 /// use weavegraph::graphs::GraphBuilder;
 /// use weavegraph::types::NodeKind;
@@ -43,6 +43,7 @@ use crate::types::NodeKind;
 /// #     }
 /// # }
 ///
+/// // Linear workflow: Start -> worker -> End
 /// let app = GraphBuilder::new()
 ///     .add_node(NodeKind::Custom("worker".into()), MyNode)
 ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker".into()))
@@ -50,10 +51,11 @@ use crate::types::NodeKind;
 ///     .compile();
 /// ```
 ///
-/// ## Complex Workflow with Fan-out
+/// ## Conditional Routing
 /// ```
-/// use weavegraph::graphs::GraphBuilder;
+/// use weavegraph::graphs::{GraphBuilder, EdgePredicate};
 /// use weavegraph::types::NodeKind;
+/// use std::sync::Arc;
 ///
 /// # struct MyNode;
 /// # #[async_trait::async_trait]
@@ -63,26 +65,31 @@ use crate::types::NodeKind;
 /// #     }
 /// # }
 ///
+/// let route_by_count: EdgePredicate = Arc::new(|snapshot| {
+///     if snapshot.messages.len() > 5 {
+///         vec!["heavy_processing".to_string()]
+///     } else {
+///         vec!["light_processing".to_string()]
+///     }
+/// });
+///
 /// let app = GraphBuilder::new()
-///     .add_node(NodeKind::Custom("processor_a".into()), MyNode)
-///     .add_node(NodeKind::Custom("processor_b".into()), MyNode)
-///     // Fan-out: Start -> A and Start -> B (Start virtual)
-///     .add_edge(NodeKind::Start, NodeKind::Custom("processor_a".into()))
-///     .add_edge(NodeKind::Start, NodeKind::Custom("processor_b".into()))
-///     // Fan-in: A -> End and B -> End
-///     .add_edge(NodeKind::Custom("processor_a".into()), NodeKind::End)
-///     .add_edge(NodeKind::Custom("processor_b".into()), NodeKind::End)
+///     .add_node(NodeKind::Custom("heavy_processing".into()), MyNode)
+///     .add_node(NodeKind::Custom("light_processing".into()), MyNode)
+///     .add_conditional_edge(NodeKind::Start, route_by_count)
+///     .add_edge(NodeKind::Custom("heavy_processing".into()), NodeKind::End)
+///     .add_edge(NodeKind::Custom("light_processing".into()), NodeKind::End)
 ///     .compile();
 /// ```
 pub struct GraphBuilder {
     /// Registry of all nodes in the graph, keyed by their identifier.
-    pub nodes: FxHashMap<NodeKind, Arc<dyn Node>>,
+    nodes: FxHashMap<NodeKind, Arc<dyn Node>>,
     /// Unconditional edges defining static graph topology.
-    pub edges: FxHashMap<NodeKind, Vec<NodeKind>>,
+    edges: FxHashMap<NodeKind, Vec<NodeKind>>,
     /// Conditional edges for dynamic routing based on state.
-    pub conditional_edges: Vec<ConditionalEdge>,
+    conditional_edges: Vec<ConditionalEdge>,
     /// Runtime configuration for the compiled application.
-    pub runtime_config: RuntimeConfig,
+    runtime_config: RuntimeConfig,
 }
 
 impl Default for GraphBuilder {
@@ -127,39 +134,10 @@ impl GraphBuilder {
     ///
     /// - `from`: The source node for the conditional edge
     /// - `predicate`: Function that determines target nodes based on state
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::graphs::{GraphBuilder, EdgePredicate};
-    /// use weavegraph::types::NodeKind;
-    /// use std::sync::Arc;
-    ///
-    /// # struct MyNode;
-    /// # #[async_trait::async_trait]
-    /// # impl weavegraph::node::Node for MyNode {
-    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
-    /// #         Ok(weavegraph::node::NodePartial::default())
-    /// #     }
-    /// # }
-    ///
-    /// let predicate: EdgePredicate = Arc::new(|snapshot| {
-    ///     if snapshot.messages.len() > 5 {
-    ///         vec!["many_messages".to_string()]
-    ///     } else {
-    ///         vec!["few_messages".to_string()]
-    ///     }
-    /// });
-    ///
-    /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Custom("many_messages".into()), MyNode)
-    ///     .add_node(NodeKind::Custom("few_messages".into()), MyNode)
-    ///     .add_conditional_edge(NodeKind::Start, predicate);
-    /// ```
     #[must_use]
     pub fn add_conditional_edge(mut self, from: NodeKind, predicate: EdgePredicate) -> Self {
         self.conditional_edges
-            .push(ConditionalEdge { from, predicate });
+            .push(ConditionalEdge::new(from, predicate));
         self
     }
 
@@ -179,33 +157,6 @@ impl GraphBuilder {
     ///
     /// - `id`: Unique identifier for this node in the graph
     /// - `node`: Implementation of the [`Node`] trait
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::graphs::GraphBuilder;
-    /// use weavegraph::types::NodeKind;
-    /// use weavegraph::node::{Node, NodeContext, NodePartial, NodeError};
-    /// use weavegraph::state::StateSnapshot;
-    /// use async_trait::async_trait;
-    ///
-    /// struct ProcessorNode {
-    ///     name: String,
-    /// }
-    ///
-    /// #[async_trait]
-    /// impl Node for ProcessorNode {
-    ///     async fn run(&self, _: StateSnapshot, _: NodeContext) -> Result<NodePartial, NodeError> {
-    ///         // Node implementation
-    ///         Ok(NodePartial::default())
-    ///     }
-    /// }
-    ///
-    /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Custom("custom".into()), ProcessorNode { name: "custom".into() });
-    /// // Edge from virtual Start
-    /// // .add_edge(NodeKind::Start, NodeKind::Custom("custom".into()));
-    /// ```
     #[must_use]
     pub fn add_node(mut self, id: NodeKind, node: impl Node + 'static) -> Self {
         // Ignore attempts to register virtual Start/End node kinds; emit a warning.
@@ -236,46 +187,6 @@ impl GraphBuilder {
     ///
     /// - `from`: Source node identifier
     /// - `to`: Target node identifier
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::graphs::GraphBuilder;
-    /// use weavegraph::types::NodeKind;
-    ///
-    /// # struct MyNode;
-    /// # #[async_trait::async_trait]
-    /// # impl weavegraph::node::Node for MyNode {
-    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
-    /// #         Ok(weavegraph::node::NodePartial::default())
-    /// #     }
-    /// # }
-    ///
-    /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Custom("step".into()), MyNode)
-    ///     .add_edge(NodeKind::Start, NodeKind::Custom("step".into()))
-    ///     .add_edge(NodeKind::Custom("step".into()), NodeKind::End); // Linear workflow with virtual endpoints
-    /// ```
-    ///
-    /// ## Fan-out Pattern
-    /// ```
-    /// use weavegraph::graphs::GraphBuilder;
-    /// use weavegraph::types::NodeKind;
-    ///
-    /// # struct MyNode;
-    /// # #[async_trait::async_trait]
-    /// # impl weavegraph::node::Node for MyNode {
-    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
-    /// #         Ok(weavegraph::node::NodePartial::default())
-    /// #     }
-    /// # }
-    ///
-    /// let builder = GraphBuilder::new()
-    ///     .add_node(NodeKind::Custom("worker_a".into()), MyNode)
-    ///     .add_node(NodeKind::Custom("worker_b".into()), MyNode)
-    ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker_a".into()))
-    ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker_b".into())); // Fan-out from virtual Start
-    /// ```
     #[must_use]
     pub fn add_edge(mut self, from: NodeKind, to: NodeKind) -> Self {
         self.edges.entry(from).or_default().push(to);
@@ -291,33 +202,37 @@ impl GraphBuilder {
     /// # Parameters
     ///
     /// - `runtime_config`: Configuration for the compiled application
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::graphs::GraphBuilder;
-    /// use weavegraph::runtimes::RuntimeConfig;
-    ///
-    /// # struct MyNode;
-    /// # #[async_trait::async_trait]
-    /// # impl weavegraph::node::Node for MyNode {
-    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
-    /// #         Ok(weavegraph::node::NodePartial::default())
-    /// #     }
-    /// # }
-    ///
-    /// let config = RuntimeConfig::new(
-    ///     Some("my_session".into()),
-    ///     None, // Default checkpointer
-    ///     None, // Default database
-    /// );
-    ///
-    /// let builder = GraphBuilder::new()
-    ///     .with_runtime_config(config);
-    /// ```
     #[must_use]
     pub fn with_runtime_config(mut self, runtime_config: RuntimeConfig) -> Self {
         self.runtime_config = runtime_config;
         self
+    }
+
+    /// Extracts the components for compilation (internal use only).
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        FxHashMap<NodeKind, Arc<dyn Node>>,
+        FxHashMap<NodeKind, Vec<NodeKind>>,
+        Vec<ConditionalEdge>,
+        RuntimeConfig,
+    ) {
+        (
+            self.nodes,
+            self.edges,
+            self.conditional_edges,
+            self.runtime_config,
+        )
+    }
+
+    // Internal read-only accessors for validation in sibling modules
+    pub(super) fn nodes_ref(&self) -> &FxHashMap<NodeKind, Arc<dyn Node>> {
+        &self.nodes
+    }
+    pub(super) fn edges_ref(&self) -> &FxHashMap<NodeKind, Vec<NodeKind>> {
+        &self.edges
+    }
+    pub(super) fn conditional_edges_ref(&self) -> &Vec<ConditionalEdge> {
+        &self.conditional_edges
     }
 }
