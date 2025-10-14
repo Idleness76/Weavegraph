@@ -22,9 +22,6 @@ use tokio::time::sleep;
 use tokio_rusqlite::Connection;
 use url::Url;
 
-use rag_utils::semantic_chunking::service::{ChunkDocumentRequest, ChunkSource};
-use rag_utils::semantic_chunking::SemanticChunkingService;
-use rag_utils::stores::sqlite::{ChunkDocument, SqliteChunkStore};
 #[cfg(test)]
 use weavegraph::event_bus::EventBus;
 use weavegraph::graphs::GraphBuilder;
@@ -34,6 +31,9 @@ use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 use weavegraph::utils::collections::new_extra_map;
+use wg_ragsmith::semantic_chunking::service::{ChunkDocumentRequest, ChunkSource};
+use wg_ragsmith::semantic_chunking::SemanticChunkingService;
+use wg_ragsmith::stores::sqlite::{ChunkDocument, SqliteChunkStore};
 
 mod scraping_helpers {
     use url::Url;
