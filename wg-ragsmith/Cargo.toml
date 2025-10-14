@@ -1,22 +1,28 @@
 [package]
 name = "wg-ragsmith"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
-description = "Semantic chunking and retrieval utilities for Weavegraph demos."
+description = "Semantic chunking and RAG utilities for document processing and retrieval-augmented generation."
 license = "MIT"
 repository = "https://github.com/Idleness76/weavegraph"
 homepage = "https://github.com/Idleness76/weavegraph"
+documentation = "https://docs.rs/wg-ragsmith"
 keywords = [
-    "graph",
-    "workflow",
-    "concurrency",
-    "agents",
-    "tracing",
     "rag",
+    "semantic-chunking",
+    "embeddings",
+    "nlp",
+    "retrieval",
     "chunking",
-    "semantic",
+    "ai",
+    "vector-search",
 ]
-categories = ["concurrency", "data-structures", "algorithms", "rag", "nlp"]
+categories = [
+    "algorithms",
+    "data-structures",
+    "text-processing",
+    "api-bindings",
+]
 rust-version = "1.83"
 readme = "../README.md"
 
