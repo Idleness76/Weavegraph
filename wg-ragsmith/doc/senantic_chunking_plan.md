@@ -163,7 +163,7 @@ Also integrate with `EventBus` for streaming chunking progress.
   - Builder: surface module defaults, optional shared caches (capacity, shared handle reuse), and allow callers to inject embedder handles (RIG or custom `EmbeddingProvider`).
   - Request API: enum to cover inline JSON/HTML/plain text and filesystem paths, with per-call overrides for chunking/preprocess configs and embedder selection.
   - Execution path: resolve source -> choose chunker -> execute under tracing span -> capture cache metrics + fallback flag -> populate the telemetry struct before returning.
-  - Response: wrap `ChunkingOutcome` alongside a `ChunkTelemetry` struct (durations, cache hit/miss counters, smoothing window, embedder label) so runtimes can forward metrics without recomputing; no direct event bus dependency lives in `rag_utils`.
+  - Response: wrap `ChunkingOutcome` alongside a `ChunkTelemetry` struct (durations, cache hit/miss counters, smoothing window, embedder label) so runtimes can forward metrics without recomputing; no direct event bus dependency lives in `wg-ragsmith`.
 - Add tracing spans for cache hits, lexical fallback, and smoothing to align with runtime observability roadmap; surface the counters via the returned telemetry data.
 - Unit tests covering: JSON string input, HTML file path, lexical fallback when embedder missing, RIG embedding adapter (use minimal fake EmbeddingModel), telemetry snapshots, and config overrides.
 

@@ -1,5 +1,5 @@
 [workspace]
-members = ["weavegraph", "rag_utils"]
+members = ["weavegraph", "wg-ragsmith"]
 resolver = "2"
 
 [workspace.package]
