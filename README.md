@@ -8,8 +8,6 @@
 [![Crates.io](https://img.shields.io/crates/v/weavegraph.svg)](https://crates.io/crates/weavegraph)
 [![Documentation](https://docs.rs/weavegraph/badge.svg)](https://docs.rs/weavegraph)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI/CD](https://github.com/Idleness76/weavegraph/workflows/CI/CD/badge.svg)](https://github.com/Idleness76/weavegraph/actions)
-[![Security Audit](https://github.com/Idleness76/weavegraph/workflows/Security%20Audit/badge.svg)](https://github.com/Idleness76/weavegraph/actions)
 
 **Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics.**
 
