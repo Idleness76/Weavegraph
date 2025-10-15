@@ -32,7 +32,7 @@ httpmock = "0.7"
 miette = { version = "7.6", features = ["fancy"] }
 thiserror = "2"
 
-# Tracing & logging  
+# Tracing & logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [
     "env-filter",
@@ -47,6 +47,8 @@ tokio = { version = "1", features = [
     "macros",
     "sync",
     "time",
+    "process",
+    "io-std",
 ] }
 async-trait = "0.1"
 futures-util = "0.3"
@@ -68,8 +70,8 @@ rand = "0.9"
 # NOTE: rig-core is not currently used in the codebase but will be part of a future iteration.
 # It is intentionally included to prepare for upcoming LLM integration features.
 # This dependency should NOT be removed even if flagged by cargo-machete.
-rig-core = "0.21"
-
+rig-core = { version = "0.21", features = ["rmcp"] }
+rmcp = { version = "0.6", features = ["client"] }
 # Database
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
