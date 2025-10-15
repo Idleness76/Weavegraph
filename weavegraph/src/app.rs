@@ -131,9 +131,19 @@ impl App {
 
     /// Execute the entire workflow until completion or no nodes remain.
     ///
-    /// This is the primary entry point for workflow execution. It creates an
-    /// `AppRunner`, manages session state, and coordinates execution through
-    /// to completion.
+    /// This is the primary entry point for simple workflow execution. It creates an
+    /// `AppRunner` with a **default EventBus** (stdout sink only), manages session state,
+    /// and coordinates execution through to completion.
+    ///
+    /// # Event Handling
+    ///
+    /// This method uses the **default EventBus** which only outputs events to stdout.
+    /// For custom event handling (e.g., streaming events to web clients, logging to files,
+    /// or sending to monitoring systems), you need to use `AppRunner` directly with a
+    /// custom EventBus.
+    ///
+    /// See [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus)
+    /// for streaming events to custom sinks.
     ///
     /// # Parameters
     /// * `initial_state` - The starting state for workflow execution
@@ -144,6 +154,8 @@ impl App {
     ///   checkpointer issues, or other runtime problems
     ///
     /// # Examples
+    ///
+    /// ## Simple Execution (Default EventBus)
     ///
     /// ```rust,no_run
     /// use weavegraph::state::VersionedState;
@@ -157,8 +169,52 @@ impl App {
     /// # }
     /// ```
     ///
+    /// ## Custom Event Streaming (Use AppRunner)
+    ///
+    /// For streaming events to web clients, use `AppRunner` with a custom EventBus:
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::event_bus::{EventBus, ChannelSink};
+    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+    /// use weavegraph::state::VersionedState;
+    /// use tokio::sync::mpsc;
+    /// # use weavegraph::app::App;
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Create channel for streaming events
+    /// let (tx, mut rx) = mpsc::unbounded_channel();
+    ///
+    /// // Create EventBus with custom sink
+    /// let bus = EventBus::with_sinks(vec![
+    ///     Box::new(ChannelSink::new(tx))
+    /// ]);
+    ///
+    /// // Use AppRunner with custom EventBus
+    /// let mut runner = AppRunner::with_options_and_bus(
+    ///     app,
+    ///     CheckpointerType::InMemory,
+    ///     false,
+    ///     bus,
+    ///     true,
+    /// ).await;
+    ///
+    /// let session_id = "my-session".to_string();
+    /// let initial = VersionedState::new_with_user_message("Process this");
+    /// runner.create_session(session_id.clone(), initial).await?;
+    ///
+    /// // Events now stream to the channel
+    /// tokio::spawn(async move {
+    ///     while let Some(event) = rx.recv().await {
+    ///         println!("Event: {:?}", event);
+    ///     }
+    /// });
+    ///
+    /// runner.run_until_complete(&session_id).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
     /// # Workflow Lifecycle
-    /// 1. Creates an `AppRunner` with the configured checkpointer
+    /// 1. Creates an `AppRunner` with the configured checkpointer and default EventBus
     /// 2. Initializes or resumes a session
     /// 3. Executes supersteps until End nodes or empty frontier
     /// 4. Returns the final accumulated state
