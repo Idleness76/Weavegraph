@@ -120,7 +120,7 @@ When you need real-time event streaming:
 
 ```rust
 // Create channel
-let (tx, rx) = mpsc::unbounded_channel();
+let (tx, rx) = flume::unbounded();
 
 // Create EventBus with ChannelSink
 let bus = EventBus::with_sinks(vec![
@@ -146,7 +146,7 @@ runner.run_until_complete(&session_id).await?;
 ```rust
 async fn handle_request(app: Arc<App>) -> Result<Stream> {
     // Each request gets its own EventBus and channel
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
     
     let mut runner = AppRunner::with_options_and_bus(

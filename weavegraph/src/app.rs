@@ -177,11 +177,10 @@ impl App {
     /// use weavegraph::event_bus::{EventBus, ChannelSink};
     /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
     /// use weavegraph::state::VersionedState;
-    /// use tokio::sync::mpsc;
     /// # use weavegraph::app::App;
     /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
     /// // Create channel for streaming events
-    /// let (tx, mut rx) = mpsc::unbounded_channel();
+    /// let (tx, rx) = flume::unbounded();
     ///
     /// // Create EventBus with custom sink
     /// let bus = EventBus::with_sinks(vec![
@@ -203,7 +202,7 @@ impl App {
     ///
     /// // Events now stream to the channel
     /// tokio::spawn(async move {
-    ///     while let Some(event) = rx.recv().await {
+    ///     while let Ok(event) = rx.recv_async().await {
     ///         println!("Event: {:?}", event);
     ///     }
     /// });

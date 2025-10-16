@@ -131,11 +131,10 @@ pub enum StepResult {
 /// # use weavegraph::state::VersionedState;
 /// use weavegraph::event_bus::{EventBus, ChannelSink};
 /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
-/// use tokio::sync::mpsc;
 /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// // Create channel for event streaming
-/// let (tx, mut rx) = mpsc::unbounded_channel();
+/// let (tx, rx) = flume::unbounded();
 ///
 /// // Build custom EventBus
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
@@ -157,7 +156,7 @@ pub enum StepResult {
 ///
 /// // Events stream to the channel while workflow runs
 /// tokio::spawn(async move {
-///     while let Some(event) = rx.recv().await {
+///     while let Ok(event) = rx.recv_async().await {
 ///         println!("Event: {:?}", event);
 ///     }
 /// });
@@ -390,12 +389,11 @@ impl AppRunner {
     /// use weavegraph::event_bus::{EventBus, ChannelSink, StdOutSink};
     /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
     /// use weavegraph::state::VersionedState;
-    /// use tokio::sync::mpsc;
     /// # use weavegraph::app::App;
     /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
     ///
     /// // Create a streaming channel (one per client in production)
-    /// let (tx, mut rx) = mpsc::unbounded_channel();
+    /// let (tx, rx) = flume::unbounded();
     ///
     /// // Create EventBus with both stdout and channel sinks
     /// let bus = EventBus::with_sinks(vec![
@@ -419,7 +417,7 @@ impl AppRunner {
     ///
     /// // Consume events in parallel
     /// tokio::spawn(async move {
-    ///     while let Some(event) = rx.recv().await {
+    ///     while let Ok(event) = rx.recv_async().await {
     ///         // Send to web client via SSE, WebSocket, etc.
     ///         println!("Stream to client: {:?}", event);
     ///     }
@@ -437,12 +435,11 @@ impl AppRunner {
     /// use weavegraph::event_bus::{EventBus, ChannelSink};
     /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
     /// use weavegraph::state::VersionedState;
-    /// use tokio::sync::mpsc;
     /// # use weavegraph::app::App;
     /// # async fn handle_request(app: Arc<App>, request_id: String) -> Result<(), Box<dyn std::error::Error>> {
     ///
     /// // Each request gets its own EventBus and channel
-    /// let (tx, rx) = mpsc::unbounded_channel();
+    /// let (tx, rx) = flume::unbounded();
     /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
     ///
     /// // Clone the app (cheap Arc clone), create isolated runner

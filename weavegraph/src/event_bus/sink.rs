@@ -1,6 +1,6 @@
+use flume;
 use std::io::{self, Result as IoResult, Stdout, Write};
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
 
 use super::event::Event;
 use crate::telemetry::{PlainFormatter, TelemetryFormatter};
@@ -74,7 +74,7 @@ impl EventSink for MemorySink {
 
 /// Channel-based sink for streaming events to async consumers.
 ///
-/// `ChannelSink` forwards events to a tokio mpsc channel, enabling real-time
+/// `ChannelSink` forwards events to a flume channel, enabling real-time
 /// event streaming to web clients, monitoring systems, or any async consumer.
 ///
 /// # Use Cases
@@ -109,12 +109,11 @@ impl EventSink for MemorySink {
 /// use weavegraph::event_bus::{EventBus, ChannelSink};
 /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
 /// use weavegraph::state::VersionedState;
-/// use tokio::sync::mpsc;
 /// # use weavegraph::app::App;
 /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// // Create channel
-/// let (tx, mut rx) = mpsc::unbounded_channel();
+/// let (tx, rx) = flume::unbounded();
 ///
 /// // Create EventBus with ChannelSink
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
@@ -136,7 +135,7 @@ impl EventSink for MemorySink {
 ///
 /// // Consume events in parallel
 /// tokio::spawn(async move {
-///     while let Some(event) = rx.recv().await {
+///     while let Ok(event) = rx.recv_async().await {
 ///         println!("Event: {:?}", event);
 ///     }
 /// });
@@ -153,12 +152,11 @@ impl EventSink for MemorySink {
 /// use weavegraph::event_bus::{EventBus, ChannelSink};
 /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
 /// use weavegraph::state::VersionedState;
-/// use tokio::sync::mpsc;
 /// # use weavegraph::app::App;
 /// # async fn handle_request(app: Arc<App>, request_id: String) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// // Each request gets its own channel and EventBus
-/// let (tx, rx) = mpsc::unbounded_channel();
+/// let (tx, rx) = flume::unbounded();
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 /// // Create isolated runner for this request
@@ -186,13 +184,12 @@ impl EventSink for MemorySink {
 ///
 /// ```rust,ignore
 /// use axum::response::sse::{Event as SseEvent, Sse};
-/// use tokio_stream::wrappers::UnboundedReceiverStream;
 /// use futures_util::stream::Stream;
 ///
 /// async fn stream_workflow(
 ///     State(app): State<Arc<App>>
 /// ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-///     let (tx, rx) = mpsc::unbounded_channel();
+///     let (tx, rx) = flume::unbounded();
 ///     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///     
 ///     tokio::spawn(async move {
@@ -212,7 +209,8 @@ impl EventSink for MemorySink {
 ///         runner.run_until_complete(&session_id).await.ok();
 ///     });
 ///     
-///     let stream = UnboundedReceiverStream::new(rx).map(|event| {
+///     // Convert flume receiver to stream
+///     let stream = rx.into_stream().map(|event| {
 ///         Ok(SseEvent::default().json_data(event).unwrap())
 ///     });
 ///     
@@ -231,7 +229,7 @@ impl EventSink for MemorySink {
 /// - [`EventBus::with_sinks()`](crate::event_bus::EventBus::with_sinks) - Create EventBus with sinks
 /// - Example: `examples/streaming_events.rs` - Complete working example
 pub struct ChannelSink {
-    tx: mpsc::UnboundedSender<Event>,
+    tx: flume::Sender<Event>,
 }
 
 impl ChannelSink {
@@ -239,7 +237,7 @@ impl ChannelSink {
     ///
     /// # Parameters
     ///
-    /// * `tx` - The sender side of an unbounded mpsc channel
+    /// * `tx` - The sender side of an unbounded flume channel
     ///
     /// # Returns
     ///
@@ -249,12 +247,11 @@ impl ChannelSink {
     ///
     /// ```rust,no_run
     /// use weavegraph::event_bus::{EventBus, ChannelSink};
-    /// use tokio::sync::mpsc;
     ///
-    /// let (tx, mut rx) = mpsc::unbounded_channel();
+    /// let (tx, rx) = flume::unbounded();
     /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
     /// ```
-    pub fn new(tx: mpsc::UnboundedSender<Event>) -> Self {
+    pub fn new(tx: flume::Sender<Event>) -> Self {
         Self { tx }
     }
 }

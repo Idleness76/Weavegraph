@@ -84,9 +84,9 @@
 //! ```
 
 use async_trait::async_trait;
+use flume;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 
 use weavegraph::{
     event_bus::{ChannelSink, Event, EventBus},
@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create streaming channel (one per client/request in production)
     println!("Setting up event stream...\n");
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
 
     // 3. Create EventBus with custom sink
     let bus = EventBus::with_sinks(vec![
@@ -196,7 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 6. Consume streamed events as they arrive
     println!("📡 Streaming events (these could be sent to a web client):\n");
 
-    while let Some(event) = rx.recv().await {
+    while let Ok(event) = rx.recv_async().await {
         // Convert event to JSON (like you would for SSE or WebSocket)
         let json_payload = json!({
             "type": match event {
@@ -228,7 +228,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Use this pattern with Axum for SSE endpoints");
     println!("   - Add multiple ChannelSinks for different clients");
     println!("   - Filter events by scope before streaming");
-    println!("   - See STREAMING_IMPLEMENTATION.md for Axum examples");
 
     Ok(())
 }

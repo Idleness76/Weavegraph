@@ -1,4 +1,3 @@
-use tokio::sync::mpsc;
 use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
 
 #[tokio::test]
@@ -148,7 +147,7 @@ async fn memory_sink_preserves_order_under_concurrency() {
 
 #[tokio::test]
 async fn channel_sink_forwards_events() {
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let bus = EventBus::with_sink(ChannelSink::new(tx));
     bus.listen_for_events();
 
@@ -158,7 +157,7 @@ async fn channel_sink_forwards_events() {
 
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    let received = rx.recv().await.unwrap();
+    let received = rx.recv_async().await.unwrap();
     assert_eq!(received.message(), "hello world");
     assert_eq!(received.scope_label(), Some("test"));
 }
@@ -166,7 +165,7 @@ async fn channel_sink_forwards_events() {
 #[tokio::test]
 async fn multi_sink_broadcast() {
     let memory = MemorySink::new();
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
 
     let bus = EventBus::with_sinks(vec![
         Box::new(memory.clone()),
@@ -186,7 +185,7 @@ async fn multi_sink_broadcast() {
     assert_eq!(memory_events.len(), 1);
     assert_eq!(memory_events[0].message(), "broadcast message");
 
-    let channel_event = rx.recv().await.unwrap();
+    let channel_event = rx.recv_async().await.unwrap();
     assert_eq!(channel_event.message(), "broadcast message");
 }
 
@@ -195,7 +194,7 @@ async fn add_sink_dynamically() {
     let bus = EventBus::default(); // Starts with StdOutSink
     bus.listen_for_events();
 
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     bus.add_sink(ChannelSink::new(tx));
 
     bus.get_sender()
@@ -204,7 +203,7 @@ async fn add_sink_dynamically() {
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let received = rx.recv().await.unwrap();
+    let received = rx.recv_async().await.unwrap();
     assert_eq!(received.message(), "dynamic sink");
 }
 
@@ -213,7 +212,7 @@ async fn channel_sink_handles_dropped_receiver() {
     use std::io::ErrorKind;
     use weavegraph::event_bus::sink::EventSink;
 
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     let mut sink = ChannelSink::new(tx);
 
     // Drop receiver

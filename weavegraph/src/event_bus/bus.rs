@@ -56,12 +56,11 @@ use super::sink::{EventSink, StdOutSink};
 /// use weavegraph::event_bus::{EventBus, ChannelSink, StdOutSink};
 /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
 /// use weavegraph::state::VersionedState;
-/// use tokio::sync::mpsc;
 /// # use weavegraph::app::App;
 /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// // Create channel for streaming
-/// let (tx, mut rx) = mpsc::unbounded_channel();
+/// let (tx, rx) = flume::unbounded();
 ///
 /// // Create EventBus with multiple sinks
 /// let bus = EventBus::with_sinks(vec![
@@ -86,7 +85,7 @@ use super::sink::{EventSink, StdOutSink};
 ///
 /// // Consume events from channel
 /// tokio::spawn(async move {
-///     while let Some(event) = rx.recv().await {
+///     while let Ok(event) = rx.recv_async().await {
 ///         // Send to web client via SSE, WebSocket, etc.
 ///         println!("Event: {:?}", event);
 ///     }
@@ -106,12 +105,11 @@ use super::sink::{EventSink, StdOutSink};
 /// use weavegraph::event_bus::{EventBus, ChannelSink};
 /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
 /// use weavegraph::state::VersionedState;
-/// use tokio::sync::mpsc;
 /// # use weavegraph::app::App;
 /// # async fn handle_request(app: Arc<App>) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// // Each request gets its own EventBus and channel
-/// let (tx, rx) = mpsc::unbounded_channel();
+/// let (tx, rx) = flume::unbounded();
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 /// // Reuse the App, create new runner with isolated EventBus
@@ -184,13 +182,12 @@ impl EventBus {
     ///
     /// # Example
     /// ```no_run
-    /// use tokio::sync::mpsc;
     /// use weavegraph::event_bus::{EventBus, ChannelSink};
     ///
     /// let bus = EventBus::default();
     /// bus.listen_for_events();
     ///
-    /// let (tx, rx) = mpsc::unbounded_channel();
+    /// let (tx, rx) = flume::unbounded();
     /// bus.add_sink(ChannelSink::new(tx));
     /// // Now events go to both stdout and the channel
     /// ```

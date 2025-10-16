@@ -37,13 +37,12 @@ This demonstrates the core pattern without requiring additional dependencies.
 
 ### 1. ChannelSink
 
-Forwards events from the EventBus to a tokio mpsc channel:
+Forwards events from the EventBus to a flume channel:
 
 ```rust
-use tokio::sync::mpsc;
 use weavegraph::event_bus::ChannelSink;
 
-let (tx, mut rx) = mpsc::unbounded_channel();
+let (tx, rx) = flume::unbounded();
 let channel_sink = ChannelSink::new(tx);
 ```
 
@@ -86,7 +85,7 @@ runner.run_until_complete(&session_id).await?;
 Process events from the channel:
 
 ```rust
-while let Some(event) = rx.recv().await {
+while let Ok(event) = rx.recv_async().await {
     println!("Event: {}", serde_json::to_string_pretty(&event)?);
 }
 ```
@@ -100,14 +99,13 @@ use axum::{
     extract::State,
     response::sse::{Event as SseEvent, Sse},
 };
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use futures_util::stream::Stream;
 
 async fn stream_workflow(
     State(graph): State<Arc<App>>
 ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
     // 1. Create channel for this client
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     
     // 2. Create EventBus with ChannelSink
     let bus = EventBus::with_sinks(vec![
@@ -131,8 +129,8 @@ async fn stream_workflow(
         runner.run_until_complete(&session_id).await.ok();
     });
     
-    // 4. Stream events as SSE
-    let stream = UnboundedReceiverStream::new(rx).map(|event| {
+    // 4. Stream events as SSE (flume has built-in stream support)
+    let stream = rx.into_stream().map(|event| {
         Ok(SseEvent::default()
             .event("workflow-event")
             .json_data(event)
@@ -150,8 +148,8 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 axum = "0.7"
-tokio-stream = "0.1"
 futures-util = "0.3"
+# flume is already a dependency of weavegraph
 ```
 
 ## Architecture Flow
@@ -203,7 +201,7 @@ Each HTTP connection should get its own channel:
 ```rust
 // GOOD: New channel per request
 async fn handler() -> Sse<impl Stream> {
-    let (tx, rx) = mpsc::unbounded_channel();  // ✓ Per-request channel
+    let (tx, rx) = flume::unbounded();  // ✓ Per-request channel
     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
     // ...
 }
@@ -303,12 +301,12 @@ return Sse::new(stream);  // Stream already finished
 
 ```rust
 // ✓ CORRECT: Channel exists before workflow starts
-let (tx, rx) = mpsc::unbounded_channel();
+let (tx, rx) = flume::unbounded();
 let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 tokio::spawn(async move { /* run with bus */ });
 Sse::new(stream)  // Events captured from the start
 
 // ✗ WRONG: Channel created after workflow starts
 tokio::spawn(async move { /* already running */ });
-let (tx, rx) = mpsc::unbounded_channel();  // Too late!
+let (tx, rx) = flume::unbounded();  // Too late!
 ```
