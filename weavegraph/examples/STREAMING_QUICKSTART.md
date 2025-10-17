@@ -2,6 +2,45 @@
 
 This guide shows you how to stream workflow events to web clients using Weavegraph's EventBus and ChannelSink.
 
+## Choose Your Pattern
+
+### ⭐ NEW: Simple Patterns (Convenience Methods)
+
+For CLI tools and simple scripts, use the new convenience methods:
+
+```rust
+// Pattern 1: Single channel (simplest)
+let (result, events) = app.invoke_with_channel(initial_state).await;
+
+// Pattern 2: Multiple sinks
+app.invoke_with_sinks(
+    initial_state,
+    vec![Box::new(StdOutSink::default()), Box::new(ChannelSink::new(tx))]
+).await?;
+```
+
+**When to use:** Single-execution scenarios, CLI tools, progress monitoring
+
+**Example:** `cargo run --example convenience_streaming`
+
+### Production Pattern (Web Servers)
+
+For web servers with per-request isolation, use `AppRunner` directly:
+
+```rust
+let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
+let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
+runner.run_until_complete(&session_id).await;
+```
+
+**When to use:** SSE, WebSocket, per-client event streams
+
+**Example:** `cargo run --example streaming_events`
+
+**This guide focuses on the production pattern.** For simple cases, see `convenience_streaming.rs`.
+
+---
+
 ## ⚠️ Important: Why You Need AppRunner
 
 **You cannot stream events using `App.invoke()` alone!**

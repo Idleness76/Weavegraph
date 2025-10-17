@@ -41,6 +41,23 @@ impl Node for NoopNode {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct EmitterNode;
+
+#[async_trait]
+impl Node for EmitterNode {
+    async fn run(
+        &self,
+        _snapshot: StateSnapshot,
+        ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        ctx.emit("test", "First event")?;
+        ctx.emit("test", "Second event")?;
+        ctx.emit("test", "Third event")?;
+        Ok(NodePartial::new().with_messages(vec![Message::assistant("Done emitting")]))
+    }
+}
+
 // Example usage to avoid dead_code warning
 #[cfg(test)]
 mod tests {

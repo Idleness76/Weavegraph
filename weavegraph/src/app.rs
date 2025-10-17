@@ -253,6 +253,308 @@ impl App {
         runner.run_until_complete(&session_id).await
     }
 
+    /// Execute workflow with event streaming to a channel.
+    ///
+    /// This is a convenience method that combines `AppRunner::with_options_and_bus()`
+    /// with channel creation and management. It's ideal for simple use cases where
+    /// you want to stream events without manually managing the EventBus.
+    ///
+    /// # When to Use This
+    ///
+    /// - Simple scripts or CLI tools that need event streaming
+    /// - Single-execution scenarios (not web servers)
+    /// - You want both the final state AND the event stream
+    ///
+    /// # When NOT to Use This
+    ///
+    /// - Web servers with per-request streaming (use `AppRunner::with_options_and_bus()`)
+    /// - Need multiple EventSinks beyond ChannelSink (use `invoke_with_sinks()`)
+    /// - Need fine-grained control over EventBus lifecycle
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of:
+    /// - `Result<VersionedState, RunnerError>` - Final workflow state
+    /// - `flume::Receiver<Event>` - Stream of events from workflow execution
+    ///
+    /// # Examples
+    ///
+    /// ## Basic Usage
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::state::VersionedState;
+    /// # use weavegraph::app::App;
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Execute with streaming
+    /// let (result, events) = app.invoke_with_channel(
+    ///     VersionedState::new_with_user_message("Process this")
+    /// ).await;
+    ///
+    /// // Process events in parallel with execution
+    /// tokio::spawn(async move {
+    ///     while let Ok(event) = events.recv_async().await {
+    ///         println!("Event: {:?}", event);
+    ///     }
+    /// });
+    ///
+    /// let final_state = result?;
+    /// println!("Workflow completed!");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## With Structured Event Processing
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::event_bus::Event;
+    /// use weavegraph::state::VersionedState;
+    /// # use weavegraph::app::App;
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    /// let (result_future, events) = app.invoke_with_channel(
+    ///     VersionedState::new_with_user_message("Analyze data")
+    /// ).await;
+    ///
+    /// // Collect all events
+    /// let event_collector = tokio::spawn(async move {
+    ///     let mut collected = Vec::new();
+    ///     while let Ok(event) = events.recv_async().await {
+    ///         match &event {
+    ///             Event::Node(ne) => {
+    ///                 if let Some(node_id) = ne.node_id() {
+    ///                     println!("Node {}: {}", node_id, ne.message());
+    ///                 }
+    ///             }
+    ///             Event::Diagnostic(de) => {
+    ///                 println!("Diagnostic: {}", de.message());
+    ///             }
+    ///         }
+    ///         collected.push(event);
+    ///     }
+    ///     collected
+    /// });
+    ///
+    /// let final_state = result_future?;
+    /// let all_events = event_collector.await?;
+    /// println!("Captured {} events", all_events.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Architecture
+    ///
+    /// This method internally:
+    /// 1. Creates a `flume::unbounded()` channel
+    /// 2. Builds an EventBus with `ChannelSink` (no stdout by default)
+    /// 3. Uses `AppRunner::with_options_and_bus()` with the custom EventBus
+    /// 4. Returns both the execution result and receiver
+    ///
+    /// # See Also
+    ///
+    /// - [`invoke_with_sinks()`](Self::invoke_with_sinks) - For multiple EventSinks
+    /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - For web servers
+    /// - [`invoke()`](Self::invoke) - Simple execution without streaming
+    #[instrument(skip(self, initial_state))]
+    pub async fn invoke_with_channel(
+        &self,
+        initial_state: VersionedState,
+    ) -> (
+        Result<VersionedState, RunnerError>,
+        flume::Receiver<crate::event_bus::Event>,
+    ) {
+        use crate::event_bus::{ChannelSink, EventBus};
+        use crate::runtimes::AppRunner;
+
+        // Create channel for events
+        let (tx, rx) = flume::unbounded();
+
+        // Create EventBus with ChannelSink only (no stdout spam)
+        let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
+
+        // Determine checkpointer type
+        let checkpointer_type = self
+            .runtime_config
+            .checkpointer
+            .clone()
+            .unwrap_or(CheckpointerType::InMemory);
+
+        // Create runner with custom EventBus
+        let mut runner = AppRunner::with_options_and_bus(
+            self.clone(),
+            checkpointer_type,
+            false, // autosave
+            bus,
+            true, // start listener
+        )
+        .await;
+
+        // Get session ID
+        let session_id = self
+            .runtime_config
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "temp_invoke_session".to_string());
+
+        // Execute workflow
+        let result = async move {
+            let init_state = runner
+                .create_session(session_id.clone(), initial_state)
+                .await?;
+
+            if let SessionInit::Resumed { checkpoint_step } = init_state {
+                tracing::info!(
+                    "Resuming session '{}' from checkpoint at step {}",
+                    session_id,
+                    checkpoint_step
+                );
+            }
+
+            runner.run_until_complete(&session_id).await
+        }
+        .await;
+
+        (result, rx)
+    }
+
+    /// Execute workflow with custom EventSinks for advanced streaming patterns.
+    ///
+    /// This convenience method allows you to specify multiple EventSinks while
+    /// still maintaining the simplicity of a single method call. Use this when
+    /// you need more control over event handling than `invoke_with_channel()`
+    /// provides, but don't need the full flexibility of `AppRunner`.
+    ///
+    /// # When to Use This
+    ///
+    /// - Need multiple sinks (e.g., stdout + channel + file)
+    /// - Want to configure EventBus but don't need per-request isolation
+    /// - Building a CLI tool with rich event handling
+    ///
+    /// # When NOT to Use This
+    ///
+    /// - Web servers with per-request streaming (use `AppRunner::with_options_and_bus()`)
+    /// - Need to create EventBus instances per HTTP request
+    /// - Require fine-grained control over runner lifecycle
+    ///
+    /// # Parameters
+    ///
+    /// - `initial_state` - Starting state for workflow execution
+    /// - `sinks` - Vector of boxed EventSink implementations
+    ///
+    /// # Returns
+    ///
+    /// Final workflow state after completion
+    ///
+    /// # Examples
+    ///
+    /// ## Multiple Sinks
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::event_bus::{ChannelSink, StdOutSink};
+    /// use weavegraph::state::VersionedState;
+    /// # use weavegraph::app::App;
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    /// let (tx, rx) = flume::unbounded();
+    ///
+    /// let final_state = app.invoke_with_sinks(
+    ///     VersionedState::new_with_user_message("Process data"),
+    ///     vec![
+    ///         Box::new(StdOutSink::default()),    // Server logs
+    ///         Box::new(ChannelSink::new(tx)),     // Client stream
+    ///     ],
+    /// ).await?;
+    ///
+    /// // Process events from channel
+    /// tokio::spawn(async move {
+    ///     while let Ok(event) = rx.recv_async().await {
+    ///         println!("Client sees: {:?}", event);
+    ///     }
+    /// });
+    ///
+    /// println!("Workflow completed!");
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Custom Sink Implementation
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::event_bus::{EventSink, Event};
+    /// # use weavegraph::app::App;
+    /// # use weavegraph::state::VersionedState;
+    ///
+    /// struct MetricsSink;
+    ///
+    /// impl EventSink for MetricsSink {
+    ///     fn handle(&mut self, event: &Event) -> std::io::Result<()> {
+    ///         // Send to metrics system
+    ///         Ok(())
+    ///     }
+    /// }
+    ///
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    /// let final_state = app.invoke_with_sinks(
+    ///     VersionedState::new_with_user_message("Monitored workflow"),
+    ///     vec![Box::new(MetricsSink)],
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// - [`invoke_with_channel()`](Self::invoke_with_channel) - Simpler channel-only variant
+    /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - Full control
+    #[instrument(skip(self, initial_state, sinks), err)]
+    pub async fn invoke_with_sinks(
+        &self,
+        initial_state: VersionedState,
+        sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
+    ) -> Result<VersionedState, RunnerError> {
+        use crate::event_bus::EventBus;
+        use crate::runtimes::AppRunner;
+
+        // Create EventBus with provided sinks
+        let bus = EventBus::with_sinks(sinks);
+
+        // Determine checkpointer type
+        let checkpointer_type = self
+            .runtime_config
+            .checkpointer
+            .clone()
+            .unwrap_or(CheckpointerType::InMemory);
+
+        // Create runner with custom EventBus
+        let mut runner = AppRunner::with_options_and_bus(
+            self.clone(),
+            checkpointer_type,
+            false, // autosave
+            bus,
+            true, // start listener
+        )
+        .await;
+
+        // Get session ID
+        let session_id = self
+            .runtime_config
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "temp_invoke_session".to_string());
+
+        // Execute workflow
+        let init_state = runner
+            .create_session(session_id.clone(), initial_state)
+            .await?;
+
+        if let SessionInit::Resumed { checkpoint_step } = init_state {
+            tracing::info!(
+                "Resuming session '{}' from checkpoint at step {}",
+                session_id,
+                checkpoint_step
+            );
+        }
+
+        runner.run_until_complete(&session_id).await
+    }
+
     /// Merge node outputs and apply state reductions after a superstep.
     ///
     /// This method coordinates the barrier synchronization phase of workflow
