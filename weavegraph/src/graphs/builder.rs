@@ -11,6 +11,15 @@ use crate::node::Node;
 use crate::runtimes::RuntimeConfig;
 use crate::types::NodeKind;
 
+/// Type alias for the internal parts of a GraphBuilder.
+/// Used to reduce type complexity in the `into_parts()` method.
+type GraphParts = (
+    FxHashMap<NodeKind, Arc<dyn Node>>,
+    FxHashMap<NodeKind, Vec<NodeKind>>,
+    Vec<ConditionalEdge>,
+    RuntimeConfig,
+);
+
 /// Builder for constructing workflow graphs with fluent API.
 ///
 /// `GraphBuilder` provides a builder pattern for constructing workflow graphs
@@ -209,14 +218,7 @@ impl GraphBuilder {
     }
 
     /// Extracts the components for compilation (internal use only).
-    pub(super) fn into_parts(
-        self,
-    ) -> (
-        FxHashMap<NodeKind, Arc<dyn Node>>,
-        FxHashMap<NodeKind, Vec<NodeKind>>,
-        Vec<ConditionalEdge>,
-        RuntimeConfig,
-    ) {
+    pub(super) fn into_parts(self) -> GraphParts {
         (
             self.nodes,
             self.edges,

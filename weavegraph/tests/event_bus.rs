@@ -1,5 +1,4 @@
-use weavegraph::event_bus::{Event, EventBus, MemorySink};
-use weavegraph::telemetry::{PlainFormatter, CONTEXT_COLOR, LINE_COLOR, RESET_COLOR};
+use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
 
 #[tokio::test]
 async fn stop_listener_flushes_pending_events() {
@@ -24,7 +23,7 @@ async fn stop_listener_flushes_pending_events() {
 
     let entries = sink_snapshot.snapshot();
     assert_eq!(entries.len(), 1);
-    assert!(entries[0].contains("payload"));
+    assert_eq!(entries[0].message(), "payload");
 }
 
 #[tokio::test]
@@ -35,14 +34,14 @@ async fn stopping_without_events_is_noop() {
 }
 
 #[tokio::test]
-async fn formatting_with_plainformatter_includes_scope_and_colors() {
+async fn memory_sink_captures_events_with_scope_and_messages() {
     let sink = MemorySink::new();
     let sink_snapshot = sink.clone();
-    let bus = EventBus::with_sink_and_formatter(sink, PlainFormatter);
+    let bus = EventBus::with_sink(sink);
 
     bus.listen_for_events();
 
-    // Same scope twice: first should include colored scope prefix, second should not.
+    // Same scope twice
     bus.get_sender()
         .send(Event::node_message("Scope1", "one"))
         .expect("send one");
@@ -50,7 +49,7 @@ async fn formatting_with_plainformatter_includes_scope_and_colors() {
         .send(Event::node_message("Scope1", "two"))
         .expect("send two");
 
-    // New scope: should include colored scope prefix again, then omit for following event.
+    // Different scope
     bus.get_sender()
         .send(Event::diagnostic("Scope2", "three"))
         .expect("send three");
@@ -64,24 +63,18 @@ async fn formatting_with_plainformatter_includes_scope_and_colors() {
     let entries = sink_snapshot.snapshot();
     assert_eq!(entries.len(), 4);
 
-    // Entry 0: has scope prefix and body coloring.
-    assert!(entries[0].contains(&format!("{CONTEXT_COLOR}{}{RESET_COLOR}", "Scope1")));
-    assert!(entries[0].contains(LINE_COLOR));
-    assert!(entries[0].contains(RESET_COLOR));
-    assert!(entries[0].contains("one"));
+    // Verify events captured with correct scope and message
+    assert_eq!(entries[0].scope_label(), Some("Scope1"));
+    assert_eq!(entries[0].message(), "one");
 
-    // Entry 1: same scope, no scope prefix.
-    assert!(!entries[1].contains(&format!("{CONTEXT_COLOR}{}{RESET_COLOR}", "Scope1")));
-    assert!(entries[1].contains(LINE_COLOR));
-    assert!(entries[1].contains("two"));
+    assert_eq!(entries[1].scope_label(), Some("Scope1"));
+    assert_eq!(entries[1].message(), "two");
 
-    // Entry 2: new scope, has scope prefix.
-    assert!(entries[2].contains(&format!("{CONTEXT_COLOR}{}{RESET_COLOR}", "Scope2")));
-    assert!(entries[2].contains("three"));
+    assert_eq!(entries[2].scope_label(), Some("Scope2"));
+    assert_eq!(entries[2].message(), "three");
 
-    // Entry 3: same new scope, no prefix.
-    assert!(!entries[3].contains(&format!("{CONTEXT_COLOR}{}{RESET_COLOR}", "Scope2")));
-    assert!(entries[3].contains("four"));
+    assert_eq!(entries[3].scope_label(), Some("Scope2"));
+    assert_eq!(entries[3].message(), "four");
 }
 
 #[tokio::test]
@@ -105,8 +98,8 @@ async fn multiple_listen_calls_are_idempotent() {
 
     let entries = sink_snapshot.snapshot();
     assert_eq!(entries.len(), 2);
-    assert!(entries.iter().any(|e| e.contains("a")));
-    assert!(entries.iter().any(|e| e.contains("b")));
+    assert!(entries.iter().any(|e| e.message() == "a"));
+    assert!(entries.iter().any(|e| e.message() == "b"));
 }
 
 #[tokio::test]
@@ -143,9 +136,91 @@ async fn memory_sink_preserves_order_under_concurrency() {
     assert_eq!(entries.len() as u32, total);
     for (idx, entry) in entries.iter().enumerate() {
         let expected = format!("m{idx}");
-        assert!(
-            entry.contains(&expected),
-            "entry {idx} should contain {expected}, got: {entry}"
+        assert_eq!(
+            entry.message(),
+            &expected,
+            "entry {idx} should have message {expected}, got: {}",
+            entry.message()
         );
     }
+}
+
+#[tokio::test]
+async fn channel_sink_forwards_events() {
+    let (tx, rx) = flume::unbounded();
+    let bus = EventBus::with_sink(ChannelSink::new(tx));
+    bus.listen_for_events();
+
+    bus.get_sender()
+        .send(Event::diagnostic("test", "hello world"))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+    let received = rx.recv_async().await.unwrap();
+    assert_eq!(received.message(), "hello world");
+    assert_eq!(received.scope_label(), Some("test"));
+}
+
+#[tokio::test]
+async fn multi_sink_broadcast() {
+    let memory = MemorySink::new();
+    let (tx, rx) = flume::unbounded();
+
+    let bus = EventBus::with_sinks(vec![
+        Box::new(memory.clone()),
+        Box::new(ChannelSink::new(tx)),
+    ]);
+    bus.listen_for_events();
+
+    bus.get_sender()
+        .send(Event::diagnostic("test", "broadcast message"))
+        .unwrap();
+
+    // Give listener time to process
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Both sinks received the event
+    let memory_events = memory.snapshot();
+    assert_eq!(memory_events.len(), 1);
+    assert_eq!(memory_events[0].message(), "broadcast message");
+
+    let channel_event = rx.recv_async().await.unwrap();
+    assert_eq!(channel_event.message(), "broadcast message");
+}
+
+#[tokio::test]
+async fn add_sink_dynamically() {
+    let bus = EventBus::default(); // Starts with StdOutSink
+    bus.listen_for_events();
+
+    let (tx, rx) = flume::unbounded();
+    bus.add_sink(ChannelSink::new(tx));
+
+    bus.get_sender()
+        .send(Event::diagnostic("test", "dynamic sink"))
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let received = rx.recv_async().await.unwrap();
+    assert_eq!(received.message(), "dynamic sink");
+}
+
+#[tokio::test]
+async fn channel_sink_handles_dropped_receiver() {
+    use std::io::ErrorKind;
+    use weavegraph::event_bus::sink::EventSink;
+
+    let (tx, rx) = flume::unbounded();
+    let mut sink = ChannelSink::new(tx);
+
+    // Drop receiver
+    drop(rx);
+
+    let event = Event::diagnostic("test", "msg");
+    let result = sink.handle(&event);
+
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().kind(), ErrorKind::BrokenPipe);
 }

@@ -265,18 +265,83 @@ RUST_LOG=debug cargo run --example basic_nodes
 RUST_LOG=error,weavegraph=debug cargo run --example advanced_patterns
 ```
 
-### Event Streaming
+### Event Streaming ⭐
 
-Built-in event bus for monitoring workflow execution:
+Weavegraph provides multiple patterns for streaming workflow events:
+
+#### Simple Pattern (CLI Tools & Scripts)
+
+Use convenience methods for single-execution scenarios:
+
+```rust
+// Pattern 1: Single channel (simplest)
+let (result, events) = app.invoke_with_channel(initial_state).await;
+
+// Collect events while processing
+tokio::spawn(async move {
+    while let Ok(event) = events.recv_async().await {
+        println!("Event: {:?}", event);
+    }
+});
+
+// Pattern 2: Multiple sinks
+use weavegraph::event_bus::{StdOutSink, ChannelSink};
+
+app.invoke_with_sinks(
+    initial_state,
+    vec![
+        Box::new(StdOutSink::default()),
+        Box::new(ChannelSink::new(tx)),
+    ]
+).await?;
+```
+
+See `cargo run --example convenience_streaming` for complete examples.
+
+#### Production Pattern (Web Servers)
+
+For per-request isolation with SSE/WebSocket:
+
+```rust
+use weavegraph::event_bus::{EventBus, ChannelSink};
+use weavegraph::runtimes::AppRunner;
+
+// Per-request EventBus with isolated channel
+let (tx, rx) = flume::unbounded();
+let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
+
+let mut runner = AppRunner::with_options_and_bus(
+    app.clone(),
+    Some(checkpointer),
+    session_id.clone(),
+    bus,
+    true
+).await;
+
+// Stream events to client while workflow runs
+tokio::spawn(async move {
+    runner.run_until_complete(&session_id).await
+});
+
+// Events include node starts/completions, state changes, errors
+```
+
+See `cargo run --example streaming_events` and `STREAMING_QUICKSTART.md` for full details.
+
+#### Testing Pattern
+
+Use `MemorySink` for synchronous event capture in tests:
 
 ```rust
 use weavegraph::event_bus::{EventBus, MemorySink};
 
-// Custom event handling for testing
-let event_bus = EventBus::with_sink(MemorySink::new());
+let sink = MemorySink::new();
+let event_bus = EventBus::with_sink(sink.clone());
 let runner = AppRunner::with_bus(graph, event_bus);
 
-// Events include node starts/completions, state changes, errors
+// After execution
+let events = sink.snapshot();
+assert_eq!(events.len(), 5);
 ```
 
 ### Error Diagnostics
