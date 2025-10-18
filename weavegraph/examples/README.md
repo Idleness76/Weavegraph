@@ -19,6 +19,22 @@ This directory contains examples demonstrating various Weavegraph features and p
 | `advanced_patterns.rs` | Advanced techniques | Multiple patterns |
 | `errors_pretty.rs` | Error handling | Error formatting, diagnostics |
 
+**Note:** Some examples require specific Cargo features to be enabled:
+
+**LLM Examples** (require `--features llm`):
+- `demo3.rs`: Conditional routing with LLM integration
+- `demo4.rs`: Advanced patterns with LLM
+- `cap_demo.rs`: CAP framework with LLM
+- `demo6_agent_mcp.rs`: LLM agent with MCP
+
+**RAG Examples** (require `--features llm,examples`):
+- `demo5_rag.rs`: Document processing and retrieval pipeline
+
+**Basic Examples** (no special features required):
+- `basic_nodes.rs`, `demo1.rs`, `demo2.rs`, `streaming_events.rs`, `convenience_streaming.rs`, `advanced_patterns.rs`, `errors_pretty.rs`
+
+For DB-less builds, SQLite features are excluded by default but can be re-enabled with `--features sqlite-migrations`.
+
 ## Event Streaming (New!)
 
 ### streaming_events.rs - Stream Events to Web Clients

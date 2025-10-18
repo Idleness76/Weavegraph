@@ -1,3 +1,4 @@
+#[cfg(feature = "sqlite")]
 use weavegraph::channels::Channel;
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
 use weavegraph::runtimes::{

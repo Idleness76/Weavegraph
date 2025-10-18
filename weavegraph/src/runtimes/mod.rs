@@ -38,7 +38,9 @@
 //! ```
 
 pub mod checkpointer;
+#[cfg(feature = "sqlite")]
 pub mod checkpointer_sqlite;
+#[cfg(feature = "sqlite")]
 mod checkpointer_sqlite_helpers;
 pub mod persistence;
 pub mod runner;
@@ -49,6 +51,7 @@ pub use checkpointer::{
     restore_session_state, Checkpoint, Checkpointer, CheckpointerError, CheckpointerType,
     InMemoryCheckpointer,
 };
+#[cfg(feature = "sqlite")]
 pub use checkpointer_sqlite::{PageInfo, SQLiteCheckpointer, StepQuery, StepQueryResult};
 pub use persistence::*;
 pub use runner::{
