@@ -327,6 +327,13 @@ impl App {
     ///             Event::Diagnostic(de) => {
     ///                 println!("Diagnostic: {}", de.message());
     ///             }
+    ///             Event::LLM(llm) => {
+    ///                 println!(
+    ///                     "LLM stream {}: {}",
+    ///                     llm.stream_id().unwrap_or("default"),
+    ///                     llm.chunk()
+    ///                 );
+    ///             }
     ///         }
     ///         collected.push(event);
     ///     }

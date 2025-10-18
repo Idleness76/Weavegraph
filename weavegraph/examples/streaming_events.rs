@@ -42,10 +42,10 @@
 //!     State(graph): State<Arc<App>>
 //! ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
 //!     let (tx, rx) = mpsc::unbounded_channel();
-//!     
+//!
 //!     // Create EventBus with ChannelSink for this client
 //!     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-//!     
+//!
 //!     // Run workflow with custom EventBus using AppRunner
 //!     let graph_clone = graph.clone();
 //!     tokio::spawn(async move {
@@ -56,13 +56,13 @@
 //!             bus,
 //!             true,
 //!         ).await;
-//!         
+//!
 //!         let session_id = format!("client-{}", uuid::Uuid::new_v4());
 //!         let initial_state = VersionedState::new_with_user_message("...");
 //!         runner.create_session(session_id.clone(), initial_state).await.ok();
 //!         runner.run_until_complete(&session_id).await
 //!     });
-//!     
+//!
 //!     // Stream events as Server-Sent Events
 //!     let stream = UnboundedReceiverStream::new(rx).map(|event| {
 //!         Ok(SseEvent::default().json_data(event).unwrap())
@@ -202,6 +202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "type": match event {
                 Event::Node(_) => "node",
                 Event::Diagnostic(_) => "diagnostic",
+                Event::LLM(_) => "llm",
             },
             "scope": event.scope_label(),
             "message": event.message(),
