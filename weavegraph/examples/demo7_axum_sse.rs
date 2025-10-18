@@ -4,11 +4,19 @@
 //! using Axum. Each HTTP request spins up an isolated workflow run whose events are
 //! streamed to the client in real time.
 //!
-//! Run with:
-//!   cargo run --example demo7_axum_sse
+//! ## Key ideas
+//! - `App::invoke_streaming(initial_state)` hides the `AppRunner` plumbing and returns a pair:
+//!   a join handle for the workflow result and the `EventStream` you can expose to users.
+//! - `EventStream::into_async_stream()` adapts the broadcast-backed stream into an async iterator
+//!   that plugs directly into Axum’s SSE response.
+//! - Because `invoke_streaming` launches the workflow on a Tokio task, the HTTP handler immediately
+//!   returns an SSE stream while the workflow continues running in the background.
 //!
-//! Then, in another terminal:
-//!   curl -N http://127.0.0.1:3000/stream
+//! ## Run it
+//! ```bash
+//! cargo run --example demo7_axum_sse
+//! curl -N http://127.0.0.1:3000/stream
+//! ```
 
 use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 
