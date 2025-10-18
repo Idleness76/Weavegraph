@@ -177,6 +177,7 @@ pub struct AppRunner {
     checkpointer: Option<Arc<dyn Checkpointer>>, // optional pluggable persistence
     autosave: bool,
     event_bus: EventBus,
+    event_stream_taken: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -516,13 +517,18 @@ impl AppRunner {
             checkpointer,
             autosave,
             event_bus,
+            event_stream_taken: false,
         }
     }
 
     /// Subscribe to the underlying event stream.
     ///
     /// Returns a handle that yields events as they are emitted by workflow nodes.
-    pub fn event_stream(&self) -> EventStream {
+    pub fn event_stream(&mut self) -> EventStream {
+        if self.event_stream_taken {
+            panic!("event stream already requested for this runner");
+        }
+        self.event_stream_taken = true;
         self.event_bus.subscribe()
     }
 

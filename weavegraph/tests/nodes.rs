@@ -8,6 +8,7 @@ use weavegraph::utils::collections::new_extra_map;
 
 fn make_ctx(step: u64) -> (NodeContext, EventBus) {
     let event_bus = EventBus::default();
+    event_bus.listen_for_events();
     let ctx = NodeContext {
         node_id: "test-node".to_string(),
         step,
@@ -16,8 +17,8 @@ fn make_ctx(step: u64) -> (NodeContext, EventBus) {
     (ctx, event_bus)
 }
 
-#[test]
-fn test_node_context_creation() {
+#[tokio::test]
+async fn test_node_context_creation() {
     let (ctx, _event_bus) = make_ctx(5);
     assert_eq!(ctx.node_id, "test-node");
     assert_eq!(ctx.step, 5);
@@ -63,10 +64,11 @@ fn test_node_partial_with_errors() {
     assert_eq!(partial.errors, Some(errors));
 }
 
-#[test]
-fn test_node_context_emit_error() {
+#[tokio::test]
+async fn test_node_context_emit_error() {
     let (ctx, event_bus) = make_ctx(1);
     drop(event_bus); // Drop the event bus to disconnect sender
+    tokio::task::yield_now().await;
     let result = ctx.emit("scope", "message");
     assert!(matches!(result, Err(NodeContextError::EventBusUnavailable)));
 }
@@ -155,6 +157,7 @@ async fn test_node_trait_success() {
 async fn test_node_trait_eventbus_error() {
     let (ctx, event_bus) = make_ctx(0);
     drop(event_bus); // disconnect event bus
+    tokio::task::yield_now().await;
     let node = DummyNode;
     let snapshot = VersionedState::new_with_user_message("dummy").snapshot();
     let result = node.run(snapshot, ctx).await;

@@ -200,6 +200,7 @@ impl EventBus {
     }
 
     pub fn subscribe(&self) -> EventStream {
+        self.listen_for_events();
         self.hub.subscribe()
     }
 

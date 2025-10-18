@@ -1,4 +1,6 @@
+use futures_util::{pin_mut, StreamExt};
 use std::sync::Arc;
+use std::time::Duration;
 use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
 
 #[tokio::test]
@@ -228,4 +230,64 @@ async fn channel_sink_handles_dropped_receiver() {
 
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().kind(), ErrorKind::BrokenPipe);
+}
+
+#[tokio::test]
+async fn async_stream_adapter_yields_events() {
+    let bus = EventBus::with_sink(MemorySink::new());
+    let emitter = bus.get_emitter();
+
+    let stream = bus.subscribe().into_async_stream();
+    pin_mut!(stream);
+    emitter
+        .emit(Event::diagnostic("async", "stream"))
+        .expect("emit");
+
+    let event = stream.next().await.expect("event");
+    assert_eq!(event.message(), "stream");
+    assert_eq!(event.scope_label(), Some("async"));
+}
+
+#[tokio::test]
+async fn next_timeout_reports_timeouts_and_events() {
+    let bus = EventBus::with_sink(MemorySink::new());
+    let emitter = bus.get_emitter();
+    let mut stream = bus.subscribe();
+
+    assert!(stream
+        .next_timeout(Duration::from_millis(10))
+        .await
+        .is_none());
+
+    emitter
+        .emit(Event::diagnostic("timeout", "delivered"))
+        .expect("emit");
+
+    let event = stream
+        .next_timeout(Duration::from_secs(1))
+        .await
+        .expect("event after emit");
+    assert_eq!(event.message(), "delivered");
+    assert_eq!(event.scope_label(), Some("timeout"));
+}
+
+#[tokio::test]
+async fn blocking_iterator_receives_events() {
+    let bus = EventBus::with_sink(MemorySink::new());
+    let emitter = bus.get_emitter();
+    let iter = bus.subscribe().into_blocking_iter();
+
+    let handle = tokio::task::spawn_blocking(move || {
+        let mut iter = iter;
+        iter.next()
+    });
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    emitter
+        .emit(Event::diagnostic("blocking", "iter"))
+        .expect("emit");
+
+    let event = handle.await.expect("join").expect("event");
+    assert_eq!(event.message(), "iter");
+    assert_eq!(event.scope_label(), Some("blocking"));
 }
