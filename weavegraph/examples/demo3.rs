@@ -35,7 +35,10 @@ use rig::providers::ollama;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::sync::Arc;
-use tracing::instrument;
+use tracing::{info, instrument};
+use tracing_error::ErrorLayer;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use weavegraph::channels::{errors::pretty_print, Channel};
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
@@ -288,20 +291,46 @@ impl Node for ContentEnhancerNode {
 /// 3. Track progress with rich metadata
 /// 4. Persist state at each step (SQLite checkpointing)
 /// 5. Demonstrate resumable execution patterns
+fn init_tracing() {
+    let fmt_layer = fmt::layer()
+        .with_target(false)
+        .with_file(false)
+        .with_line_number(false)
+        // Log when spans are created/closed so we see instrumented async boundaries
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("error,weavegraph=error"))
+        .unwrap();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    // Pretty panic reports
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
     demo().await
 }
 
 #[instrument]
 async fn demo() -> Result<()> {
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                        Demo 3                           ║");
-    println!("║         LLM Integration & Runtime Configuration         ║");
-    println!("╚══════════════════════════════════════════════════════════╝\n");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                        Demo 3                           ║");
+    info!("║         LLM Integration & Runtime Configuration         ║");
+    info!("╚══════════════════════════════════════════════════════════╝\n");
 
     // ✅ STEP 1: Modern State Construction with LLM Context
-    println!("📊 Step 1: Creating initial state with LLM workflow context");
+    info!("📊 Step 1: Creating initial state with LLM workflow context");
 
     let init = VersionedState::builder()
         .with_user_message("Write a comprehensive guide about sustainable gardening practices")
@@ -327,15 +356,15 @@ async fn demo() -> Result<()> {
         )
         .build();
 
-    println!("   ✓ LLM workflow state initialized");
-    println!("   ✓ User topic: {}", init.messages.snapshot()[0].content);
-    println!(
+    info!("   ✓ LLM workflow state initialized");
+    info!("   ✓ User topic: {}", init.messages.snapshot()[0].content);
+    info!(
         "   ✓ Target iterations: {}",
         init.extra.snapshot()["target_iterations"]
     );
 
     // ✅ STEP 2: Modern Runtime Configuration with Persistence
-    println!("\n⚙️  Step 2: Configuring runtime with SQLite checkpointing");
+    info!("\n⚙️  Step 2: Configuring runtime with SQLite checkpointing");
 
     let runtime_config = RuntimeConfig::new(
         Some("llm_demo_session".to_string()),
@@ -343,13 +372,13 @@ async fn demo() -> Result<()> {
         Some("weavegraph_demo3.db".to_string()),
     );
 
-    println!("   ✓ Runtime configured with persistent checkpointing");
-    println!("   ✓ Session ID: {:?}", runtime_config.session_id);
-    println!("   ✓ Checkpointer: {:?}", runtime_config.checkpointer);
-    println!("   ✓ Database: {:?}", runtime_config.sqlite_db_name);
+    info!("   ✓ Runtime configured with persistent checkpointing");
+    info!("   ✓ Session ID: {:?}", runtime_config.session_id);
+    info!("   ✓ Checkpointer: {:?}", runtime_config.checkpointer);
+    info!("   ✓ Database: {:?}", runtime_config.sqlite_db_name);
 
     // ✅ STEP 3: Building Graph with Conditional Logic
-    println!("\n🔗 Step 3: Building LLM workflow with conditional enhancement loop");
+    info!("\n🔗 Step 3: Building LLM workflow with conditional enhancement loop");
 
     let app = GraphBuilder::new()
         .add_node(
@@ -402,14 +431,14 @@ async fn demo() -> Result<()> {
         .with_runtime_config(runtime_config)
         .compile()?;
 
-    println!("   ✓ LLM workflow graph compiled successfully");
-    println!("   ✓ Nodes: ContentGenerator → ContentEnhancer (conditional loop) → End");
-    println!("   ✓ Conditional logic: Loop until target iterations reached");
-    println!("   ✓ Persistent checkpointing enabled");
+    info!("   ✓ LLM workflow graph compiled successfully");
+    info!("   ✓ Nodes: ContentGenerator → ContentEnhancer (conditional loop) → End");
+    info!("   ✓ Conditional logic: Loop until target iterations reached");
+    info!("   ✓ Persistent checkpointing enabled");
 
     // ✅ STEP 4: Execute LLM Workflow with Monitoring
-    println!("\n🚀 Step 4: Executing LLM workflow with real-time monitoring");
-    println!("   📡 Note: This will make actual calls to Ollama - ensure it's running!");
+    info!("\n🚀 Step 4: Executing LLM workflow with real-time monitoring");
+    info!("   📡 Note: This will make actual calls to Ollama - ensure it's running!");
 
     let execution_start = std::time::Instant::now();
 
@@ -420,25 +449,25 @@ async fn demo() -> Result<()> {
 
     let execution_duration = execution_start.elapsed();
 
-    println!("   ✅ LLM workflow completed successfully");
-    println!(
+    info!("   ✅ LLM workflow completed successfully");
+    info!(
         "   ⏱️  Total execution time: {:.2}s",
         execution_duration.as_secs_f64()
     );
 
     // ✅ STEP 5: Analyze Results and Content Evolution
-    println!("\n📊 Step 5: Analyzing content generation results");
+    info!("\n📊 Step 5: Analyzing content generation results");
 
     let final_snapshot = final_state.snapshot();
 
-    println!("   📈 Workflow Statistics:");
-    println!("      • Total messages: {}", final_snapshot.messages.len());
-    println!(
+    info!("   📈 Workflow Statistics:");
+    info!("      • Total messages: {}", final_snapshot.messages.len());
+    info!(
         "      • Messages version: {}",
         final_snapshot.messages_version
     );
-    println!("      • Extra data entries: {}", final_snapshot.extra.len());
-    println!(
+    info!("      • Extra data entries: {}", final_snapshot.extra.len());
+    info!(
         "      • Final iterations: {}",
         final_snapshot
             .extra
@@ -447,7 +476,7 @@ async fn demo() -> Result<()> {
     );
 
     // Display content evolution
-    println!("\n   📝 Content Evolution Timeline:");
+    info!("\n   📝 Content Evolution Timeline:");
     let user_messages: Vec<_> = final_snapshot
         .messages
         .iter()
@@ -459,109 +488,109 @@ async fn demo() -> Result<()> {
         .filter(|msg| msg.has_role(Message::ASSISTANT))
         .collect();
 
-    println!("      1. User Request:");
+    info!("      1. User Request:");
     if let Some(user_msg) = user_messages.first() {
-        println!("         \"{}\"", user_msg.content);
+        info!("         \"{}\"", user_msg.content);
     }
 
     for (i, msg) in assistant_messages.iter().enumerate() {
-        println!("      {}. Assistant Response (iteration {}):", i + 2, i + 1);
+        info!("      {}. Assistant Response (iteration {}):", i + 2, i + 1);
         let preview = if msg.content.len() > 100 {
             format!("{}...", &msg.content[..100])
         } else {
             msg.content.clone()
         };
-        println!("         \"{}\"", preview);
-        println!("         Length: {} characters", msg.content.len());
+        info!("         \"{}\"", preview);
+        info!("         Length: {} characters", msg.content.len());
     }
 
     // Display performance metrics
     if let Some(metrics) = final_snapshot.extra.get("content_growth_ratio") {
-        println!("\n   📊 Content Quality Metrics:");
-        println!(
+        info!("\n   📊 Content Quality Metrics:");
+        info!(
             "      • Content growth ratio: {:.2}x",
             metrics.as_f64().unwrap_or(1.0)
         );
     }
 
     // Show model usage statistics
-    println!("\n   🤖 Model Usage:");
+    info!("\n   🤖 Model Usage:");
     let generator_calls = assistant_messages.len().min(1);
     let enhancer_calls = assistant_messages.len().saturating_sub(1);
-    println!("      • Generator calls (gemma3:270m): {}", generator_calls);
-    println!("      • Enhancer calls (gemma3): {}", enhancer_calls);
-    println!(
+    info!("      • Generator calls (gemma3:270m): {}", generator_calls);
+    info!("      • Enhancer calls (gemma3): {}", enhancer_calls);
+    info!(
         "      • Total LLM calls: {}",
         generator_calls + enhancer_calls
     );
 
     // ✅ STEP 6: Persistence and Checkpoint Analysis
-    println!("\n💾 Step 6: Checkpoint persistence analysis");
+    info!("\n💾 Step 6: Checkpoint persistence analysis");
 
-    println!(
+    info!(
         "   ✓ State persisted to SQLite database: {:?}",
         app.runtime_config()
             .sqlite_db_name
             .as_ref()
             .unwrap_or(&"weavegraph.db".to_string())
     );
-    println!(
+    info!(
         "   ✓ Session ID: {:?}",
         app.runtime_config()
             .session_id
             .as_ref()
             .unwrap_or(&"default".to_string())
     );
-    println!("   ✓ Workflow resumable from any checkpoint");
+    info!("   ✓ Workflow resumable from any checkpoint");
 
     // Check for errors
     let errors = final_state.errors.snapshot();
     if !errors.is_empty() {
-        println!("\n   ⚠️  Errors captured during execution:");
-        println!("{}", pretty_print(&errors));
+        info!("\n   ⚠️  Errors captured during execution:");
+        info!("{}", pretty_print(&errors));
     } else {
-        println!("\n   ✅ No errors encountered during LLM workflow");
+        info!("\n   ✅ No errors encountered during LLM workflow");
     }
 
     // ✅ STEP 7: Final Content Display
-    println!("\n📋 Step 7: Final enhanced content");
+    info!("\n📋 Step 7: Final enhanced content");
 
     if let Some(final_content) = assistant_messages.last() {
-        println!("   ╭─────────────────────────────────────────────────────────╮");
-        println!("   │                    FINAL CONTENT                        │");
-        println!("   ╰─────────────────────────────────────────────────────────╯");
+        info!("   ╭─────────────────────────────────────────────────────────╮");
+        info!("   │                    FINAL CONTENT                        │");
+        info!("   ╰─────────────────────────────────────────────────────────╯");
 
         // Display content in chunks for readability
         let content = &final_content.content;
         let chunk_size = 80;
         for chunk in content.chars().collect::<Vec<_>>().chunks(chunk_size) {
             let line: String = chunk.iter().collect();
-            println!("   {}", line);
+            info!("   {}", line);
         }
 
-        println!("\n   📏 Final content statistics:");
-        println!("      • Character count: {}", content.len());
-        println!(
+        info!("\n   📏 Final content statistics:");
+        info!("      • Character count: {}", content.len());
+        info!(
             "      • Estimated word count: {}",
             content.split_whitespace().count()
         );
-        println!("      • Line count: {}", content.lines().count());
+        info!("      • Line count: {}", content.lines().count());
     }
 
     // ✅ FINAL SUMMARY
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                      Demo 3 Complete                    ║");
-    println!("╚══════════════════════════════════════════════════════════╝");
-    println!("\n✅ LLM integration patterns demonstrated:");
-    println!("   • External LLM service integration (Ollama)");
-    println!("   • Modern runtime configuration with persistence");
-    println!("   • Conditional workflow routing and loops");
-    println!("   • Iterative content enhancement workflows");
-    println!("   • SQLite-backed checkpoint persistence");
-    println!("   • Robust error handling for external services");
-    println!("   • Rich metadata tracking and performance analysis");
-    println!("\n🎯 Next: Run demo4 to see streaming LLM integration");
-    println!("💡 Tip: Check the SQLite database for persisted checkpoints!");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                      Demo 3 Complete                    ║");
+    info!("╚══════════════════════════════════════════════════════════╝");
+    info!("\n✅ LLM integration patterns demonstrated:");
+    info!("   • External LLM service integration (Ollama)");
+    info!("   • Modern runtime configuration with persistence");
+    info!("   • Conditional workflow routing and loops");
+    info!("   • Iterative content enhancement workflows");
+    info!("   • SQLite-backed checkpoint persistence");
+    info!("   • Robust error handling for external services");
+    info!("   • Rich metadata tracking and performance analysis");
+    info!("\n🎯 Next: Run demo4 to see streaming LLM integration");
+    info!("💡 Tip: Check the SQLite database for persisted checkpoints!");
 
     Ok(())
 }

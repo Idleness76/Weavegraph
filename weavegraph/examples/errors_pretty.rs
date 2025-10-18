@@ -2,7 +2,25 @@ use chrono::{TimeZone, Utc};
 use serde_json::json;
 use weavegraph::channels::errors::{pretty_print, ErrorEvent, ErrorScope, LadderError};
 
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            EnvFilter::from_default_env()
+                .add_directive("weavegraph=info".parse().unwrap())
+                .add_directive("errors_pretty=info".parse().unwrap()),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
 fn main() {
+    init_tracing();
+
     // Sample events across scopes with a nested cause chain and context/tags
     let when0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
     let when1 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 1, 0).unwrap();
@@ -42,5 +60,5 @@ fn main() {
     ];
 
     let out = pretty_print(&events);
-    println!("=== Errors pretty showcase ===\n{}", out);
+    info!("=== Errors pretty showcase ===\n{}", out);
 }
