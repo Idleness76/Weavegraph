@@ -20,6 +20,7 @@ This directory contains examples demonstrating various Weavegraph features and p
 | `errors_pretty.rs` | Error handling | Error formatting, diagnostics |
 
 **Note:** Some examples require specific features to be enabled:
+- `demo5_rag.rs`: Requires `--features llm,examples` (e.g., `cargo run --example demo5_rag --features llm,examples`)
 - `demo6_agent_mcp.rs`: Requires `--features llm` (e.g., `cargo run --example demo6_agent_mcp --features llm`)
 
 For DB-less builds, SQLite features are excluded by default but can be re-enabled with `--features sqlite-migrations`.

@@ -203,6 +203,7 @@ Troubleshooting:
 The repository includes comprehensive examples demonstrating different patterns. Some examples require specific Cargo features:
 
 - **AI/MCP Examples**: Require `--features llm` (e.g., `demo6_agent_mcp` for Model Context Protocol integration).
+- **RAG Examples**: Require `--features llm,examples` (e.g., `demo5_rag` for document processing and retrieval).
 
 For minimal builds without database support, use `cargo build --no-default-features`. Note that `CheckpointerType::SQLite` will be unavailable.
 

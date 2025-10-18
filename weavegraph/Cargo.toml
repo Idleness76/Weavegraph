@@ -15,16 +15,8 @@ documentation = "https://docs.rs/weavegraph"
 [dev-dependencies]
 proptest = "1"
 tempfile = "3"
-wg-ragsmith = { path = "../wg-ragsmith" }
-reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "gzip",
-    "brotli",
-    "rustls-tls",
-] }
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 url = "2"
-scraper = "0.24"
 httpmock = "0.7"
 
 [dependencies]
@@ -83,6 +75,15 @@ sqlx = { version = "0.8", features = [
 # Configuration
 dotenvy = "0.15"
 
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "gzip",
+    "brotli",
+    "rustls-tls",
+], optional = true }
+scraper = { version = "0.24", optional = true }
+wg-ragsmith = { path = "../wg-ragsmith", optional = true }
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
@@ -93,6 +94,7 @@ default = ["sqlite-migrations"]
 sqlite-migrations = ["sqlite"]
 sqlite = ["sqlx"]
 llm = ["rig-core", "rmcp"]
+examples = ["reqwest", "scraper", "wg-ragsmith"]
 
 [[example]]
 name = "demo3"
@@ -104,7 +106,7 @@ required-features = ["llm"]
 
 [[example]]
 name = "demo5_rag"
-required-features = ["llm"]
+required-features = ["llm", "examples"]
 
 [[example]]
 name = "cap_demo"
