@@ -200,7 +200,9 @@ Troubleshooting:
 
 ## 🔧 Examples
 
-The repository includes comprehensive examples demonstrating different patterns:
+The repository includes comprehensive examples demonstrating different patterns. Some examples require specific Cargo features:
+
+- **AI/MCP Examples**: Require `--features llm` (e.g., `demo6_agent_mcp` for Model Context Protocol integration).
 
 ```bash
 # Basic node patterns and message handling

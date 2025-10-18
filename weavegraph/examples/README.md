@@ -19,6 +19,9 @@ This directory contains examples demonstrating various Weavegraph features and p
 | `advanced_patterns.rs` | Advanced techniques | Multiple patterns |
 | `errors_pretty.rs` | Error handling | Error formatting, diagnostics |
 
+**Note:** Some examples require specific features to be enabled:
+- `demo6_agent_mcp.rs`: Requires `--features llm` (e.g., `cargo run --example demo6_agent_mcp --features llm`)
+
 ## Event Streaming (New!)
 
 ### streaming_events.rs - Stream Events to Web Clients

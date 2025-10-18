@@ -8,7 +8,7 @@
 //! 5. Gracefully shut down the MCP child process
 //!
 //! Run with:
-//!   cargo run --example demo6_agent_mcp
+//!   cargo run --example demo6_agent_mcp --features llm
 //!
 //! Prereqs:
 //!   1. Ollama running locally (`ollama serve`) and model pulled (e.g. `ollama pull gemma3:latest`)
