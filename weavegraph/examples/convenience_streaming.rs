@@ -41,7 +41,7 @@ use weavegraph::{
     types::NodeKind,
 };
 
-use miette::Result;
+use miette::{IntoDiagnostic, Result};
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -90,7 +90,7 @@ fn init_miette() {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     init_tracing();
     init_miette();
 
@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Wait for event collection
-    let event_count = event_handler.await?;
+    let event_count = event_handler.await.into_diagnostic()?;
     info!("   📊 Received {} events total\n", event_count);
 
     // Give some time before next example
@@ -188,7 +188,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Box::new(ChannelSink::new(tx)),
             ],
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     info!(
         "\n   ✅ Workflow completed with {} messages",
@@ -196,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Get channel events
-    let channel_events = channel_collector.await?;
+    let channel_events = channel_collector.await.into_diagnostic()?;
     info!("   📊 Channel received {} events", channel_events.len());
     info!("   📊 Events were also printed to stdout above\n");
 

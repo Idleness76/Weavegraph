@@ -85,7 +85,7 @@
 
 use async_trait::async_trait;
 use flume;
-use miette;
+use miette::{self, IntoDiagnostic, Result};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -163,7 +163,7 @@ impl Node for ProcessingNode {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     init_tracing();
     init_miette();
 
@@ -241,7 +241,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // In production, you'd send this to a web client
         info!(
             "📨 Stream event: {}",
-            serde_json::to_string_pretty(&json_payload)?
+            serde_json::to_string_pretty(&json_payload).into_diagnostic()?
         );
 
         // Break on completion event
@@ -251,7 +251,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Wait for workflow to finish
-    workflow_task.await?;
+    workflow_task.await.into_diagnostic()?;
 
     info!("\n=== Example Complete ===");
     info!("\n💡 Next Steps:");
