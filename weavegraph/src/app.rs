@@ -2,11 +2,12 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 use crate::channels::Channel;
+use crate::event_bus::{ChannelSink, EventBus, EventStream};
 use crate::message::*;
 use crate::node::*;
 use crate::reducers::ReducerRegistry;
 use crate::runtimes::runner::RunnerError;
-use crate::runtimes::{CheckpointerType, RuntimeConfig, SessionInit};
+use crate::runtimes::{AppRunner, CheckpointerType, RuntimeConfig, SessionInit};
 use crate::state::*;
 use crate::types::*;
 use crate::utils::collections::new_extra_map;
@@ -56,6 +57,44 @@ pub struct App {
     conditional_edges: Vec<crate::graphs::ConditionalEdge>,
     reducer_registry: ReducerRegistry,
     runtime_config: RuntimeConfig,
+}
+
+pub struct AppEventStream {
+    event_bus: EventBus,
+    event_stream: Option<EventStream>,
+}
+
+impl AppEventStream {
+    fn new(event_bus: EventBus, event_stream: EventStream) -> Self {
+        Self {
+            event_bus,
+            event_stream: Some(event_stream),
+        }
+    }
+
+    pub fn event_stream(&mut self) -> &mut EventStream {
+        self.event_stream
+            .as_mut()
+            .expect("event stream already taken")
+    }
+
+    pub fn into_stream(mut self) -> EventStream {
+        self.event_stream
+            .take()
+            .expect("event stream already taken")
+    }
+
+    pub fn into_event_bus(self) -> EventBus {
+        self.event_bus
+    }
+
+    pub fn split(mut self) -> (EventBus, EventStream) {
+        let stream = self
+            .event_stream
+            .take()
+            .expect("event stream already taken");
+        (self.event_bus, stream)
+    }
 }
 
 impl App {
@@ -127,6 +166,14 @@ impl App {
     #[must_use]
     pub fn runtime_config(&self) -> &RuntimeConfig {
         &self.runtime_config
+    }
+
+    /// Create a subscription to the configured event bus without starting execution.
+    #[must_use]
+    pub fn event_stream(&self) -> AppEventStream {
+        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        let event_stream = event_bus.subscribe();
+        AppEventStream::new(event_bus, event_stream)
     }
 
     /// Execute the entire workflow until completion or no nodes remain.
@@ -222,8 +269,6 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> Result<VersionedState, RunnerError> {
-        use crate::runtimes::AppRunner;
-
         // Determine checkpointer type (default to InMemory if none supplied)
         let checkpointer_type = self
             .runtime_config
@@ -231,8 +276,11 @@ impl App {
             .clone()
             .unwrap_or(CheckpointerType::InMemory);
 
-        // Create async runner
-        let mut runner = AppRunner::new(self.clone(), checkpointer_type).await;
+        // Create async runner with configured event bus
+        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        let mut runner =
+            AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
+                .await;
 
         let session_id = self
             .runtime_config
@@ -368,14 +416,12 @@ impl App {
         Result<VersionedState, RunnerError>,
         flume::Receiver<crate::event_bus::Event>,
     ) {
-        use crate::event_bus::{ChannelSink, EventBus};
-        use crate::runtimes::AppRunner;
-
         // Create channel for events
         let (tx, rx) = flume::unbounded();
 
-        // Create EventBus with ChannelSink only (no stdout spam)
-        let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
+        // Build configured event bus and add channel sink for streaming
+        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        event_bus.add_sink(ChannelSink::new(tx));
 
         // Determine checkpointer type
         let checkpointer_type = self
@@ -389,7 +435,7 @@ impl App {
             self.clone(),
             checkpointer_type,
             false, // autosave
-            bus,
+            event_bus,
             true, // start listener
         )
         .await;
@@ -514,13 +560,13 @@ impl App {
     pub async fn invoke_with_sinks(
         &self,
         initial_state: VersionedState,
-        sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
+        mut sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
     ) -> Result<VersionedState, RunnerError> {
-        use crate::event_bus::EventBus;
-        use crate::runtimes::AppRunner;
-
-        // Create EventBus with provided sinks
-        let bus = EventBus::with_sinks(sinks);
+        // Create EventBus from configuration and append provided sinks
+        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        for sink in sinks.drain(..) {
+            event_bus.add_boxed_sink(sink);
+        }
 
         // Determine checkpointer type
         let checkpointer_type = self
@@ -534,7 +580,7 @@ impl App {
             self.clone(),
             checkpointer_type,
             false, // autosave
-            bus,
+            event_bus,
             true, // start listener
         )
         .await;
