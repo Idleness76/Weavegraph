@@ -1,10 +1,10 @@
 # Streaming Events Quickstart
 
-This guide shows you how to stream workflow events to web clients using Weavegraph's EventBus and ChannelSink.
+This guide shows you how to stream workflow events to web clients using Weavegraph's `EventStream` helpers and, when needed, the legacy channel-based sinks.
 
 ## Choose Your Pattern
 
-### ⭐ NEW: Simple Patterns (Convenience Methods)
+### ⭐ Simple Patterns (Convenience Methods)
 
 For CLI tools and simple scripts, use the new convenience methods:
 
@@ -25,43 +25,34 @@ app.invoke_with_sinks(
 
 ### Production Pattern (Web Servers)
 
-For web servers with per-request isolation, use `AppRunner` directly:
+Use [`App::invoke_streaming`](../../src/app.rs) to launch the workflow and get an `EventStream` you can forward to SSE/WebSocket clients:
 
 ```rust
-let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
-let mut events = runner.event_stream(); // subscribe before invoking
-runner.run_until_complete(&session_id).await;
+let initial = VersionedState::new_with_user_message("Stream me");
+let (workflow, events) = app.invoke_streaming(initial).await;
+
+tokio::spawn(async move {
+    if let Err(err) = workflow.await.and_then(|res| res) {
+        tracing::error!("workflow failed: {err}");
+    }
+});
+
+let sse_stream = events
+    .into_async_stream()
+    .map(|event| SseEvent::default().json_data(event).unwrap());
+
+Sse::new(sse_stream)
 ```
 
 **When to use:** SSE, WebSocket, per-client event streams
 
-**Example:** `cargo run --example streaming_events`
-
-**This guide focuses on the production pattern.** For simple cases, see `convenience_streaming.rs`.
+**Example:** `cargo run --example demo7_axum_sse`
 
 ---
 
-## ⚠️ Important: Why You Need AppRunner
+## ⚠️ Notes on legacy patterns
 
-**You cannot stream events using `App.invoke()` alone!**
-
-```rust
-// ❌ WRONG - This will NOT stream events to your channel!
-let bus = EventBus::default();
-bus.add_sink(ChannelSink::new(tx));
-app.invoke(state).await;  // Creates its OWN EventBus internally!
-
-// ✅ CORRECT - Use AppRunner with custom EventBus
-let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
-runner.run_until_complete(&session_id).await;
-```
-
-**Why?**
-- `App.invoke()` internally creates `AppRunner::new()` which creates a **default EventBus** (stdout only)
-- Your custom EventBus is ignored
-- Use `AppRunner::with_options_and_bus()` to inject your custom EventBus
+`App::invoke_with_channel` and `invoke_with_sinks` remain available for scripts that prefer flume channels or multiple sinks. Under the hood they now use the same broadcast hub as `invoke_streaming`.
 
 ## Quick Start
 
@@ -75,112 +66,52 @@ This demonstrates the core pattern without requiring additional dependencies.
 
 ## Key Components
 
-### 1. ChannelSink
+### 1. EventStream
 
-Forwards events from the EventBus to a flume channel:
-
-```rust
-use weavegraph::event_bus::ChannelSink;
-
-let (tx, rx) = flume::unbounded();
-let channel_sink = ChannelSink::new(tx);
-```
-
-### 2. EventBus with Multiple Sinks
-
-Create an EventBus that broadcasts to multiple destinations:
+`EventStream` represents the broadcast output of the EventBus. Convert it to different consumption styles:
 
 ```rust
-use weavegraph::event_bus::{EventBus, StdOutSink};
+let (workflow, events) = app.invoke_streaming(initial_state).await;
 
-let bus = EventBus::with_sinks(vec![
-    Box::new(StdOutSink::default()),  // For debugging
-    Box::new(ChannelSink::new(tx)),   // For streaming
-]);
+// Async iterator (SSE/WebSocket)
+let mut stream = events.into_async_stream();
+while let Some(event) = stream.next().await { /* ... */ }
+
+// Blocking iterator (CLI tools)
+for event in events.into_blocking_iter() { /* ... */ }
+
+// Timed polling
+if let Some(event) = events.next_timeout(Duration::from_secs(1)).await { /* ... */ }
 ```
 
-### 3. AppRunner Integration
+### 2. Legacy ChannelSink (Optional)
 
-Pass the custom EventBus to the AppRunner:
+If you still prefer channel-based forwarding, the convenience helpers continue to work:
 
 ```rust
-use weavegraph::runtimes::{runner::AppRunner, CheckpointerType};
-
-let mut runner = AppRunner::with_options_and_bus(
-    app,                          // Your compiled graph
-    CheckpointerType::InMemory,   // Checkpointing strategy
-    false,                        // Autosave disabled
-    bus,                          // Custom EventBus
-    true,                         // Start event listener
-).await;
-
-// Create and run session
-let session_id = "my-session".to_string();
-runner.create_session(session_id.clone(), initial_state).await?;
-runner.run_until_complete(&session_id).await?;
+let (result, events) = app.invoke_with_channel(initial_state).await;
 ```
 
-### 4. Consuming Events
-
-Process events from the channel:
-
-```rust
-while let Ok(event) = rx.recv_async().await {
-    println!("Event: {}", serde_json::to_string_pretty(&event)?);
-}
-```
-
-- The `Event` enum now includes `Node`, `Diagnostic`, **and** `LLM` variants—remember to handle the streaming case (`Event::LLM`) when forwarding data to clients.
+- The `Event` enum now includes `Node`, `Diagnostic`, **and** `LLM` variants—remember to handle the streaming case (`Event::LLM`).
 
 ## Web Framework Integration
 
 ### Pattern for HTTP Streaming (Axum Example)
 
 ```rust
-use axum::{
-    extract::State,
-    response::sse::{Event as SseEvent, Sse},
-};
-use futures_util::stream::Stream;
+let (workflow, events) = app.invoke_streaming(initial_state).await;
 
-async fn stream_workflow(
-    State(graph): State<Arc<App>>
-) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    // 1. Create channel for this client
-    let (tx, rx) = flume::unbounded();
-    
-    // 2. Create EventBus with ChannelSink
-    let bus = EventBus::with_sinks(vec![
-        Box::new(ChannelSink::new(tx))
-    ]);
-    
-    // 3. Run workflow in background with custom EventBus
-    tokio::spawn(async move {
-        let mut runner = AppRunner::with_options_and_bus(
-            Arc::try_unwrap(graph).unwrap_or_else(|arc| (*arc).clone()),
-            CheckpointerType::InMemory,
-            false,
-            bus,
-            true,
-        ).await;
-        
-        let session_id = format!("client-{}", uuid::Uuid::new_v4());
-        let initial_state = VersionedState::new_with_user_message("Process this");
-        
-        runner.create_session(session_id.clone(), initial_state).await.ok();
-        runner.run_until_complete(&session_id).await.ok();
-    });
-    
-    // 4. Stream events as SSE (flume has built-in stream support)
-    let stream = rx.into_stream().map(|event| {
-        Ok(SseEvent::default()
-            .event("workflow-event")
-            .json_data(event)
-            .unwrap())
-    });
-    
-    Sse::new(stream)
-}
+tokio::spawn(async move {
+    if let Err(err) = workflow.await.and_then(|res| res) {
+        tracing::error!("workflow failed: {err}");
+    }
+});
+
+let sse_stream = events
+    .into_async_stream()
+    .map(|event| SseEvent::default().json_data(event).unwrap());
+
+Sse::new(sse_stream)
 ```
 
 ### Required Dependencies (for Axum)
