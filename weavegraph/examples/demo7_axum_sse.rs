@@ -24,13 +24,12 @@ use serde_json::json;
 use tokio::{net::TcpListener, time::sleep};
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
-use uuid::Uuid;
 
 use weavegraph::{
     graphs::GraphBuilder,
     message::Message,
     node::{Node, NodeContext, NodeError, NodePartial},
-    runtimes::{AppRunner, CheckpointerType, EventBusConfig, RuntimeConfig},
+    runtimes::{EventBusConfig, RuntimeConfig},
     state::{StateSnapshot, VersionedState},
     types::NodeKind,
 };
@@ -70,31 +69,15 @@ impl Node for StreamingNode {
 async fn stream_workflow(
     State(app): State<Arc<weavegraph::app::App>>,
 ) -> Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>> {
-    // Prepare event channel and split out the bus for the runner.
-    let handle = app.event_stream();
-    let (event_bus, event_stream) = handle.split();
-    let mut runner = AppRunner::with_options_arc_and_bus(
-        app.clone(),
-        CheckpointerType::InMemory,
-        false,
-        event_bus,
-        true,
-    )
-    .await;
-
-    let session_id = Uuid::new_v4().to_string();
     let initial_state =
         VersionedState::new_with_user_message("Stream this workflow's progress over SSE.");
+    let (join_handle, event_stream) = app.invoke_streaming(initial_state).await;
 
-    runner
-        .create_session(session_id.clone(), initial_state)
-        .await
-        .expect("failed to create session");
-
-    // Spawn the workflow in the background. When it finishes the event stream will close.
     tokio::spawn(async move {
-        if let Err(err) = runner.run_until_complete(&session_id).await {
-            tracing::error!("workflow failed: {err:?}");
+        match join_handle.await {
+            Ok(Ok(_)) => tracing::info!("workflow completed"),
+            Ok(Err(err)) => tracing::error!("workflow error: {err:?}"),
+            Err(err) => tracing::error!("workflow task panicked: {err:?}"),
         }
     });
 

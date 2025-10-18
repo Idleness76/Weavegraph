@@ -11,6 +11,7 @@ use crate::runtimes::{AppRunner, CheckpointerType, RuntimeConfig, SessionInit};
 use crate::state::*;
 use crate::types::*;
 use crate::utils::collections::new_extra_map;
+use tokio::task::JoinHandle;
 use tracing::instrument;
 
 /// Orchestrates graph execution and applies reducers at barriers.
@@ -197,6 +198,52 @@ impl App {
         AppEventStream::new(event_bus, event_stream)
     }
 
+    /// Invoke the workflow asynchronously while streaming events to the caller.
+    ///
+    /// Returns a join handle for the workflow outcome and an `EventStream` that yields
+    /// every event emitted during execution.
+    pub async fn invoke_streaming(
+        &self,
+        initial_state: VersionedState,
+    ) -> (JoinHandle<Result<VersionedState, RunnerError>>, EventStream) {
+        let checkpointer_type = self
+            .runtime_config
+            .checkpointer
+            .clone()
+            .unwrap_or(CheckpointerType::InMemory);
+
+        let event_handle = self.event_stream();
+        let (event_bus, event_stream) = event_handle.split();
+
+        let mut runner =
+            AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
+                .await;
+
+        let session_id = self
+            .runtime_config
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "temp_invoke_session".to_string());
+
+        let join = tokio::spawn(async move {
+            let init_state = runner
+                .create_session(session_id.clone(), initial_state)
+                .await?;
+
+            if let SessionInit::Resumed { checkpoint_step } = init_state {
+                tracing::info!(
+                    session = %session_id,
+                    checkpoint_step,
+                    "Resuming session from checkpoint"
+                );
+            }
+
+            runner.run_until_complete(&session_id).await
+        });
+
+        (join, event_stream)
+    }
+
     /// Execute the entire workflow until completion or no nodes remain.
     ///
     /// This is the primary entry point for simple workflow execution. It creates an
@@ -290,36 +337,12 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> Result<VersionedState, RunnerError> {
-        // Determine checkpointer type (default to InMemory if none supplied)
-        let checkpointer_type = self
-            .runtime_config
-            .checkpointer
-            .clone()
-            .unwrap_or(CheckpointerType::InMemory);
-
-        // Create async runner with configured event bus
-        let event_bus = self.event_stream().into_event_bus();
-        let mut runner =
-            AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
-                .await;
-
-        let session_id = self
-            .runtime_config
-            .session_id
-            .clone()
-            .unwrap_or_else(|| "temp_invoke_session".to_string());
-
-        let init_state = runner
-            .create_session(session_id.clone(), initial_state)
-            .await?;
-
-        if let SessionInit::Resumed { checkpoint_step } = init_state {
-            println!(
-                "Resuming session '{}' from checkpoint at step {}",
-                session_id, checkpoint_step
-            );
+        let (handle, event_stream) = self.invoke_streaming(initial_state).await;
+        drop(event_stream);
+        match handle.await {
+            Ok(result) => result,
+            Err(err) => panic!("App invocation task panicked: {err}"),
         }
-        runner.run_until_complete(&session_id).await
     }
 
     /// Execute workflow with event streaming to a channel.
