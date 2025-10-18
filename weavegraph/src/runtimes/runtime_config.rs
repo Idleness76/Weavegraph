@@ -1,3 +1,4 @@
+use crate::event_bus::{EventBus, EventSink, MemorySink, StdOutSink};
 use crate::utils::id_generator;
 
 use super::CheckpointerType;
@@ -114,6 +115,25 @@ impl EventBusConfig {
 
     pub fn sinks(&self) -> &[SinkConfig] {
         &self.sinks
+    }
+
+    #[must_use]
+    pub fn build_event_bus(&self) -> EventBus {
+        let mut sinks: Vec<Box<dyn EventSink>> = if self.sinks.is_empty() {
+            vec![Box::new(StdOutSink::default())]
+        } else {
+            self.sinks
+                .iter()
+                .map(|sink| match sink {
+                    SinkConfig::StdOut => Box::new(StdOutSink::default()) as Box<dyn EventSink>,
+                    SinkConfig::Memory => Box::new(MemorySink::new()) as Box<dyn EventSink>,
+                })
+                .collect()
+        };
+        if sinks.is_empty() {
+            sinks.push(Box::new(StdOutSink::default()));
+        }
+        EventBus::with_capacity(sinks, self.buffer_capacity())
     }
 }
 

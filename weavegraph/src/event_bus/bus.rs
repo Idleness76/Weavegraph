@@ -183,8 +183,12 @@ impl EventBus {
     }
 
     pub fn add_sink<T: EventSink + 'static>(&self, sink: T) {
+        self.add_boxed_sink(Box::new(sink));
+    }
+
+    pub fn add_boxed_sink(&self, sink: Box<dyn EventSink>) {
         let mut sinks = self.sinks.lock().unwrap();
-        let mut entry = SinkEntry::new(Box::new(sink));
+        let mut entry = SinkEntry::new(sink);
         if self.started.load(Ordering::SeqCst) {
             entry.spawn_worker(self.hub.clone());
         }

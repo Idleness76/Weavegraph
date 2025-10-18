@@ -1,12 +1,11 @@
 use crate::app::App;
 use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::channels::Channel;
-use crate::event_bus::{EventBus, EventSink, EventStream, MemorySink, StdOutSink};
+use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
 use crate::runtimes::{
-    restore_session_state, Checkpoint, Checkpointer, CheckpointerError, EventBusConfig,
-    InMemoryCheckpointer, SinkConfig,
+    restore_session_state, Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer,
 };
 use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
 use crate::state::VersionedState;
@@ -217,26 +216,6 @@ pub enum RunnerError {
 }
 
 impl AppRunner {
-    fn event_bus_from_config(config: &EventBusConfig) -> EventBus {
-        let mut sinks: Vec<Box<dyn EventSink>> = if config.sinks().is_empty() {
-            vec![Box::new(StdOutSink::default())]
-        } else {
-            config
-                .sinks()
-                .iter()
-                .map(|sink| match sink {
-                    SinkConfig::StdOut => Box::new(StdOutSink::default()) as Box<dyn EventSink>,
-                    SinkConfig::Memory => Box::new(MemorySink::new()) as Box<dyn EventSink>,
-                })
-                .collect()
-        };
-        // Ensure at least one sink exists to avoid dropping events silently.
-        if sinks.is_empty() {
-            sinks.push(Box::new(StdOutSink::default()));
-        }
-        EventBus::with_capacity(sinks, config.buffer_capacity())
-    }
-
     /// Create a new AppRunner with default EventBus (stdout only).
     ///
     /// This is the simplest constructor, used internally by [`App::invoke()`](crate::app::App::invoke).
@@ -346,9 +325,8 @@ impl AppRunner {
         checkpointer_type: CheckpointerType,
         autosave: bool,
     ) -> Self {
+        let bus = app.runtime_config().event_bus.build_event_bus();
         let app = Arc::new(app);
-        let bus_config = app.runtime_config().event_bus.clone();
-        let bus = Self::event_bus_from_config(&bus_config);
         Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
@@ -357,8 +335,7 @@ impl AppRunner {
         checkpointer_type: CheckpointerType,
         autosave: bool,
     ) -> Self {
-        let bus_config = app.runtime_config().event_bus.clone();
-        let bus = Self::event_bus_from_config(&bus_config);
+        let bus = app.runtime_config().event_bus.build_event_bus();
         Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
