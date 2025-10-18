@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
 
 #[tokio::test]
@@ -8,8 +9,9 @@ async fn stop_listener_flushes_pending_events() {
 
     bus.listen_for_events();
 
-    bus.get_sender()
-        .send(Event::node_message_with_meta(
+    let emitter = bus.get_emitter();
+    emitter
+        .emit(Event::node_message_with_meta(
             "test-node",
             42,
             "scope",
@@ -41,21 +43,23 @@ async fn memory_sink_captures_events_with_scope_and_messages() {
 
     bus.listen_for_events();
 
+    let emitter = bus.get_emitter();
+
     // Same scope twice
-    bus.get_sender()
-        .send(Event::node_message("Scope1", "one"))
-        .expect("send one");
-    bus.get_sender()
-        .send(Event::node_message("Scope1", "two"))
-        .expect("send two");
+    emitter
+        .emit(Event::node_message("Scope1", "one"))
+        .expect("emit one");
+    emitter
+        .emit(Event::node_message("Scope1", "two"))
+        .expect("emit two");
 
     // Different scope
-    bus.get_sender()
-        .send(Event::diagnostic("Scope2", "three"))
-        .expect("send three");
-    bus.get_sender()
-        .send(Event::diagnostic("Scope2", "four"))
-        .expect("send four");
+    emitter
+        .emit(Event::diagnostic("Scope2", "three"))
+        .expect("emit three");
+    emitter
+        .emit(Event::diagnostic("Scope2", "four"))
+        .expect("emit four");
 
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     bus.stop_listener().await;
@@ -89,9 +93,9 @@ async fn multiple_listen_calls_are_idempotent() {
     bus.listen_for_events();
 
     // Emit a couple of events and ensure we don't get duplicate output.
-    let sender = bus.get_sender();
-    sender.send(Event::node_message("S", "a")).unwrap();
-    sender.send(Event::node_message("S", "b")).unwrap();
+    let emitter = bus.get_emitter();
+    emitter.emit(Event::node_message("S", "a")).unwrap();
+    emitter.emit(Event::node_message("S", "b")).unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     bus.stop_listener().await;
@@ -111,16 +115,17 @@ async fn memory_sink_preserves_order_under_concurrency() {
     let bus = EventBus::with_sink(sink);
     bus.listen_for_events();
 
-    let sender = bus.get_sender();
+    let emitter = bus.get_emitter();
     let mut handles = Vec::new();
     let total = 20u32;
     for i in 0..total {
-        let s = sender.clone();
+        let emitter = Arc::clone(&emitter);
         handles.push(task::spawn(async move {
             // Stagger sends to establish a deterministic order.
             tokio::time::sleep(std::time::Duration::from_millis((i * 2) as u64)).await;
-            s.send(Event::node_message("ORDER", format!("m{i}")))
-                .expect("send");
+            emitter
+                .emit(Event::node_message("ORDER", format!("m{i}")))
+                .expect("emit");
         }));
     }
 
@@ -151,8 +156,8 @@ async fn channel_sink_forwards_events() {
     let bus = EventBus::with_sink(ChannelSink::new(tx));
     bus.listen_for_events();
 
-    bus.get_sender()
-        .send(Event::diagnostic("test", "hello world"))
+    bus.get_emitter()
+        .emit(Event::diagnostic("test", "hello world"))
         .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -173,8 +178,8 @@ async fn multi_sink_broadcast() {
     ]);
     bus.listen_for_events();
 
-    bus.get_sender()
-        .send(Event::diagnostic("test", "broadcast message"))
+    bus.get_emitter()
+        .emit(Event::diagnostic("test", "broadcast message"))
         .unwrap();
 
     // Give listener time to process
@@ -197,8 +202,8 @@ async fn add_sink_dynamically() {
     let (tx, rx) = flume::unbounded();
     bus.add_sink(ChannelSink::new(tx));
 
-    bus.get_sender()
-        .send(Event::diagnostic("test", "dynamic sink"))
+    bus.get_emitter()
+        .emit(Event::diagnostic("test", "dynamic sink"))
         .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;

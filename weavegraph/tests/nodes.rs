@@ -11,7 +11,7 @@ fn make_ctx(step: u64) -> (NodeContext, EventBus) {
     let ctx = NodeContext {
         node_id: "test-node".to_string(),
         step,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: event_bus.get_emitter(),
     };
     (ctx, event_bus)
 }

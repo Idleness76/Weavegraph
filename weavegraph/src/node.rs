@@ -12,9 +12,10 @@ use thiserror::Error;
 
 // Internal crate modules
 use crate::channels::errors::ErrorEvent;
-use crate::event_bus::Event;
+use crate::event_bus::{Event, EventEmitter};
 use crate::message::Message;
 use crate::state::StateSnapshot;
+use std::sync::Arc;
 
 // ============================================================================
 // Core Trait
@@ -55,13 +56,13 @@ use crate::state::StateSnapshot;
 /// impl Node for ValidationNode {
 ///     async fn run(&self, snapshot: StateSnapshot, ctx: NodeContext) -> Result<NodePartial, NodeError> {
 ///         ctx.emit("validation", "Starting validation")?;
-///         
+///
 ///         for field in &self.required_fields {
 ///             if !snapshot.extra.contains_key(field) {
 ///                 return Err(NodeError::ValidationFailed(format!("Missing field: {}", field)));
 ///             }
 ///         }
-///         
+///
 ///         // Demonstrate the fluent API for success with warnings
 ///         if snapshot.messages.is_empty() {
 ///             let warning = ErrorEvent {
@@ -73,7 +74,7 @@ use crate::state::StateSnapshot;
 ///             };
 ///             return Ok(NodePartial::new().with_errors(vec![warning]));
 ///         }
-///         
+///
 ///         Ok(NodePartial::default())
 ///     }
 /// }
@@ -103,7 +104,7 @@ pub struct NodeContext {
     /// Current execution step number.
     pub step: u64,
     /// Channel for emitting events to the workflow's event system.
-    pub event_bus_sender: flume::Sender<Event>,
+    pub event_emitter: Arc<dyn EventEmitter>,
 }
 
 impl NodeContext {
@@ -116,8 +117,8 @@ impl NodeContext {
         scope: impl Into<String>,
         message: impl Into<String>,
     ) -> Result<(), NodeContextError> {
-        self.event_bus_sender
-            .send(Event::node_message_with_meta(
+        self.event_emitter
+            .emit(Event::node_message_with_meta(
                 self.node_id.clone(),
                 self.step,
                 scope,

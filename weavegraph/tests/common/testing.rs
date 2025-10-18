@@ -23,11 +23,11 @@ mod tests {
     #[tokio::test]
     async fn test_testnode_construction() {
         let node = TestNode { name: "example" };
-        let (sender, _receiver) = flume::unbounded();
+        let bus = weavegraph::event_bus::EventBus::default();
         let ctx = NodeContext {
             node_id: "test_node".to_string(),
             step: 1,
-            event_bus_sender: sender,
+            event_emitter: bus.get_emitter(),
         };
         let snapshot = StateSnapshot {
             messages: vec![],

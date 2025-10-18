@@ -10,6 +10,7 @@
 
 use async_trait::async_trait;
 use serde_json::json;
+use std::sync::Arc;
 use weavegraph::event_bus::EventBus;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -244,10 +245,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         node_name: "CounterExample".to_string(),
     };
 
+    let emitter = event_bus.get_emitter();
+
     let ctx1 = NodeContext {
         node_id: "counter-1".to_string(),
         step: 2,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     let result1 = counter_node.run(state.clone(), ctx1).await?;
@@ -276,7 +279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx2 = NodeContext {
         node_id: "validator-1".to_string(),
         step: 3,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     let result2 = validation_node.run(state.clone(), ctx2).await?;
@@ -294,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx3 = NodeContext {
         node_id: "aggregator-1".to_string(),
         step: 4,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     let result3 = aggregator_node.run(state.clone(), ctx3).await?;

@@ -25,6 +25,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 use weavegraph::event_bus::EventBus;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -386,10 +387,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_retries: 3,
     };
 
+    let emitter = event_bus.get_emitter();
+
     let ctx1 = NodeContext {
         node_id: "api_call".to_string(),
         step: 1,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     // Demonstrate both success and failure scenarios
@@ -440,7 +443,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx1_1 = NodeContext {
         node_id: "metrics_api".to_string(),
         step: 1,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     match failing_api_node.run(state.clone(), ctx1_1).await {
@@ -478,7 +481,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx2 = NodeContext {
         node_id: "router".to_string(),
         step: 2,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     let result2 = router_node.run(state.clone(), ctx2).await?;
@@ -520,7 +523,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ctx3 = NodeContext {
         node_id: "transformer".to_string(),
         step: 3,
-        event_bus_sender: event_bus.get_sender(),
+        event_emitter: Arc::clone(&emitter),
     };
 
     let result3 = transformer_node.run(state.clone(), ctx3).await?;

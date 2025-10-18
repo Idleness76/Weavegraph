@@ -1115,7 +1115,7 @@ mod tests {
         };
 
         let mut state = VersionedState::new_with_user_message("Explain ownership");
-        let sender = event_bus.get_sender();
+        let emitter = event_bus.get_emitter();
 
         let mut step = 1u64;
         let partial = scrape_node
@@ -1124,7 +1124,7 @@ mod tests {
                 NodeContext {
                     node_id: "Scrape".into(),
                     step,
-                    event_bus_sender: sender.clone(),
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
@@ -1138,7 +1138,7 @@ mod tests {
                 NodeContext {
                     node_id: "Chunk".into(),
                     step,
-                    event_bus_sender: sender.clone(),
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
@@ -1152,7 +1152,7 @@ mod tests {
                 NodeContext {
                     node_id: "Store".into(),
                     step,
-                    event_bus_sender: sender.clone(),
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
@@ -1166,7 +1166,7 @@ mod tests {
                 NodeContext {
                     node_id: "Retrieve".into(),
                     step,
-                    event_bus_sender: sender,
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
