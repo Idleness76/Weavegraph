@@ -72,6 +72,10 @@ impl AppEventStream {
         }
     }
 
+    pub fn event_bus(&self) -> &EventBus {
+        &self.event_bus
+    }
+
     pub fn event_stream(&mut self) -> &mut EventStream {
         self.event_stream
             .as_mut()
@@ -94,6 +98,23 @@ impl AppEventStream {
             .take()
             .expect("event stream already taken");
         (self.event_bus, stream)
+    }
+
+    pub fn into_blocking_iter(self) -> crate::event_bus::BlockingEventIter {
+        self.into_stream().into_blocking_iter()
+    }
+
+    pub fn into_async_stream(
+        self,
+    ) -> impl futures_util::stream::Stream<Item = crate::event_bus::Event> {
+        self.into_stream().into_async_stream()
+    }
+
+    pub async fn next_timeout(
+        &mut self,
+        duration: std::time::Duration,
+    ) -> Option<crate::event_bus::Event> {
+        self.event_stream().next_timeout(duration).await
     }
 }
 
@@ -277,7 +298,7 @@ impl App {
             .unwrap_or(CheckpointerType::InMemory);
 
         // Create async runner with configured event bus
-        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        let event_bus = self.event_stream().into_event_bus();
         let mut runner =
             AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
                 .await;
@@ -420,8 +441,9 @@ impl App {
         let (tx, rx) = flume::unbounded();
 
         // Build configured event bus and add channel sink for streaming
-        let event_bus = self.runtime_config.event_bus.build_event_bus();
-        event_bus.add_sink(ChannelSink::new(tx));
+        let event_handle = self.event_stream();
+        event_handle.event_bus().add_sink(ChannelSink::new(tx));
+        let event_bus = event_handle.into_event_bus();
 
         // Determine checkpointer type
         let checkpointer_type = self
@@ -563,10 +585,11 @@ impl App {
         mut sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
     ) -> Result<VersionedState, RunnerError> {
         // Create EventBus from configuration and append provided sinks
-        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        let event_handle = self.event_stream();
         for sink in sinks.drain(..) {
-            event_bus.add_boxed_sink(sink);
+            event_handle.event_bus().add_boxed_sink(sink);
         }
+        let event_bus = event_handle.into_event_bus();
 
         // Determine checkpointer type
         let checkpointer_type = self

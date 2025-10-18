@@ -208,5 +208,6 @@ EventEmitter────────────────┐
 - **Stage 6 – Step 15** *(in-progress)*: Implemented `AppEventStream` and `App::event_stream()`; core App helpers now reuse the config-driven bus path, pending ergonomic adapters and coverage.
 - **Stage 6 – Step 15 (verification)**: `cargo check -p weavegraph` passes after wiring App helpers to the shared event bus flow.
 - **Stage 6 – Step 16** *(todo)*: Document and enforce runner subscription ordering to guarantee a single listener; consider returning an error if `listen_for_events()` hasn’t been called before handing out new subscribers.
-- **Stage 6 – Step 17** *(todo)*: Finish ergonomic adapters (`into_blocking_iter`, `next_timeout`) and update examples/tests to exercise them.
+- **Stage 6 – Step 17** *(complete)*: Added blocking iterator, timeout helper, and async stream adapter on `EventStream`/`AppEventStream`; examples still pending coverage updates.
 - **Stage 6 – Step 15 (start)**: Baseline `cargo check` clean; begin sketching `AppEventStream` wrapper and `App::event_stream()` signature.
+- **Stage 6 – Step 17 (verification)**: `cargo check -p weavegraph` passes with the new iterator/timeout helpers.
