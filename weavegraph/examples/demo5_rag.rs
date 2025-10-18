@@ -27,7 +27,7 @@ use weavegraph::event_bus::EventBus;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
-use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};
+use weavegraph::runtimes::{CheckpointerType, EventBusConfig, RuntimeConfig};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 use weavegraph::utils::collections::new_extra_map;
@@ -306,6 +306,7 @@ pub async fn run_demo5() -> Result<()> {
             session_id: Some("scrape6".to_string()),
             checkpointer: Some(CheckpointerType::SQLite),
             sqlite_db_name: None,
+            event_bus: EventBusConfig::with_stdout_only(),
         })
         .compile()?;
 

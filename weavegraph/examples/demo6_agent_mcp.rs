@@ -40,7 +40,7 @@ use weavegraph::channels::{pretty_print, ErrorEvent, ErrorScope, LadderError};
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
-use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};
+use weavegraph::runtimes::{CheckpointerType, EventBusConfig, RuntimeConfig};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 
@@ -320,6 +320,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session_id: Some("mcp_demo".to_string()),
         checkpointer: Some(CheckpointerType::SQLite),
         sqlite_db_name: Some("weavegraph_demo6.db".to_string()),
+        event_bus: EventBusConfig::with_stdout_only(),
     };
 
     // Graph: Start -> (Mcp Agent) -> End
