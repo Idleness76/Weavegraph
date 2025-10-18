@@ -42,7 +42,10 @@ use rig::{
 };
 use rustc_hash::FxHashMap;
 use serde_json::json;
-use tracing::instrument;
+use tracing::{info, instrument};
+use tracing_error::ErrorLayer;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use weavegraph::channels::{
     errors::{pretty_print, ErrorEvent, ErrorScope, LadderError},
     Channel,
@@ -763,20 +766,46 @@ impl StreamingEnhancerNode {
 /// 3. **Error Collection**: Track and persist quality issues, performance warnings
 /// 4. **Performance Analysis**: Measure streaming efficiency and content quality
 /// 5. **Persistence**: Save all state and errors to SQLite for analysis
+fn init_tracing() {
+    let fmt_layer = fmt::layer()
+        .with_target(false)
+        .with_file(false)
+        .with_line_number(false)
+        // Log when spans are created/closed so we see instrumented async boundaries
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("error,weavegraph=error"))
+        .unwrap();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    // Pretty panic reports
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
     demo().await
 }
 
 #[instrument]
 async fn demo() -> Result<()> {
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                        Demo 4                           ║");
-    println!("║    Advanced Streaming LLM + Error Persistence           ║");
-    println!("╚══════════════════════════════════════════════════════════╝\n");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                        Demo 4                           ║");
+    info!("║    Advanced Streaming LLM + Error Persistence           ║");
+    info!("╚══════════════════════════════════════════════════════════╝\n");
 
     // ✅ STEP 1: Advanced State Construction
-    println!("📊 Step 1: Initializing advanced streaming workflow state");
+    info!("📊 Step 1: Initializing advanced streaming workflow state");
 
     let init = VersionedState::builder()
         .with_user_message("Create a comprehensive technical guide about implementing distributed systems patterns in Rust, covering consistency models, consensus algorithms, and practical implementation strategies")
@@ -802,12 +831,12 @@ async fn demo() -> Result<()> {
         }))
         .build();
 
-    println!("   ✓ Advanced workflow state created");
-    println!("   ✓ Topic: Distributed systems in Rust");
-    println!("   ✓ Streaming enabled with reasoning and error persistence");
+    info!("   ✓ Advanced workflow state created");
+    info!("   ✓ Topic: Distributed systems in Rust");
+    info!("   ✓ Streaming enabled with reasoning and error persistence");
 
     // ✅ STEP 2: Advanced Runtime Configuration
-    println!("\n⚙️  Step 2: Configuring production-ready runtime");
+    info!("\n⚙️  Step 2: Configuring production-ready runtime");
 
     let runtime_config = RuntimeConfig::new(
         Some("streaming_demo_advanced".to_string()),
@@ -815,13 +844,13 @@ async fn demo() -> Result<()> {
         Some("weavegraph_demo4_streaming.db".to_string()),
     );
 
-    println!("   ✓ Production runtime configured");
-    println!("   ✓ Error persistence: SQLite enabled");
-    println!("   ✓ Session: {:?}", runtime_config.session_id);
-    println!("   ✓ Database: {:?}", runtime_config.sqlite_db_name);
+    info!("   ✓ Production runtime configured");
+    info!("   ✓ Error persistence: SQLite enabled");
+    info!("   ✓ Session: {:?}", runtime_config.session_id);
+    info!("   ✓ Database: {:?}", runtime_config.sqlite_db_name);
 
     // ✅ STEP 3: Building Advanced Streaming Workflow
-    println!("\n🔗 Step 3: Building streaming workflow with error persistence");
+    info!("\n🔗 Step 3: Building streaming workflow with error persistence");
 
     let app = GraphBuilder::new()
         .add_node(
@@ -844,14 +873,14 @@ async fn demo() -> Result<()> {
         .with_runtime_config(runtime_config)
         .compile()?;
 
-    println!("   ✓ Streaming workflow compiled");
-    println!("   ✓ Pipeline: Generator → Enhancer → End");
-    println!("   ✓ Error persistence enabled");
-    println!("   ✓ Real-time monitoring configured");
+    info!("   ✓ Streaming workflow compiled");
+    info!("   ✓ Pipeline: Generator → Enhancer → End");
+    info!("   ✓ Error persistence enabled");
+    info!("   ✓ Real-time monitoring configured");
 
     // ✅ STEP 4: Execute Advanced Streaming Workflow
-    println!("\n🚀 Step 4: Executing streaming workflow with comprehensive monitoring");
-    println!("   🌐 Note: This will make Gemini API calls - ensure API key is set!");
+    info!("\n🚀 Step 4: Executing streaming workflow with comprehensive monitoring");
+    info!("   🌐 Note: This will make Gemini API calls - ensure API key is set!");
 
     let execution_start = std::time::Instant::now();
 
@@ -862,14 +891,14 @@ async fn demo() -> Result<()> {
 
     let total_execution_time = execution_start.elapsed();
 
-    println!("   ✅ Streaming workflow completed");
-    println!(
+    info!("   ✅ Streaming workflow completed");
+    info!(
         "   ⏱️  Total execution time: {:.2}s",
         total_execution_time.as_secs_f64()
     );
 
     // ✅ STEP 5: Comprehensive Results Analysis
-    println!("\n📊 Step 5: Analyzing streaming results and performance");
+    info!("\n📊 Step 5: Analyzing streaming results and performance");
 
     let final_snapshot = final_state.snapshot();
 
@@ -877,31 +906,31 @@ async fn demo() -> Result<()> {
     let generator_stats = final_snapshot.extra.get("streaming_stats");
     let enhancer_stats = final_snapshot.extra.get("enhancement_stats");
 
-    println!("   📈 Workflow Performance:");
-    println!("      • Total messages: {}", final_snapshot.messages.len());
-    println!(
+    info!("   📈 Workflow Performance:");
+    info!("      • Total messages: {}", final_snapshot.messages.len());
+    info!(
         "      • Final state version: {}",
         final_snapshot.messages_version
     );
-    println!("      • Extra data entries: {}", final_snapshot.extra.len());
-    println!(
+    info!("      • Extra data entries: {}", final_snapshot.extra.len());
+    info!(
         "      • Total execution: {:.2}s",
         total_execution_time.as_secs_f64()
     );
 
     if let Some(gen_stats) = generator_stats {
-        println!("\n   🎯 Generation Performance:");
+        info!("\n   🎯 Generation Performance:");
         if let Some(chunk_count) = gen_stats.get("chunk_count") {
-            println!("      • Streaming chunks: {}", chunk_count);
+            info!("      • Streaming chunks: {}", chunk_count);
         }
         if let Some(duration) = gen_stats.get("stream_duration_ms") {
-            println!(
+            info!(
                 "      • Stream duration: {:.2}s",
                 duration.as_f64().unwrap_or(0.0) / 1000.0
             );
         }
         if let Some(ttfb) = gen_stats.get("ttfb_ms") {
-            println!(
+            info!(
                 "      • Time to first byte: {:.1}ms",
                 ttfb.as_f64().unwrap_or(0.0)
             );
@@ -909,16 +938,16 @@ async fn demo() -> Result<()> {
     }
 
     if let Some(enh_stats) = enhancer_stats {
-        println!("\n   🔧 Enhancement Performance:");
+        info!("\n   🔧 Enhancement Performance:");
         if let Some(ratio) = enh_stats.get("expansion_ratio") {
-            println!(
+            info!(
                 "      • Content expansion: {:.2}x",
                 ratio.as_f64().unwrap_or(1.0)
             );
         }
         if let Some(input_len) = enh_stats.get("input_length") {
             if let Some(output_len) = enh_stats.get("output_length") {
-                println!(
+                info!(
                     "      • Content growth: {} → {} chars",
                     input_len.as_u64().unwrap_or(0),
                     output_len.as_u64().unwrap_or(0)
@@ -928,7 +957,7 @@ async fn demo() -> Result<()> {
     }
 
     // ✅ STEP 6: Content Quality Analysis
-    println!("\n📝 Step 6: Content quality and evolution analysis");
+    info!("\n📝 Step 6: Content quality and evolution analysis");
 
     let user_messages: Vec<_> = final_snapshot
         .messages
@@ -941,43 +970,43 @@ async fn demo() -> Result<()> {
         .filter(|msg| msg.has_role(Message::ASSISTANT))
         .collect();
 
-    println!("   📋 Content Pipeline Results:");
-    println!("      • User queries: {}", user_messages.len());
-    println!("      • Assistant responses: {}", assistant_messages.len());
+    info!("   📋 Content Pipeline Results:");
+    info!("      • User queries: {}", user_messages.len());
+    info!("      • Assistant responses: {}", assistant_messages.len());
 
     if let Some(user_msg) = user_messages.first() {
-        println!("\n   🎯 Original Request:");
+        info!("\n   🎯 Original Request:");
         let preview = if user_msg.content.len() > 100 {
             format!("{}...", &user_msg.content[..100])
         } else {
             user_msg.content.clone()
         };
-        println!("      \"{}\"", preview);
+        info!("      \"{}\"", preview);
     }
 
     for (i, msg) in assistant_messages.iter().enumerate() {
         let stage = if i == 0 { "Generated" } else { "Enhanced" };
-        println!("\n   {} Content (Stage {}):", stage, i + 1);
-        println!("      • Length: {} characters", msg.content.len());
-        println!("      • Words: {}", msg.content.split_whitespace().count());
-        println!("      • Lines: {}", msg.content.lines().count());
+        info!("\n   {} Content (Stage {}):", stage, i + 1);
+        info!("      • Length: {} characters", msg.content.len());
+        info!("      • Words: {}", msg.content.split_whitespace().count());
+        info!("      • Lines: {}", msg.content.lines().count());
 
         let preview = if msg.content.len() > 200 {
             format!("{}...", &msg.content[..200])
         } else {
             msg.content.clone()
         };
-        println!("      • Preview: \"{}\"", preview);
+        info!("      • Preview: \"{}\"", preview);
     }
 
     // ✅ STEP 7: Comprehensive Error Analysis
-    println!("\n⚠️  Step 7: Error persistence and quality analysis");
+    info!("\n⚠️  Step 7: Error persistence and quality analysis");
 
     let errors = final_state.errors.snapshot();
 
     if !errors.is_empty() {
-        println!("   📊 Error Summary:");
-        println!("      • Total errors captured: {}", errors.len());
+        info!("   📊 Error Summary:");
+        info!("      • Total errors captured: {}", errors.len());
 
         // Categorize errors
         let mut error_categories: FxHashMap<String, usize> = FxHashMap::default();
@@ -999,26 +1028,26 @@ async fn demo() -> Result<()> {
             *error_scopes.entry(scope_str).or_insert(0) += 1;
         }
 
-        println!("\n   📈 Error Categories:");
+        info!("\n   📈 Error Categories:");
         for (category, count) in error_categories {
-            println!("      • {}: {} occurrence(s)", category, count);
+            info!("      • {}: {} occurrence(s)", category, count);
         }
 
-        println!("\n   🎯 Error Scopes:");
+        info!("\n   🎯 Error Scopes:");
         for (scope, count) in error_scopes {
-            println!("      • {}: {} error(s)", scope, count);
+            info!("      • {}: {} error(s)", scope, count);
         }
 
-        println!("\n   📋 Detailed Error Report:");
-        println!("{}", pretty_print(&errors));
+        info!("\n   📋 Detailed Error Report:");
+        info!("{}", pretty_print(&errors));
 
-        println!("\n   ✅ All errors persisted to SQLite for analysis");
+        info!("\n   ✅ All errors persisted to SQLite for analysis");
     } else {
-        println!("   ✅ No errors captured - excellent execution quality!");
+        info!("   ✅ No errors captured - excellent execution quality!");
     }
 
     // ✅ STEP 8: Performance Benchmarking
-    println!("\n🏆 Step 8: Performance benchmarking and recommendations");
+    info!("\n🏆 Step 8: Performance benchmarking and recommendations");
 
     let total_content_length = assistant_messages
         .iter()
@@ -1027,37 +1056,37 @@ async fn demo() -> Result<()> {
 
     let chars_per_second = total_content_length as f64 / total_execution_time.as_secs_f64();
 
-    println!("   📊 Performance Benchmarks:");
-    println!(
+    info!("   📊 Performance Benchmarks:");
+    info!(
         "      • Total content generated: {} characters",
         total_content_length
     );
-    println!("      • Generation rate: {:.1} chars/sec", chars_per_second);
-    println!(
+    info!("      • Generation rate: {:.1} chars/sec", chars_per_second);
+    info!(
         "      • Error rate: {:.2}%",
         (errors.len() as f64 / 2.0) * 100.0
     ); // 2 nodes max
 
     // Performance assessment
-    println!("\n   🎯 Performance Assessment:");
+    info!("\n   🎯 Performance Assessment:");
     if chars_per_second > 100.0 {
-        println!("      ✅ Excellent: High-throughput content generation");
+        info!("      ✅ Excellent: High-throughput content generation");
     } else if chars_per_second > 50.0 {
-        println!("      ✅ Good: Acceptable content generation rate");
+        info!("      ✅ Good: Acceptable content generation rate");
     } else {
-        println!("      ⚠️  Slow: Consider optimizing streaming configuration");
+        info!("      ⚠️  Slow: Consider optimizing streaming configuration");
     }
 
     if errors.len() <= 2 {
-        println!("      ✅ Excellent: Low error rate indicates high quality");
+        info!("      ✅ Excellent: Low error rate indicates high quality");
     } else if errors.len() <= 5 {
-        println!("      ⚠️  Moderate: Some quality issues detected");
+        info!("      ⚠️  Moderate: Some quality issues detected");
     } else {
-        println!("      ❌ High: Significant quality issues need attention");
+        info!("      ❌ High: Significant quality issues need attention");
     }
 
     // ✅ STEP 9: Persistence Verification
-    println!("\n💾 Step 9: Verifying SQLite persistence");
+    info!("\n💾 Step 9: Verifying SQLite persistence");
 
     let db_path = app
         .runtime_config()
@@ -1066,34 +1095,33 @@ async fn demo() -> Result<()> {
         .cloned()
         .unwrap_or_else(|| "weavegraph.db".to_string());
 
-    println!("   ✅ Workflow state persisted to: {}", db_path);
-    println!(
+    info!("   ✅ Workflow state persisted to: {}", db_path);
+    info!(
         "   ✅ Session ID: {:?}",
         app.runtime_config().session_id.as_ref()
     );
-    println!("   ✅ Error events: {} persisted", errors.len());
-    println!("   ✅ Checkpoints: Available for workflow resumption");
-    println!("   💡 Use SQLite tools to examine detailed execution history");
+    info!("   ✅ Error events: {} persisted", errors.len());
+    info!("   ✅ Checkpoints: Available for workflow resumption");
+    info!("   💡 Use SQLite tools to examine detailed execution history");
 
     // ✅ FINAL SUMMARY
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                      Demo 4 Complete                    ║");
-    println!("╚══════════════════════════════════════════════════════════╝");
-    println!("\n🏆 Advanced patterns demonstrated:");
-    println!("   • Real-time streaming LLM integration (Gemini)");
-    println!("   • Comprehensive error persistence and categorization");
-    println!("   • Production-ready quality validation and monitoring");
-    println!("   • Advanced performance benchmarking and analysis");
-    println!("   • SQLite-backed checkpoint persistence");
-    println!("   • Event-driven architecture with rich observability");
-    println!("   • Modern message patterns and error handling");
-    println!("\n🎯 Demo series complete! You've now seen:");
-    println!("   📚 Demo 1: Basic graph building and execution patterns");
-    println!("   ⚙️  Demo 2: Scheduler-driven workflow execution");
-    println!("   🤖 Demo 3: LLM integration with runtime configuration");
-    println!("   🚀 Demo 4: Advanced streaming with error persistence");
-    println!("\n💡 These demos provide a comprehensive foundation for building");
-    println!("   production-ready AI agent workflows with Weavegraph!");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                      Demo 4 Complete                    ║");
+    info!("\n🏆 Advanced patterns demonstrated:");
+    info!("   • Real-time streaming LLM integration (Gemini)");
+    info!("   • Comprehensive error persistence and categorization");
+    info!("   • Production-ready quality validation and monitoring");
+    info!("   • Advanced performance benchmarking and analysis");
+    info!("   • SQLite-backed checkpoint persistence");
+    info!("   • Event-driven architecture with rich observability");
+    info!("   • Modern message patterns and error handling");
+    info!("\n🎯 Demo series complete! You've now seen:");
+    info!("   📚 Demo 1: Basic graph building and execution patterns");
+    info!("   ⚙️  Demo 2: Scheduler-driven workflow execution");
+    info!("   🤖 Demo 3: LLM integration with runtime configuration");
+    info!("   🚀 Demo 4: Advanced streaming with error persistence");
+    info!("\n💡 These demos provide a comprehensive foundation for building");
+    info!("   production-ready AI agent workflows with Weavegraph!");
 
     Ok(())
 }

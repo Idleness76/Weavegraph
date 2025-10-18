@@ -41,6 +41,11 @@ use weavegraph::{
     types::NodeKind,
 };
 
+use miette::{IntoDiagnostic, Result};
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
 /// A node that simulates work with progress updates
 #[derive(Debug, Clone)]
 struct ProgressNode {
@@ -68,10 +73,29 @@ impl Node for ProgressNode {
     }
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            EnvFilter::from_default_env()
+                .add_directive("weavegraph=info".parse().unwrap())
+                .add_directive("convenience_streaming=info".parse().unwrap()),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Convenience Streaming Examples ===\n");
-    println!("This example demonstrates two new convenience methods for event streaming:\n");
+async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
+
+    info!("=== Convenience Streaming Examples ===\n");
+    info!("This example demonstrates two new convenience methods for event streaming:\n");
 
     // Build graph once (can be reused)
     let app = GraphBuilder::new()
@@ -83,8 +107,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================================
     // Example 1: invoke_with_channel() - Simple channel streaming
     // ============================================================================
-    println!("## Example 1: invoke_with_channel()");
-    println!("   Use case: CLI tools, simple progress monitoring\n");
+    info!("## Example 1: invoke_with_channel()");
+    info!("   Use case: CLI tools, simple progress monitoring\n");
 
     let (result, events) = app
         .invoke_with_channel(VersionedState::new_with_user_message("Start task 1"))
@@ -93,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn task to handle events (simulating progress bar or logging)
     let event_handler = tokio::spawn(async move {
         let mut count = 0;
-        println!("   📡 Listening for events...");
+        info!("   📡 Listening for events...");
 
         // Use timeout to avoid hanging if events stop
         let timeout = tokio::time::Duration::from_millis(100);
@@ -101,14 +125,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match tokio::time::timeout(timeout, events.recv_async()).await {
                 Ok(Ok(event)) => {
                     count += 1;
-                    println!("      Event {}: {}", count, event.message());
+                    info!("      Event {}: {}", count, event.message());
                 }
                 Ok(Err(_)) => {
-                    println!("   ✅ Channel closed (workflow complete)");
+                    info!("   ✅ Channel closed (workflow complete)");
                     break;
                 }
                 Err(_) => {
-                    println!("   ⏱️  No more events (timeout)");
+                    info!("   ⏱️  No more events (timeout)");
                     break;
                 }
             }
@@ -118,14 +142,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Wait for workflow
     let final_state = result?;
-    println!(
+    info!(
         "   ✅ Workflow completed with {} messages",
         final_state.messages.len()
     );
 
     // Wait for event collection
-    let event_count = event_handler.await?;
-    println!("   📊 Received {} events total\n", event_count);
+    let event_count = event_handler.await.into_diagnostic()?;
+    info!("   📊 Received {} events total\n", event_count);
 
     // Give some time before next example
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -133,14 +157,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ============================================================================
     // Example 2: invoke_with_sinks() - Multiple destinations
     // ============================================================================
-    println!("## Example 2: invoke_with_sinks()");
-    println!("   Use case: Events to multiple destinations (stdout + channel + file)\n");
+    info!("## Example 2: invoke_with_sinks()");
+    info!("   Use case: Events to multiple destinations (stdout + channel + file)\n");
 
     let (tx, rx) = flume::unbounded();
 
-    println!("   🔧 Configured sinks:");
-    println!("      • StdOutSink (you'll see events below)");
-    println!("      • ChannelSink (collecting in background)\n");
+    info!("   🔧 Configured sinks:");
+    info!("      • StdOutSink (you'll see events below)");
+    info!("      • ChannelSink (collecting in background)\n");
 
     // Spawn background collector for channel
     let channel_collector = tokio::spawn(async move {
@@ -164,35 +188,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Box::new(ChannelSink::new(tx)),
             ],
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
-    println!(
+    info!(
         "\n   ✅ Workflow completed with {} messages",
         final_state.messages.len()
     );
 
     // Get channel events
-    let channel_events = channel_collector.await?;
-    println!("   📊 Channel received {} events", channel_events.len());
-    println!("   📊 Events were also printed to stdout above\n");
+    let channel_events = channel_collector.await.into_diagnostic()?;
+    info!("   📊 Channel received {} events", channel_events.len());
+    info!("   📊 Events were also printed to stdout above\n");
 
     // ============================================================================
     // Summary
     // ============================================================================
-    println!("=== Summary ===\n");
-    println!("✅ invoke_with_channel():");
-    println!("   • Returns (Result, Receiver)");
-    println!("   • Perfect for CLI tools");
-    println!("   • Simple single-channel streaming\n");
+    info!("=== Summary ===\n");
+    info!("✅ invoke_with_channel():");
+    info!("   • Returns (Result, Receiver)");
+    info!("   • Perfect for CLI tools");
+    info!("   • Simple single-channel streaming\n");
 
-    println!("✅ invoke_with_sinks():");
-    println!("   • Takes Vec<Box<dyn EventSink>>");
-    println!("   • Events go to multiple destinations");
-    println!("   • More flexible than channel-only\n");
+    info!("✅ invoke_with_sinks():");
+    info!("   • Takes Vec<Box<dyn EventSink>>");
+    info!("   • Events go to multiple destinations");
+    info!("   • More flexible than channel-only\n");
 
-    println!("💡 For web servers with per-request isolation:");
-    println!("   Use AppRunner::with_options_and_bus() instead");
-    println!("   (See examples/streaming_events.rs)\n");
+    info!("💡 For web servers with per-request isolation:");
+    info!("   Use AppRunner::with_options_and_bus() instead");
+    info!("   (See examples/streaming_events.rs)\n");
 
     Ok(())
 }

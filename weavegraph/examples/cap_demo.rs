@@ -25,7 +25,9 @@ use rig::{
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::sync::Arc;
-use tracing::instrument;
+use tracing::{info, instrument};
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 use weavegraph::channels::errors::{pretty_print, ErrorEvent, ErrorScope, LadderError};
 use weavegraph::channels::Channel;
@@ -330,14 +332,31 @@ impl Node for SummaryPublisherNode {
     }
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_filter(
+                    EnvFilter::from_default_env()
+                        .add_directive("weavegraph=info".parse().unwrap())
+                        .add_directive("cap_demo=info".parse().unwrap()),
+                ),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .without_time()
-        .init();
+    init_tracing();
+    init_miette();
 
-    println!("\n=== Capstone Demo ===\n");
+    info!("\n=== Capstone Demo ===\n");
 
     let initial_state = VersionedState::builder()
         .with_user_message("The team needs a short update on Weavegraph's capabilities.")
@@ -357,7 +376,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    println!("🔗 Building Ollama streaming workflow with iterative refinement");
+    info!("🔗 Building Ollama streaming workflow with iterative refinement");
 
     let app = GraphBuilder::new()
         .add_node(
@@ -380,10 +399,10 @@ async fn main() -> Result<()> {
         )
         .compile()?;
 
-    println!("   ✓ Ollama streaming workflow compiled");
-    println!("   ✓ Pipeline: Bootstrapper → Refiner (iterative) → End");
-    println!("   ✓ Conditional looping enabled");
-    println!("   ✓ Real-time Ollama streaming configured\n");
+    info!("   ✓ Ollama streaming workflow compiled");
+    info!("   ✓ Pipeline: Bootstrapper → Refiner (iterative) → End");
+    info!("   ✓ Conditional looping enabled");
+    info!("   ✓ Real-time Ollama streaming configured\n");
 
     let final_state = app.invoke(initial_state).await?;
     let snapshot = final_state.snapshot();
@@ -395,16 +414,10 @@ async fn main() -> Result<()> {
         .rev()
         .find(|m| m.has_role(Message::ASSISTANT))
     {
-        println!(
-            "┌────────────────────────────────────────────────────────────────────────────────┐"
-        );
-        println!(
-            "│                           � FINAL WEAVEGRAPH OVERVIEW                        │"
-        );
-        println!(
-            "└────────────────────────────────────────────────────────────────────────────────┘"
-        );
-        println!();
+        info!("┌────────────────────────────────────────────────────────────────────────────────┐");
+        info!("│                           � FINAL WEAVEGRAPH OVERVIEW                        │");
+        info!("└────────────────────────────────────────────────────────────────────────────────┘");
+        info!("");
 
         // Clean up the content by removing any iteration mentions or meta-commentary
         let clean_content = latest
@@ -434,24 +447,22 @@ async fn main() -> Result<()> {
         // Print the cleaned content
         for line in main_content.lines() {
             if line.trim().starts_with("---") {
-                println!("   {}", "═".repeat(76));
+                info!("   {}", "═".repeat(76));
             } else if line.trim().starts_with("**") && line.trim().ends_with("**") {
-                println!("   📋 {}", line.trim_matches('*').trim());
+                info!("   📋 {}", line.trim_matches('*').trim());
             } else if line.trim().starts_with("* **") {
-                println!("   • {}", line.trim_start_matches("* "));
+                info!("   • {}", line.trim_start_matches("* "));
             } else if line.trim().starts_with("*") && !line.trim().starts_with("**") {
-                println!("     ○ {}", line.trim_start_matches("* "));
+                info!("     ○ {}", line.trim_start_matches("* "));
             } else if !line.trim().is_empty() {
-                println!("   {}", line);
+                info!("   {}", line);
             } else {
-                println!();
+                info!("");
             }
         }
 
-        println!();
-        println!(
-            "┌────────────────────────────────────────────────────────────────────────────────┐"
-        );
+        info!("");
+        info!("┌────────────────────────────────────────────────────────────────────────────────┐");
 
         // Show summary stats
         let iterations = snapshot
@@ -470,27 +481,25 @@ async fn main() -> Result<()> {
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
 
-        println!(
+        info!(
             "│ ✨ Generated via {} refinement iterations using {}     │",
             iterations, model
         );
-        println!(
+        info!(
             "│ 📊 Final content: {} characters                                              │",
             char_count
         );
-        println!(
-            "└────────────────────────────────────────────────────────────────────────────────┘"
-        );
+        info!("└────────────────────────────────────────────────────────────────────────────────┘");
     } else {
-        println!("❌ No final content generated");
+        info!("❌ No final content generated");
     }
 
     let errors = final_state.errors.snapshot();
     if !errors.is_empty() {
-        println!("\n⚠️  Errors encountered during generation:");
-        println!("{}", pretty_print(&errors));
+        info!("\n⚠️  Errors encountered during generation:");
+        info!("{}", pretty_print(&errors));
     } else {
-        println!("\n🎯 Content generation completed successfully!");
+        info!("\n🎯 Content generation completed successfully!");
     }
 
     Ok(())

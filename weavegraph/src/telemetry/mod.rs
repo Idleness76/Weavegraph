@@ -23,8 +23,20 @@ pub trait TelemetryFormatter: Send + Sync {
     fn render_errors(&self, errors: &[ErrorEvent]) -> Vec<EventRender>;
 }
 
-#[derive(Default)]
 pub struct PlainFormatter;
+
+fn format_error_chain(error: &crate::channels::errors::LadderError, indent: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(cause) = &error.cause {
+        let indent_str = "  ".repeat(indent);
+        lines.push(format!(
+            "{LINE_COLOR}{}cause: {}{RESET_COLOR}\n",
+            indent_str, cause.message
+        ));
+        lines.extend(format_error_chain(cause, indent + 1));
+    }
+    lines
+}
 
 impl TelemetryFormatter for PlainFormatter {
     fn render_event(&self, event: &Event) -> EventRender {
@@ -47,12 +59,7 @@ impl TelemetryFormatter for PlainFormatter {
                     "{LINE_COLOR}  error: {}{RESET_COLOR}\n",
                     e.error.message
                 ));
-                if let Some(cause) = &e.error.cause {
-                    lines.push(format!(
-                        "{LINE_COLOR}  cause: {}{RESET_COLOR}\n",
-                        cause.message
-                    ));
-                }
+                lines.extend(format_error_chain(&e.error, 1));
                 if !e.tags.is_empty() {
                     lines.push(format!("{LINE_COLOR}  tags: {:?}{RESET_COLOR}\n", e.tags));
                 }

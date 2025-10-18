@@ -31,6 +31,11 @@ use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::StateSnapshot;
 use weavegraph::utils::collections::new_extra_map;
 
+use miette::Result;
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
 /// A node that simulates external API calls with potential failures and retry logic.
 ///
 /// This node demonstrates enterprise-grade patterns for external service integration:
@@ -344,16 +349,35 @@ impl std::fmt::Debug for TransformOperation {
     }
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            EnvFilter::from_default_env()
+                .add_directive("weavegraph=info".parse().unwrap())
+                .add_directive("advanced_patterns=info".parse().unwrap()),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Advanced Node Patterns Example");
-    println!("==================================");
+async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
+
+    info!("🚀 Advanced Node Patterns Example");
+    info!("==================================");
 
     // Set up event bus for observability
     let event_bus = EventBus::default();
     event_bus.listen_for_events();
 
-    println!("\n🔧 Running Advanced Node Examples...");
+    info!("\n🔧 Running Advanced Node Examples...");
 
     // Initial state with more complex data
     let mut state = StateSnapshot {
@@ -374,12 +398,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         errors_version: 1,
     };
 
-    println!("\n📊 Initial State:");
-    println!("  Messages: {}", state.messages.len());
-    println!("  Extra keys: {:?}", state.extra.keys().collect::<Vec<_>>());
+    info!("\n📊 Initial State:");
+    info!("  Messages: {}", state.messages.len());
+    info!("  Extra keys: {:?}", state.extra.keys().collect::<Vec<_>>());
 
     // Create and run API node with potential failures
-    println!("\n1️⃣ Running API Call Node (with failure simulation)...");
+    info!("\n1️⃣ Running API Call Node (with failure simulation)...");
     let api_node = ApiCallNode {
         service_name: "UserDataAPI".to_string(),
         failure_rate: 0.3, // 30% failure rate for demonstration
@@ -395,7 +419,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Demonstrate both success and failure scenarios
     match api_node.run(state.clone(), ctx1).await {
         Ok(result) => {
-            println!("  ✅ API call succeeded");
+            info!("  ✅ API call succeeded");
             if let Some(messages) = result.messages {
                 state.messages.extend(messages);
             }
@@ -404,8 +428,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Err(e) => {
-            println!("  ❌ API call failed: {}", e);
-            println!("  🔄 Implementing graceful fallback...");
+            info!("  ❌ API call failed: {}", e);
+            info!("  🔄 Implementing graceful fallback...");
 
             // Demonstrate robust error recovery
             let mut extra = new_extra_map();
@@ -430,7 +454,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Demonstrate a second API call with higher failure rate to show error handling
-    println!("\n1.1️⃣ Running Secondary API Call (high failure rate demo)...");
+    info!("\n1.1️⃣ Running Secondary API Call (high failure rate demo)...");
     let failing_api_node = ApiCallNode {
         service_name: "MetricsAPI".to_string(),
         failure_rate: 0.9, // 90% failure rate to demonstrate error handling
@@ -445,14 +469,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match failing_api_node.run(state.clone(), ctx1_1).await {
         Ok(result) => {
-            println!("  ✅ Metrics API call succeeded (lucky!)");
+            info!("  ✅ Metrics API call succeeded (lucky!)");
             if let Some(extra) = result.extra {
                 state.extra.extend(extra);
             }
         }
         Err(e) => {
-            println!("  ❌ Metrics API failed as expected: {}", e);
-            println!("  🛡️  Demonstrating error resilience - continuing workflow");
+            info!("  ❌ Metrics API failed as expected: {}", e);
+            info!("  🛡️  Demonstrating error resilience - continuing workflow");
 
             // Add error metadata but continue processing
             let mut extra = new_extra_map();
@@ -463,7 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Run conditional router
-    println!("\n2️⃣ Running Conditional Router Node...");
+    info!("\n2️⃣ Running Conditional Router Node...");
     let router_node = ConditionalRouterNode {
         route_key: "service_type".to_string(),
         conditions: {
@@ -488,10 +512,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(extra) = result2.extra {
         state.extra.extend(extra);
     }
-    println!("  ✅ Routing completed");
+    info!("  ✅ Routing completed");
 
     // Run data transformer
-    println!("\n3️⃣ Running Data Transformer Node...");
+    info!("\n3️⃣ Running Data Transformer Node...");
     let transformer_node = DataTransformerNode {
         transformation_rules: vec![
             TransformRule {
@@ -530,66 +554,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(extra) = result3.extra {
         state.extra.extend(extra);
     }
-    println!("  ✅ Transformation completed");
+    info!("  ✅ Transformation completed");
 
     // Display comprehensive results
-    println!("\n📋 Final Pipeline Results:");
-    println!("==========================================");
+    info!("\n📋 Final Pipeline Results:");
+    info!("==========================================");
 
-    println!("\n💬 Messages ({} total):", state.messages.len());
+    info!("\n💬 Messages ({} total):", state.messages.len());
     for (i, msg) in state.messages.iter().enumerate() {
-        println!("  {}: [{}] {}", i + 1, msg.role, msg.content);
+        info!("  {}: [{}] {}", i + 1, msg.role, msg.content);
     }
 
-    println!("\n📊 State Data ({} keys):", state.extra.len());
+    info!("\n📊 State Data ({} keys):", state.extra.len());
     for (key, value) in &state.extra {
-        println!("  {}: {}", key, value);
+        info!("  {}: {}", key, value);
     }
 
     // Show transformations specifically
-    println!("\n🔄 Transformations Applied:");
+    info!("\n🔄 Transformations Applied:");
     if let Some(log) = state.extra.get("transformation_log") {
         if let Some(log_array) = log.as_array() {
             for (i, entry) in log_array.iter().enumerate() {
-                println!("  {}: {}", i + 1, entry);
+                info!("  {}: {}", i + 1, entry);
             }
         }
     }
 
     // Show routing decision
-    println!("\n🛤️  Routing Decision:");
+    info!("\n🛤️  Routing Decision:");
     if let Some(routing) = state.extra.get("routing_decision") {
-        println!("  {}", routing);
+        info!("  {}", routing);
     }
 
     // Give time for events to be processed
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     event_bus.stop_listener().await;
 
-    println!("\n✅ Advanced patterns example completed!");
-    println!("\n🎯 This example demonstrated key enterprise workflow patterns:");
-    println!("=====================================");
-    println!("  🔄 Error Recovery:");
-    println!("    • Retry logic with exponential backoff simulation");
-    println!("    • Graceful fallback when external services fail");
-    println!("    • Workflow continuation despite component failures");
-    println!("  🛤️  Conditional Routing:");
-    println!("    • Dynamic path selection based on runtime state");
-    println!("    • Flexible condition evaluation framework");
-    println!("    • Rich routing metadata for debugging");
-    println!("  🔧 Data Transformation:");
-    println!("    • Type-safe transformation operations");
-    println!("    • Comprehensive transformation logging");
-    println!("    • Flexible rule-based processing");
-    println!("  📊 Observability:");
-    println!("    • Rich event emission throughout the pipeline");
-    println!("    • Structured logging with context preservation");
-    println!("    • Performance and decision tracking");
-    println!("\n💡 Key Takeaways:");
-    println!("  • Nodes should be resilient and handle failures gracefully");
-    println!("  • Rich state metadata enables powerful conditional logic");
-    println!("  • Event emission provides crucial visibility into complex workflows");
-    println!("  • NodePartial patterns enable efficient, focused state updates");
+    info!("\n✅ Advanced patterns example completed!");
+    info!("\n🎯 This example demonstrated key enterprise workflow patterns:");
+    info!("=====================================");
+    info!("  🔄 Error Recovery:");
+    info!("    • Retry logic with exponential backoff simulation");
+    info!("    • Graceful fallback when external services fail");
+    info!("    • Workflow continuation despite component failures");
+    info!("  🛤️  Conditional Routing:");
+    info!("    • Dynamic path selection based on runtime state");
+    info!("    • Flexible condition evaluation framework");
+    info!("    • Rich routing metadata for debugging");
+    info!("  🔧 Data Transformation:");
+    info!("    • Type-safe transformation operations");
+    info!("    • Comprehensive transformation logging");
+    info!("    • Flexible rule-based processing");
+    info!("  📊 Observability:");
+    info!("    • Rich event emission throughout the pipeline");
+    info!("    • Structured logging with context preservation");
+    info!("    • Performance and decision tracking");
+    info!("\n💡 Key Takeaways:");
+    info!("  • Nodes should be resilient and handle failures gracefully");
+    info!("  • Rich state metadata enables powerful conditional logic");
+    info!("  • Event emission provides crucial visibility into complex workflows");
+    info!("  • NodePartial patterns enable efficient, focused state updates");
 
     Ok(())
 }
