@@ -30,6 +30,7 @@ For web servers with per-request isolation, use `AppRunner` directly:
 ```rust
 let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
+let mut events = runner.event_stream(); // subscribe before invoking
 runner.run_until_complete(&session_id).await;
 ```
 
@@ -128,6 +129,8 @@ while let Ok(event) = rx.recv_async().await {
     println!("Event: {}", serde_json::to_string_pretty(&event)?);
 }
 ```
+
+- The `Event` enum now includes `Node`, `Diagnostic`, **and** `LLM` variants—remember to handle the streaming case (`Event::LLM`) when forwarding data to clients.
 
 ## Web Framework Integration
 
