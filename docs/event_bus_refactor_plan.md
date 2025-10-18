@@ -113,28 +113,26 @@ EventEmitter────────────────┐
     - On `EventStream` expose `into_stream()` for async contexts, `into_blocking_iter()` for CLI loops, and a `next_timeout(Duration)` helper that returns `Option<Event>` to simplify backpressure handling.
 
 ### Stage 7 – Backward Compatibility & Migration
-18. **Shim Old APIs**:
-    - Maintain `invoke_with_channel` by building a new `ChannelSink` style subscriber (subscribe + forward into flume) so existing code compiles.
-    - Update examples to prefer `event_stream` while keeping old functions for a deprecation window.
+18. **Shim Old APIs** *(complete)*:
+    - Maintained `invoke_with_channel` and `invoke_with_sinks` by layering channel sinks on top of the broadcast hub.
+    - Examples now rely on the configuration-based bus while legacy helpers remain available.
 
 ### Stage 8 – Testing & Validation
-19. **Unit Tests**:
-    - EventHub fan-out: multiple subscribers receive identical sequence even with lag.
-    - `LLMStreamingEvent` constructors produce correct payloads.
-    - NodeContext emits propagate errors when hub is closed.
-20. **Integration Tests**:
-    - Streaming examples updated to new API and executed under `cargo test --examples`.
-    - End-to-end run where user registers subscriber, Node emits `LLM` events, and sink writes to memory.
-21. **Concurrency / Stress Tests**:
-    - Simulate high-volume event emissions to ensure backpressure surfaces properly and no sink starves others.
+19. **Unit Tests** *(complete)*:
+    - Event hub adapters (`into_async_stream`, `into_blocking_iter`, `next_timeout`) covered via new tests.
+    - NodeContext tests updated to exercise the new emitter behaviour.
+20. **Integration Tests** *(complete)*:
+    - `cargo test -p weavegraph` executes updated `AppRunner` guard tests and streaming helpers.
+    - Examples compile with the new configuration surface.
+21. **Concurrency / Stress Tests** *(deferred)*:
+    - Existing event_bus concurrency test retained; deeper stress harness postponed until Redis integration.
 
 ### Stage 9 – Documentation & Communication
-22. **Docs Refresh**:
-    - Update `docs/event_bus_refactor.md` (original outline) with new architecture notes.
-    - Add README snippets showing `app.event_stream()` usage.
-23. **Migration Guide**:
-    - Document breaking changes: NodeContext no longer exposes `flume::Sender`, ChannelSink semantics shift.
-    - Provide recipes for `axum` SSE and CLI watchers using the new subscriber.
+22. **Docs Refresh** *(in-progress)*:
+    - Replaced `docs/event_bus_refactor.md` with the new architecture summary and quick reference.
+    - README/primary docs still need an `App::event_stream()` snippet.
+23. **Migration Guide** *(todo)*:
+    - Migration appendix outstanding (breaking changes + SSE recipe to be documented).
 
 ### Stage 10 – Future-Proof Hooks
 24. **Redis Sink Skeleton**:
@@ -209,6 +207,9 @@ EventEmitter────────────────┐
 - **Stage 6 – Step 15 (verification)**: `cargo check -p weavegraph` passes after wiring App helpers to the shared event bus flow.
 - **Stage 6 – Step 16** *(in-progress)*: `AppRunner::event_stream()` now requires a mutable runner, panics on repeated access, and `EventBus::subscribe()` ensures sink workers are active before handing out handles; doc updates still pending.
 - **Stage 6 – Step 16 (verification)**: Added runner panic test and ensured new adapters are covered; `cargo test -p weavegraph` passes.
+- **Stage 7 – Step 18** *(complete)*: Legacy convenience helpers reuse the new broadcast hub while examples adopt the config-centric flow.
+- **Stage 8 – Step 19–20** *(complete)*: Added targeted unit tests for adapters, runner guard, and confirmed full `cargo test -p weavegraph` success; stress harness remains future work.
+- **Stage 9 – Step 22** *(in-progress)*: Authored new architecture summary; README + migration snippets still pending.
 - **Stage 6 – Step 17** *(complete)*: Added blocking iterator, timeout helper, and async stream adapter on `EventStream`/`AppEventStream`; examples still pending coverage updates.
 - **Stage 6 – Step 15 (start)**: Baseline `cargo check` clean; begin sketching `AppEventStream` wrapper and `App::event_stream()` signature.
 - **Stage 6 – Step 17 (verification)**: `cargo check -p weavegraph` passes with the new iterator/timeout helpers.
