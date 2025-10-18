@@ -13,4 +13,3 @@ categories = ["concurrency", "data-structures", "algorithms"]
 rust-version = "1.83"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/weavegraph"
-default-run = "weavegraph"
