@@ -22,6 +22,8 @@ This directory contains examples demonstrating various Weavegraph features and p
 **Note:** Some examples require specific features to be enabled:
 - `demo6_agent_mcp.rs`: Requires `--features llm` (e.g., `cargo run --example demo6_agent_mcp --features llm`)
 
+For DB-less builds, SQLite features are excluded by default but can be re-enabled with `--features sqlite-migrations`.
+
 ## Event Streaming (New!)
 
 ### streaming_events.rs - Stream Events to Web Clients

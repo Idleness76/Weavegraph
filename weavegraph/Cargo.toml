@@ -78,7 +78,7 @@ sqlx = { version = "0.8", features = [
     "uuid",
     "chrono",
     "json",
-] }
+], optional = true }
 
 # Configuration
 dotenvy = "0.15"
@@ -87,9 +87,11 @@ dotenvy = "0.15"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+# SQLite is enabled by default for full functionality; use --no-default-features for DB-less builds.
 [features]
 default = ["sqlite-migrations"]
-sqlite-migrations = []
+sqlite-migrations = ["sqlite"]
+sqlite = ["sqlx"]
 llm = ["rig-core", "rmcp"]
 
 [[example]]

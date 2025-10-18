@@ -1,3 +1,4 @@
+#[cfg(feature = "sqlite")]
 use chrono::Utc;
 use rustc_hash::FxHashMap;
 use weavegraph::channels::Channel;

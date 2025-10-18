@@ -204,6 +204,8 @@ The repository includes comprehensive examples demonstrating different patterns.
 
 - **AI/MCP Examples**: Require `--features llm` (e.g., `demo6_agent_mcp` for Model Context Protocol integration).
 
+For minimal builds without database support, use `cargo build --no-default-features`. Note that `CheckpointerType::SQLite` will be unavailable.
+
 ```bash
 # Basic node patterns and message handling
 cargo run --example basic_nodes
