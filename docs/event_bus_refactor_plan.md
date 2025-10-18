@@ -101,13 +101,16 @@ EventEmitter────────────────┐
 
 ### Stage 6 – Public API Surface
 15. **Expose Subscription on `App`** (`weavegraph/src/app.rs`):
-    - Add `pub fn event_stream(&self) -> EventStreamHandle`.
-    - Ensure `invoke`, `invoke_with_channel`, and `invoke_with_sinks` call through `event_stream` internally.
+    - Add `pub fn event_stream(&self) -> EventStream` that clones the underlying runner configuration and `EventBusConfig`.
+    - Refactor `invoke`, `invoke_with_channel`, and `invoke_with_sinks` to request their subscribers through this shared pathway so there’s only one source of truth for event fan-out.
+    - Provide a lightweight wrapper (`AppEventStream`) that offers both async `Stream` and blocking iterator adapters to minimize friction for CLI tooling.
 16. **Extend `AppRunner`** (`weavegraph/src/runtimes/runner.rs`):
     - Accept external subscriptions: if caller requests `get_event_subscriber()` before `create_session`, return `SubscriberHandle`.
-    - Prevent listener duplication: start sink workers once even if subscriber exists.
+    - Prevent listener duplication: start sink workers once even if subscriber exists, and document the call ordering expectations.
+
+    *Implementation notes*: `AppRunner::event_stream()` already exists; after the App API lands, ensure the runner caches the hub subscription until `listen_for_events()` is invoked, so repeated calls don’t accidentally fast-forward the consumer.
 17. **Async + Blocking Helpers**:
-    - Provide `EventStreamHandle::into_stream()` for async contexts, `into_blocking_iter()` for CLI loops, and `next_timeout(Duration)` helper.
+    - On `EventStream` expose `into_stream()` for async contexts, `into_blocking_iter()` for CLI loops, and a `next_timeout(Duration)` helper that returns `Option<Event>` to simplify backpressure handling.
 
 ### Stage 7 – Backward Compatibility & Migration
 18. **Shim Old APIs**:
@@ -200,5 +203,10 @@ EventEmitter────────────────┐
   - Updated event bus tests (`weavegraph/tests/event_bus.rs`) to emit via the new emitter API and verified ChannelSink/MemSink fan-out still works.
 - **Stage 5 – Step 13 (verification)**: `cargo check -p weavegraph` passes after the EventBus overhaul.
 - **Stage 5 – Step 14** *(complete)*: Sink workers now subscribe directly to the hub with per-sink tasks and shutdown handles, preserving existing `EventSink` trait semantics without API changes.
-- **Stage 5 – Step 15** *(in-progress)*: Added `AppRunner::event_stream()` to surface hub subscriptions ahead of execution; additional ergonomic wrappers on `App` still pending.
+- **Stage 5 – Step 15** *(in-progress)*: Added `AppRunner::event_stream()` to surface hub subscriptions ahead of execution; next step is plumbing `App::event_stream()` and tightening lifetime semantics around shared subscriptions.
 - **Stage 5 – Step 15 (verification)**: `cargo check -p weavegraph` passes with the new subscription API.
+- **Stage 6 – Step 15** *(in-progress)*: Implemented `AppEventStream` and `App::event_stream()`; core App helpers now reuse the config-driven bus path, pending ergonomic adapters and coverage.
+- **Stage 6 – Step 15 (verification)**: `cargo check -p weavegraph` passes after wiring App helpers to the shared event bus flow.
+- **Stage 6 – Step 16** *(todo)*: Document and enforce runner subscription ordering to guarantee a single listener; consider returning an error if `listen_for_events()` hasn’t been called before handing out new subscribers.
+- **Stage 6 – Step 17** *(todo)*: Finish ergonomic adapters (`into_blocking_iter`, `next_timeout`) and update examples/tests to exercise them.
+- **Stage 6 – Step 15 (start)**: Baseline `cargo check` clean; begin sketching `AppEventStream` wrapper and `App::event_stream()` signature.
