@@ -2,13 +2,16 @@ use chrono::{TimeZone, Utc};
 use serde_json::json;
 use weavegraph::channels::errors::{pretty_print, ErrorEvent, ErrorScope, LadderError};
 
-use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 fn init_tracing() {
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_ansi(true),
+        )
         .with(
             EnvFilter::from_default_env()
                 .add_directive("weavegraph=info".parse().unwrap())
@@ -41,8 +44,9 @@ fn main() {
                 kind: "Other:Parser".into(),
                 step: 12,
             },
-            error: LadderError::msg("parse error: unexpected token")
-                .with_cause(LadderError::msg("line 3, col 15")),
+            error: LadderError::msg("parse error: unexpected token").with_cause(
+                LadderError::msg("line 3, col 15").with_cause(LadderError::msg("file corrupted")),
+            ),
             tags: vec!["retryable".into()],
             context: json!({"file":"/tmp/input.json"}),
         },
@@ -60,5 +64,5 @@ fn main() {
     ];
 
     let out = pretty_print(&events);
-    info!("=== Errors pretty showcase ===\n{}", out);
+    println!("=== Errors pretty showcase ===\n{}", out);
 }
