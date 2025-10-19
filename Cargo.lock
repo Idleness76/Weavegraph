@@ -5011,6 +5011,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
+ "bytes",
  "chrono",
  "criterion",
  "dotenvy",

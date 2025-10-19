@@ -8,6 +8,7 @@ use axum::{
     routing::get,
     Router,
 };
+use bytes::Bytes;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::json;
@@ -92,7 +93,7 @@ async fn axum_sse_example_streams_until_completion() -> Result<(), Box<dyn std::
     let mut saw_end = false;
 
     while let Some(chunk_result) = timeout(Duration::from_secs(1), body.next()).await? {
-        let chunk = chunk_result?;
+        let chunk: Bytes = chunk_result?;
         let text = String::from_utf8_lossy(&chunk);
         if text.contains(STREAM_END_SCOPE) {
             saw_end = true;
