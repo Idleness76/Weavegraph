@@ -30,6 +30,9 @@ pub struct EventHub {
 }
 
 impl EventHub {
+    /// Create a new hub backed by a Tokio broadcast channel.
+    ///
+    /// `capacity` is clamped to at least 1 to satisfy the broadcast API.
     pub fn new(capacity: usize) -> Arc<Self> {
         let capacity = capacity.max(1);
         let (sender, _) = broadcast::channel(capacity);
@@ -40,12 +43,11 @@ impl EventHub {
         })
     }
 
+    /// Publish an event to all subscribers.
+    ///
+    /// Returns [`EmitterError::Closed`] if the hub has been shut down.
     pub fn publish(&self, event: Event) -> Result<(), EmitterError> {
-        let maybe_sender = {
-            let guard = self.sender.read();
-            guard.as_ref().cloned()
-        };
-        match maybe_sender {
+        match self.current_sender() {
             Some(sender) => match sender.send(event) {
                 Ok(_) => Ok(()),
                 Err(broadcast::error::SendError(event)) => {
@@ -57,16 +59,19 @@ impl EventHub {
         }
     }
 
+    /// Subscribe to a fresh receiver.
+    ///
+    /// If the hub has already been closed, this returns a closed receiver to keep
+    /// downstream code simple.
     pub fn subscribe(self: &Arc<Self>) -> EventStream {
-        let maybe_receiver = {
-            let guard = self.sender.read();
-            guard.as_ref().cloned().map(|sender| sender.subscribe())
-        };
-        let receiver = maybe_receiver.unwrap_or_else(|| {
-            let (sender, receiver) = broadcast::channel(self.capacity.max(1));
-            drop(sender);
-            receiver
-        });
+        let receiver = self
+            .current_sender()
+            .map(|sender| sender.subscribe())
+            .unwrap_or_else(|| {
+                let (sender, receiver) = broadcast::channel(self.capacity.max(1));
+                drop(sender);
+                receiver
+            });
         EventStream {
             receiver,
             hub: Arc::clone(self),
@@ -95,8 +100,30 @@ impl EventHub {
         }
     }
 
+    /// Close the hub and signal all subscribers that no further events will arrive.
     pub fn close(&self) {
         let _ = self.sender.write().take();
+    }
+
+    fn current_sender(&self) -> Option<Sender<Event>> {
+        self.sender.read().clone()
+    }
+
+    fn record_lag(&self, missed: u64) {
+        if missed == 0 {
+            return;
+        }
+        let increment = usize::try_from(missed).unwrap_or(usize::MAX);
+        let total = self
+            .dropped_events
+            .fetch_add(increment, Ordering::Relaxed)
+            .saturating_add(increment);
+        tracing::warn!(
+            target: "weavegraph::event_bus",
+            missed,
+            total_dropped = total,
+            "event stream lagged; dropped events"
+        );
     }
 }
 
@@ -123,15 +150,7 @@ impl EventStream {
         match self.receiver.recv().await {
             Ok(event) => Ok(event),
             Err(broadcast::error::RecvError::Lagged(missed)) => {
-                self.hub
-                    .dropped_events
-                    .fetch_add(missed as usize, Ordering::Relaxed);
-                tracing::warn!(
-                    target: "weavegraph::event_bus",
-                    missed,
-                    total_dropped = self.hub.dropped(),
-                    "event stream lagged; dropped events"
-                );
+                self.hub.record_lag(missed);
                 Err(broadcast::error::RecvError::Lagged(missed))
             }
             Err(err) => Err(err),
@@ -142,15 +161,7 @@ impl EventStream {
         match self.receiver.try_recv() {
             Ok(event) => Ok(event),
             Err(broadcast::error::TryRecvError::Lagged(missed)) => {
-                self.hub
-                    .dropped_events
-                    .fetch_add(missed as usize, Ordering::Relaxed);
-                tracing::warn!(
-                    target: "weavegraph::event_bus",
-                    missed,
-                    total_dropped = self.hub.dropped(),
-                    "event stream lagged; dropped events"
-                );
+                self.hub.record_lag(missed);
                 Err(broadcast::error::TryRecvError::Lagged(missed))
             }
             Err(err) => Err(err),
@@ -169,11 +180,15 @@ impl EventStream {
     }
 
     pub fn with_shutdown(mut self, shutdown: watch::Receiver<bool>) -> Self {
+        // Consumers can share a `watch` channel to terminate the stream early when
+        // the producer side shuts down (e.g. HTTP connection dropped).
         self.shutdown = Some(shutdown);
         self
     }
 
     pub fn into_async_stream(self) -> BoxStream<'static, Event> {
+        // Convert the broadcast receiver into a boxed stream so callers can plug it into
+        // combinators without worrying about pinning or generics at the call site.
         let EventStream {
             receiver,
             hub,
@@ -194,13 +209,7 @@ impl EventStream {
                             match recv {
                                 Ok(event) => return Some((event, (receiver, hub.clone(), shutdown))),
                                 Err(broadcast::error::RecvError::Lagged(missed)) => {
-                                    hub.dropped_events.fetch_add(missed as usize, Ordering::Relaxed);
-                                    tracing::warn!(
-                                        target: "weavegraph::event_bus",
-                                        missed,
-                                        total_dropped = hub.dropped_events.load(Ordering::Relaxed),
-                                        "event stream lagged; dropped events"
-                                    );
+                                    hub.record_lag(missed);
                                     continue;
                                 }
                                 Err(broadcast::error::RecvError::Closed) => return None,
@@ -211,13 +220,7 @@ impl EventStream {
                     match receiver.recv().await {
                         Ok(event) => return Some((event, (receiver, hub.clone(), shutdown))),
                         Err(broadcast::error::RecvError::Lagged(missed)) => {
-                            hub.dropped_events.fetch_add(missed as usize, Ordering::Relaxed);
-                            tracing::warn!(
-                                target: "weavegraph::event_bus",
-                                missed,
-                                total_dropped = hub.dropped_events.load(Ordering::Relaxed),
-                                "event stream lagged; dropped events"
-                            );
+                            hub.record_lag(missed);
                             continue;
                         }
                         Err(broadcast::error::RecvError::Closed) => return None,
@@ -229,6 +232,8 @@ impl EventStream {
     }
 
     pub async fn next_timeout(&mut self, duration: Duration) -> Option<Event> {
+        // Keep polling until we either obtain an event, the channel closes, or the
+        // deadline elapses. Lagged notifications simply increment drop metrics and retry.
         loop {
             match timeout(duration, self.recv()).await {
                 Ok(Ok(event)) => return Some(event),
@@ -253,9 +258,7 @@ impl Iterator for BlockingEventIter {
             match self.receiver.blocking_recv() {
                 Ok(event) => return Some(event),
                 Err(broadcast::error::RecvError::Lagged(missed)) => {
-                    self.hub
-                        .dropped_events
-                        .fetch_add(missed as usize, Ordering::Relaxed);
+                    self.hub.record_lag(missed);
                     continue;
                 }
                 Err(broadcast::error::RecvError::Closed) => return None,

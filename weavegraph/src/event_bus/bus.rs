@@ -191,6 +191,7 @@ impl EventBus {
         self.add_boxed_sink(Box::new(sink));
     }
 
+    /// Attach a new sink to the hub, starting a worker immediately if the bus is live.
     pub fn add_boxed_sink(&self, sink: Box<dyn EventSink>) {
         let mut sinks_guard = self.sinks.lock().unwrap();
         let mut entry = SinkEntry::new(sink);
@@ -215,6 +216,7 @@ impl EventBus {
         self.hub.subscribe()
     }
 
+    /// Spawn workers for every registered sink. Safe to call multiple times.
     pub fn listen_for_events(&self) {
         if self.started.swap(true, Ordering::SeqCst) {
             return;
@@ -226,6 +228,7 @@ impl EventBus {
         }
     }
 
+    /// Signal all sink workers to stop pulling from the hub.
     pub async fn stop_listener(&self) {
         if !self.started.swap(false, Ordering::SeqCst) {
             return;
@@ -277,6 +280,8 @@ impl SinkEntry {
         if self.worker.is_some() {
             return;
         }
+        // Each worker holds an `Arc` to the sink so consumers can add/remove sinks without
+        // racing the async tasks we spawn here.
         let sink = Arc::clone(&self.sink);
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let mut stream = hub.subscribe();

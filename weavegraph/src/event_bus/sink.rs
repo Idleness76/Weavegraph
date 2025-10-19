@@ -8,6 +8,9 @@ use crate::telemetry::{PlainFormatter, TelemetryFormatter};
 /// Abstraction over an output target that consumes full Event objects.
 pub trait EventSink: Sync + Send {
     /// Handle a structured event. Sink decides how to serialize/format it.
+    ///
+    /// Implementations are allowed to perform blocking I/O; the event bus will
+    /// hand the call off to `spawn_blocking` to keep the async runtime responsive.
     fn handle(&mut self, event: &Event) -> IoResult<()>;
 }
 
@@ -54,7 +57,8 @@ impl MemorySink {
         Self::default()
     }
 
-    /// Get a snapshot of all captured events.
+    /// Get a snapshot of all captured events. Clones the internal buffer so callers
+    /// can inspect state without holding the mutex.
     pub fn snapshot(&self) -> Vec<Event> {
         self.entries.lock().unwrap().clone()
     }
@@ -191,7 +195,7 @@ impl EventSink for MemorySink {
 /// ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
 ///     let (tx, rx) = flume::unbounded();
 ///     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-///     
+///
 ///     tokio::spawn(async move {
 ///         let mut runner = AppRunner::with_options_and_bus(
 ///             Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()),
@@ -200,7 +204,7 @@ impl EventSink for MemorySink {
 ///             bus,
 ///             true,
 ///         ).await;
-///         
+///
 ///         let session_id = uuid::Uuid::new_v4().to_string();
 ///         runner.create_session(
 ///             session_id.clone(),
@@ -208,12 +212,12 @@ impl EventSink for MemorySink {
 ///         ).await.ok();
 ///         runner.run_until_complete(&session_id).await.ok();
 ///     });
-///     
+///
 ///     // Convert flume receiver to stream
 ///     let stream = rx.into_stream().map(|event| {
 ///         Ok(SseEvent::default().json_data(event).unwrap())
 ///     });
-///     
+///
 ///     Sse::new(stream)
 /// }
 /// ```
