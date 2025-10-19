@@ -154,6 +154,7 @@ pub struct EventBus {
     sinks: Arc<Mutex<Vec<SinkEntry>>>,
     hub: Arc<EventHub>,
     started: AtomicBool,
+    /// Generation counter tracking listener restarts so stale workers exit.
     generation: Arc<AtomicU64>,
 }
 
@@ -281,6 +282,7 @@ impl SinkEntry {
         let mut stream = hub.subscribe();
         let handle = task::spawn(async move {
             loop {
+                // Bail out early if the bus has been stopped/restarted since this worker spawned.
                 if generation_state.load(Ordering::SeqCst) != active_generation {
                     break;
                 }
@@ -289,6 +291,8 @@ impl SinkEntry {
                     event = stream.recv() => match event {
                         Ok(event) => {
                             let sink = Arc::clone(&sink);
+                            // Dispatch potentially blocking sink logic onto the dedicated
+                            // blocking pool so we never park the async runtime thread.
                             let dispatch = task::spawn_blocking(move || -> io::Result<()> {
                                 let mut guard = sink.lock().map_err(|_| {
                                     io::Error::new(

@@ -73,6 +73,8 @@ pub struct AppEventStream {
     event_stream: Option<EventStream>,
 }
 
+/// Errors returned when accessing an [`AppEventStream`] after its subscription
+/// has already been consumed.
 #[derive(Debug, Error)]
 pub enum AppEventStreamError {
     #[error("event stream has already been taken")]
@@ -104,6 +106,8 @@ impl AppEventStream {
     }
 
     /// Mutable access to the underlying broadcast subscription.
+    ///
+    /// Returns an error if the stream was already consumed by another accessor.
     pub fn event_stream(&mut self) -> AppEventStreamResult<&mut EventStream> {
         self.event_stream
             .as_mut()
@@ -111,6 +115,8 @@ impl AppEventStream {
     }
 
     /// Consume the handle and return the raw event stream.
+    ///
+    /// Subsequent calls will error with [`AppEventStreamError::AlreadyTaken`].
     pub fn into_stream(mut self) -> AppEventStreamResult<EventStream> {
         self.event_stream
             .take()
@@ -132,11 +138,15 @@ impl AppEventStream {
     }
 
     /// Consume and convert the stream into a blocking iterator.
+    ///
+    /// Fails if the stream was already taken through another accessor.
     pub fn into_blocking_iter(self) -> AppEventStreamResult<crate::event_bus::BlockingEventIter> {
         Ok(self.into_stream()?.into_blocking_iter())
     }
 
     /// Consume and convert the stream into an async iterator.
+    ///
+    /// Fails if the stream was already taken through another accessor.
     pub fn into_async_stream(
         self,
     ) -> AppEventStreamResult<BoxStream<'static, crate::event_bus::Event>> {
@@ -144,6 +154,8 @@ impl AppEventStream {
     }
 
     /// Await the next event with a timeout, skipping lag notifications.
+    ///
+    /// Fails if the stream was already taken through another accessor.
     pub async fn next_timeout(
         &mut self,
         duration: std::time::Duration,
@@ -371,31 +383,12 @@ impl App {
             .split()
             .expect("fresh App::event_stream() should yield an unused event stream");
 
-        let mut runner =
+        let runner =
             AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
                 .await;
 
-        let session_id = self
-            .runtime_config
-            .session_id
-            .clone()
-            .unwrap_or_else(|| IdGenerator::new().generate_run_id());
-
-        let join = tokio::spawn(async move {
-            let init_state = runner
-                .create_session(session_id.clone(), initial_state)
-                .await?;
-
-            if let SessionInit::Resumed { checkpoint_step } = init_state {
-                tracing::info!(
-                    session = %session_id,
-                    checkpoint_step,
-                    "Resuming session from checkpoint"
-                );
-            }
-
-            runner.run_until_complete(&session_id).await
-        });
+        let session_id = self.next_session_id();
+        let join = tokio::spawn(Self::run_session(runner, session_id, initial_state));
 
         (
             InvocationHandle {
@@ -633,7 +626,7 @@ impl App {
             .unwrap_or(CheckpointerType::InMemory);
 
         // Create runner with custom EventBus
-        let mut runner = AppRunner::with_options_and_bus(
+        let runner = AppRunner::with_options_and_bus(
             self.clone(),
             checkpointer_type,
             false, // autosave
@@ -643,29 +636,8 @@ impl App {
         .await;
 
         // Get session ID
-        let session_id = self
-            .runtime_config
-            .session_id
-            .clone()
-            .unwrap_or_else(|| IdGenerator::new().generate_run_id());
-
-        // Execute workflow
-        let result = async move {
-            let init_state = runner
-                .create_session(session_id.clone(), initial_state)
-                .await?;
-
-            if let SessionInit::Resumed { checkpoint_step } = init_state {
-                tracing::info!(
-                    "Resuming session '{}' from checkpoint at step {}",
-                    session_id,
-                    checkpoint_step
-                );
-            }
-
-            runner.run_until_complete(&session_id).await
-        }
-        .await;
+        let session_id = self.next_session_id();
+        let result = Self::run_session(runner, session_id, initial_state).await;
 
         (result, rx)
     }
@@ -779,7 +751,7 @@ impl App {
             .unwrap_or(CheckpointerType::InMemory);
 
         // Create runner with custom EventBus
-        let mut runner = AppRunner::with_options_and_bus(
+        let runner = AppRunner::with_options_and_bus(
             self.clone(),
             checkpointer_type,
             false, // autosave
@@ -789,22 +761,38 @@ impl App {
         .await;
 
         // Get session ID
-        let session_id = self
-            .runtime_config
+        let session_id = self.next_session_id();
+        Self::run_session(runner, session_id, initial_state).await
+    }
+
+    /// Generate the session identifier for the next invocation.
+    ///
+    /// Prefers an explicit session id from the runtime configuration and
+    /// falls back to a randomly generated identifier when none is supplied.
+    /// Consolidating this logic helps keep new entry points from accidentally
+    /// reusing the same hard-coded id.
+    fn next_session_id(&self) -> String {
+        self.runtime_config
             .session_id
             .clone()
-            .unwrap_or_else(|| IdGenerator::new().generate_run_id());
+            .unwrap_or_else(|| IdGenerator::new().generate_run_id())
+    }
 
-        // Execute workflow
+    /// Drive a workflow session to completion, resuming from checkpoints when available.
+    async fn run_session(
+        mut runner: AppRunner,
+        session_id: String,
+        initial_state: VersionedState,
+    ) -> Result<VersionedState, RunnerError> {
         let init_state = runner
             .create_session(session_id.clone(), initial_state)
             .await?;
 
         if let SessionInit::Resumed { checkpoint_step } = init_state {
             tracing::info!(
-                "Resuming session '{}' from checkpoint at step {}",
-                session_id,
-                checkpoint_step
+                session = %session_id,
+                checkpoint_step,
+                "Resuming session from checkpoint"
             );
         }
 
