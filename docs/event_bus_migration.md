@@ -54,21 +54,22 @@ Sse::new(sse_stream)
 
 ```rust
 let (invocation, events) = app.invoke_streaming(state).await;
-let mut stream = events.into_async_stream();
 let sse_stream = async_stream::stream! {
+    let mut stream = events.into_async_stream();
     while let Some(event) = stream.next().await {
-        yield Ok::<_, Infallible>(SseEvent::default().json_data(event.clone()).unwrap());
+        yield Ok::<SseEvent, Infallible>(
+            SseEvent::default().json_data(event.clone()).unwrap()
+        );
         if event.scope_label() == Some(STREAM_END_SCOPE) {
             break;
         }
     }
 };
 Sse::new(sse_stream)
-    .on_close(async move { invocation.abort(); })
 ```
 
 ## Further Reading
 
 - `README.md` – updated streaming documentation and examples.
 - `STREAMING_QUICKSTART.md` – pattern comparison table and buffer tuning tips.
-- `examples/demo7_axum_sse.rs` – reference SSE integration with graceful cancellation.
+- `examples/demo7_axum_sse.rs` – reference HTTP streaming integration with graceful cancellation.

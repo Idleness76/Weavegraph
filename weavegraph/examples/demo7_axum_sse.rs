@@ -98,6 +98,7 @@ async fn stream_workflow(
     let sse_stream = async_stream::stream! {
         let mut stream = event_stream.into_async_stream();
         while let Some(event) = stream.next().await {
+            let scope = event.scope_label().map(|s| s.to_string());
             let event_type = match &event {
                 weavegraph::event_bus::Event::Node(_) => "node",
                 weavegraph::event_bus::Event::Diagnostic(_) => "diagnostic",
@@ -120,7 +121,7 @@ async fn stream_workflow(
                 .json_data(payload)
                 .expect("serialise SSE payload");
             yield Ok::<SseEvent, Infallible>(event);
-            if event.scope_label() == Some(STREAM_END_SCOPE) {
+            if scope.as_deref() == Some(STREAM_END_SCOPE) {
                 break;
             }
         }

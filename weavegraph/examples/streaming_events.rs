@@ -204,15 +204,6 @@ async fn main() -> Result<()> {
             Err(e) => {
                 let _ = tx.send(Event::diagnostic("workflow", format!("Error: {e}")));
             }
-
-            if matches!(event, Event::LLM(llm) if llm.is_final()) {
-                println!("💡 received final LLM chunk");
-            }
-
-            if event.scope_label() == Some(STREAM_END_SCOPE) {
-                println!("✅ workflow stream finished");
-                break;
-            }
         }
     });
 

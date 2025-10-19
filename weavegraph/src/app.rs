@@ -245,6 +245,43 @@ impl App {
     }
 
     /// Create a subscription to the configured event bus without starting execution.
+    ///
+    /// This is the low-level entry point when you want to inspect the stream or
+    /// register additional sinks before running the workflow (e.g. in tests or
+    /// fully-custom server integrations).
+    ///
+    /// ```no_run
+    /// use futures_util::StreamExt;
+    /// use weavegraph::event_bus::{Event, MemorySink};
+    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+    ///
+    /// # async fn example(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
+    /// let mut handle = app.event_stream();
+    /// handle.event_bus().add_sink(MemorySink::new());
+    /// let (event_bus, event_stream) = handle.split();
+    ///
+    /// let mut runner = AppRunner::with_options_and_bus(
+    ///     app.clone(),
+    ///     CheckpointerType::InMemory,
+    ///     false,
+    ///     event_bus,
+    ///     true,
+    /// ).await;
+    ///
+    /// tokio::spawn(async move {
+    ///     let mut stream = event_stream.into_async_stream();
+    ///     while let Some(event) = stream.next().await {
+    ///         if matches!(event, Event::LLM(llm) if llm.is_final()) {
+    ///             tracing::info!("final streaming chunk delivered");
+    ///         }
+    ///     }
+    /// });
+    ///
+    /// runner.create_session("demo".to_string(), state).await?;
+    /// runner.run_until_complete("demo").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     #[must_use]
     pub fn event_stream(&self) -> AppEventStream {
         let event_bus = self.runtime_config.event_bus.build_event_bus();
@@ -292,7 +329,7 @@ impl App {
     /// ```
     ///
     /// See `examples/streaming_events.rs` for a CLI integration and
-    /// `examples/demo7_axum_sse.rs` for an SSE server that reacts to client cancellation.
+    /// `examples/demo7_axum_sse.rs` for an Axum streaming server that reacts to client cancellation.
     pub async fn invoke_streaming(
         &self,
         initial_state: VersionedState,

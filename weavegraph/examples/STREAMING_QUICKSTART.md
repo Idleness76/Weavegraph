@@ -8,7 +8,7 @@ This guide shows you how to stream workflow events to web clients using Weavegra
 |----------|-----|-------------------|-------|---------|
 | CLI / scripts | `App::invoke_with_channel` | flume receiver | Simplest to wire progress bars, returns `(Result, Receiver)` | `examples/convenience_streaming.rs` |
 | CLI with multiple sinks | `App::invoke_with_sinks` | sinks + optional channel | Inject stdout/file sinks without touching `AppRunner` | same as above |
-| Web servers / SSE | `App::invoke_streaming` | `EventStream` (async/iter/poll) | Preferred for HTTP streaming; emits `STREAM_END_SCOPE` sentinel when finished | `examples/demo7_axum_sse.rs` |
+| Web servers / SSE/WebSocket | `App::invoke_streaming` | `EventStream` (async/iter/poll) | Preferred for live streaming; emits `STREAM_END_SCOPE` sentinel when finished | `examples/demo7_axum_sse.rs` |
 | Full control | `AppRunner::with_options_and_bus` | custom `EventBus` | Use when you need per-request isolation or reuse a runner | `examples/streaming_events.rs` |
 
 ### ⭐ Simple Patterns (Convenience Methods)
@@ -43,11 +43,11 @@ use weavegraph::event_bus::STREAM_END_SCOPE;
 
 let (invocation, events) = app.invoke_streaming(initial_state).await;
 let invocation = Arc::new(Mutex::new(Some(invocation)));
-let mut stream = events.into_async_stream();
 
 let sse_stream = async_stream::stream! {
+    let mut stream = events.into_async_stream();
     while let Some(event) = stream.next().await {
-        yield Ok::<_, std::convert::Infallible>(
+        yield Ok::<SseEvent, std::convert::Infallible>(
             SseEvent::default().json_data(event.clone()).unwrap()
         );
         if event.scope_label() == Some(STREAM_END_SCOPE) {
@@ -56,14 +56,7 @@ let sse_stream = async_stream::stream! {
     }
 };
 
-let response = Sse::new(sse_stream).on_close({
-    let invocation = Arc::clone(&invocation);
-    async move {
-        if let Some(handle) = invocation.lock().await.take() {
-            handle.abort();
-        }
-    }
-});
+let response = Sse::new(sse_stream);
 
 tokio::spawn({
     let invocation = Arc::clone(&invocation);
@@ -88,7 +81,7 @@ tokio::spawn({
 response
 ```
 
-**When to use:** SSE, WebSocket, per-client event streams. The stream closes automatically when the sentinel diagnostic with scope `STREAM_END_SCOPE` arrives.
+**When to use:** SSE/WebSocket transports (or as a base for similar streaming adapters). The stream closes automatically when the sentinel diagnostic with scope `STREAM_END_SCOPE` arrives.
 
 **Example:** `cargo run --example demo7_axum_sse`
 
