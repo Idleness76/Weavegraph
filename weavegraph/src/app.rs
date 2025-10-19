@@ -60,12 +60,21 @@ pub struct App {
     runtime_config: RuntimeConfig,
 }
 
+/// Combined handle exposing the configured event bus and a single subscription.
+///
+/// Obtained from [`App::event_stream()`], it lets callers attach additional sinks
+/// before execution starts or choose how to consume the broadcast feed (async
+/// stream, blocking iterator, or timed polling).
 pub struct AppEventStream {
     event_bus: EventBus,
     event_stream: Option<EventStream>,
 }
 
 /// Handle for a streaming workflow invocation.
+///
+/// Dropping the handle aborts the workflow task. Use [`join`](InvocationHandle::join)
+/// to await graceful completion; the paired event stream will emit a diagnostic with
+/// scope [`STREAM_END_SCOPE`](crate::event_bus::STREAM_END_SCOPE) before closing.
 pub struct InvocationHandle {
     join_handle: Option<JoinHandle<Result<VersionedState, RunnerError>>>,
 }
@@ -78,26 +87,31 @@ impl AppEventStream {
         }
     }
 
+    /// Access the bus to add sinks before execution begins.
     pub fn event_bus(&self) -> &EventBus {
         &self.event_bus
     }
 
+    /// Mutable access to the underlying broadcast subscription.
     pub fn event_stream(&mut self) -> &mut EventStream {
         self.event_stream
             .as_mut()
             .expect("event stream already taken")
     }
 
+    /// Consume the handle and return the raw event stream.
     pub fn into_stream(mut self) -> EventStream {
         self.event_stream
             .take()
             .expect("event stream already taken")
     }
 
+    /// Consume the handle and return the event bus.
     pub fn into_event_bus(self) -> EventBus {
         self.event_bus
     }
 
+    /// Split the handle into the bus and event stream.
     pub fn split(mut self) -> (EventBus, EventStream) {
         let stream = self
             .event_stream
@@ -106,16 +120,19 @@ impl AppEventStream {
         (self.event_bus, stream)
     }
 
+    /// Consume and convert the stream into a blocking iterator.
     pub fn into_blocking_iter(self) -> crate::event_bus::BlockingEventIter {
         self.into_stream().into_blocking_iter()
     }
 
+    /// Consume and convert the stream into an async iterator.
     pub fn into_async_stream(
         self,
     ) -> impl futures_util::stream::Stream<Item = crate::event_bus::Event> {
         self.into_stream().into_async_stream()
     }
 
+    /// Await the next event with a timeout, skipping lag notifications.
     pub async fn next_timeout(
         &mut self,
         duration: std::time::Duration,
@@ -126,6 +143,8 @@ impl AppEventStream {
 
 impl InvocationHandle {
     /// Abort the underlying workflow task. `join` will return a join error afterwards.
+    ///
+    /// Equivalent to dropping the handle explicitly.
     pub fn abort(&self) {
         if let Some(handle) = &self.join_handle {
             handle.abort();
@@ -235,8 +254,45 @@ impl App {
 
     /// Invoke the workflow asynchronously while streaming events to the caller.
     ///
-    /// Returns a join handle for the workflow outcome and an `EventStream` that yields
-    /// every event emitted during execution.
+    /// Returns a join handle for the workflow outcome and an [`EventStream`] that yields
+    /// every event emitted during execution. The stream closes after emitting a
+    /// diagnostic with scope [`STREAM_END_SCOPE`](crate::event_bus::STREAM_END_SCOPE).
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the [`InvocationHandle`] (or calling [`InvocationHandle::abort`]) stops
+    /// the workflow immediately. Dropping the event stream does **not** cancel the run;
+    /// use the handle if you want to interrupt execution when the client disconnects.
+    ///
+    /// ```no_run
+    /// use futures_util::StreamExt;
+    /// use tokio::time::{sleep, Duration};
+    /// use weavegraph::event_bus::STREAM_END_SCOPE;
+    /// # async fn run(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
+    /// let (handle, events) = app.invoke_streaming(state).await;
+    ///
+    /// let mut events = events.into_async_stream();
+    /// tokio::spawn(async move {
+    ///     while let Some(event) = events.next().await {
+    ///         if event.scope_label() == Some(STREAM_END_SCOPE) {
+    ///             tracing::info!("workflow finished");
+    ///         }
+    ///     }
+    /// });
+    ///
+    /// tokio::select! {
+    ///     result = handle.join() => { result?; }
+    ///     _ = sleep(Duration::from_secs(30)) => {
+    ///         tracing::warn!("cancelling run after timeout");
+    ///         handle.abort();
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// See `examples/streaming_events.rs` for a CLI integration and
+    /// `examples/demo7_axum_sse.rs` for an SSE server that reacts to client cancellation.
     pub async fn invoke_streaming(
         &self,
         initial_state: VersionedState,

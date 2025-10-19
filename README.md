@@ -303,25 +303,67 @@ See `cargo run --example convenience_streaming` for complete examples.
 Use [`App::invoke_streaming`](weavegraph/src/app.rs) to run a workflow while streaming events to clients:
 
 ```rust
+use std::sync::Arc;
+use axum::response::sse::{Event as SseEvent, Sse};
+use futures_util::StreamExt;
+use tokio::{signal, sync::Mutex, time::Duration};
+use weavegraph::event_bus::STREAM_END_SCOPE;
+
 let initial = VersionedState::new_with_user_message("Live stream this workflow");
 let (invocation, events) = app.invoke_streaming(initial).await;
+let invocation = Arc::new(Mutex::new(Some(invocation)));
 
-tokio::spawn(async move {
-    if let Err(err) = invocation.join().await {
-        tracing::error!("workflow failed: {err}");
+let mut stream = events.into_async_stream();
+let sse_stream = async_stream::stream! {
+    while let Some(event) = stream.next().await {
+        let payload = SseEvent::default().json_data(event.clone()).unwrap();
+        yield Ok::<_, std::convert::Infallible>(payload);
+        if event.scope_label() == Some(STREAM_END_SCOPE) {
+            break;
+        }
+    }
+};
+
+let response = Sse::new(sse_stream).on_close({
+    let invocation = Arc::clone(&invocation);
+    async move {
+        if let Some(handle) = invocation.lock().await.take() {
+            handle.abort();
+        }
     }
 });
 
-let sse_stream = events
-    .into_async_stream()
-    .map(|event| SseEvent::default().json_data(event).unwrap());
+tokio::spawn({
+    let invocation = Arc::clone(&invocation);
+    async move {
+        tokio::select! {
+            _ = async {
+                if let Some(handle) = invocation.lock().await.take() {
+                    if let Err(err) = handle.join().await {
+                        tracing::error!("workflow failed: {err}");
+                    }
+                }
+            } => {}
+            _ = signal::ctrl_c() => {
+                if let Some(handle) = invocation.lock().await.take() {
+                    tracing::warn!("cancelling workflow after ctrl+c");
+                    handle.abort();
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                if let Some(handle) = invocation.lock().await.take() {
+                    tracing::warn!("cancelling workflow after 30s timeout");
+                    handle.abort();
+                }
+            }
+        }
+    }
+});
 
-Sse::new(sse_stream)
-
-// Event stream ends automatically once the workflow finishes.
+response
 ```
 
-See `cargo run --example demo7_axum_sse` for an Axum SSE demo that requires no direct interaction with `AppRunner`.
+See `cargo run --example demo7_axum_sse` for an Axum SSE demo that requires no direct interaction with `AppRunner`. The event stream closes once the sentinel diagnostic with scope `STREAM_END_SCOPE` is received.
 
 #### Production Pattern (Web Servers)
 
@@ -351,7 +393,9 @@ tokio::spawn(async move {
 // Events include node starts/completions, state changes, errors
 ```
 
-See `cargo run --example streaming_events` and `STREAMING_QUICKSTART.md` for full details.
+See `cargo run --example streaming_events` and `STREAMING_QUICKSTART.md` for full details, including how to use `EventStream::next_timeout` for slow polling and how to tune `EventBusConfig::buffer_capacity`.
+
+For projects upgrading from earlier releases, consult [`docs/event_bus_migration.md`](docs/event_bus_migration.md) for a checklist of API changes.
 
 #### Testing Pattern
 
