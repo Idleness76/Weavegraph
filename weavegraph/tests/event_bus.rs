@@ -1,3 +1,7 @@
+use futures_util::{pin_mut, StreamExt};
+use std::sync::Arc;
+use std::time::Duration;
+use weavegraph::channels::Channel;
 use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
 
 #[tokio::test]
@@ -8,8 +12,9 @@ async fn stop_listener_flushes_pending_events() {
 
     bus.listen_for_events();
 
-    bus.get_sender()
-        .send(Event::node_message_with_meta(
+    let emitter = bus.get_emitter();
+    emitter
+        .emit(Event::node_message_with_meta(
             "test-node",
             42,
             "scope",
@@ -41,21 +46,23 @@ async fn memory_sink_captures_events_with_scope_and_messages() {
 
     bus.listen_for_events();
 
+    let emitter = bus.get_emitter();
+
     // Same scope twice
-    bus.get_sender()
-        .send(Event::node_message("Scope1", "one"))
-        .expect("send one");
-    bus.get_sender()
-        .send(Event::node_message("Scope1", "two"))
-        .expect("send two");
+    emitter
+        .emit(Event::node_message("Scope1", "one"))
+        .expect("emit one");
+    emitter
+        .emit(Event::node_message("Scope1", "two"))
+        .expect("emit two");
 
     // Different scope
-    bus.get_sender()
-        .send(Event::diagnostic("Scope2", "three"))
-        .expect("send three");
-    bus.get_sender()
-        .send(Event::diagnostic("Scope2", "four"))
-        .expect("send four");
+    emitter
+        .emit(Event::diagnostic("Scope2", "three"))
+        .expect("emit three");
+    emitter
+        .emit(Event::diagnostic("Scope2", "four"))
+        .expect("emit four");
 
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     bus.stop_listener().await;
@@ -89,9 +96,9 @@ async fn multiple_listen_calls_are_idempotent() {
     bus.listen_for_events();
 
     // Emit a couple of events and ensure we don't get duplicate output.
-    let sender = bus.get_sender();
-    sender.send(Event::node_message("S", "a")).unwrap();
-    sender.send(Event::node_message("S", "b")).unwrap();
+    let emitter = bus.get_emitter();
+    emitter.emit(Event::node_message("S", "a")).unwrap();
+    emitter.emit(Event::node_message("S", "b")).unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     bus.stop_listener().await;
@@ -111,16 +118,17 @@ async fn memory_sink_preserves_order_under_concurrency() {
     let bus = EventBus::with_sink(sink);
     bus.listen_for_events();
 
-    let sender = bus.get_sender();
+    let emitter = bus.get_emitter();
     let mut handles = Vec::new();
     let total = 20u32;
     for i in 0..total {
-        let s = sender.clone();
+        let emitter = Arc::clone(&emitter);
         handles.push(task::spawn(async move {
             // Stagger sends to establish a deterministic order.
             tokio::time::sleep(std::time::Duration::from_millis((i * 2) as u64)).await;
-            s.send(Event::node_message("ORDER", format!("m{i}")))
-                .expect("send");
+            emitter
+                .emit(Event::node_message("ORDER", format!("m{i}")))
+                .expect("emit");
         }));
     }
 
@@ -151,8 +159,8 @@ async fn channel_sink_forwards_events() {
     let bus = EventBus::with_sink(ChannelSink::new(tx));
     bus.listen_for_events();
 
-    bus.get_sender()
-        .send(Event::diagnostic("test", "hello world"))
+    bus.get_emitter()
+        .emit(Event::diagnostic("test", "hello world"))
         .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -173,8 +181,8 @@ async fn multi_sink_broadcast() {
     ]);
     bus.listen_for_events();
 
-    bus.get_sender()
-        .send(Event::diagnostic("test", "broadcast message"))
+    bus.get_emitter()
+        .emit(Event::diagnostic("test", "broadcast message"))
         .unwrap();
 
     // Give listener time to process
@@ -197,8 +205,8 @@ async fn add_sink_dynamically() {
     let (tx, rx) = flume::unbounded();
     bus.add_sink(ChannelSink::new(tx));
 
-    bus.get_sender()
-        .send(Event::diagnostic("test", "dynamic sink"))
+    bus.get_emitter()
+        .emit(Event::diagnostic("test", "dynamic sink"))
         .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -223,4 +231,129 @@ async fn channel_sink_handles_dropped_receiver() {
 
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().kind(), ErrorKind::BrokenPipe);
+}
+
+#[tokio::test]
+async fn async_stream_adapter_yields_events() {
+    let bus = EventBus::with_sink(MemorySink::new());
+    let emitter = bus.get_emitter();
+
+    let stream = bus.subscribe().into_async_stream();
+    pin_mut!(stream);
+    emitter
+        .emit(Event::diagnostic("async", "stream"))
+        .expect("emit");
+
+    let event = stream.next().await.expect("event");
+    assert_eq!(event.message(), "stream");
+    assert_eq!(event.scope_label(), Some("async"));
+}
+
+#[tokio::test]
+async fn next_timeout_reports_timeouts_and_events() {
+    let bus = EventBus::with_sink(MemorySink::new());
+    let emitter = bus.get_emitter();
+    let mut stream = bus.subscribe();
+
+    assert!(stream
+        .next_timeout(Duration::from_millis(10))
+        .await
+        .is_none());
+
+    emitter
+        .emit(Event::diagnostic("timeout", "delivered"))
+        .expect("emit");
+
+    let event = stream
+        .next_timeout(Duration::from_secs(1))
+        .await
+        .expect("event after emit");
+    assert_eq!(event.message(), "delivered");
+    assert_eq!(event.scope_label(), Some("timeout"));
+}
+
+#[tokio::test]
+async fn blocking_iterator_receives_events() {
+    let bus = EventBus::with_sink(MemorySink::new());
+    let emitter = bus.get_emitter();
+    let iter = bus.subscribe().into_blocking_iter();
+
+    let handle = tokio::task::spawn_blocking(move || {
+        let mut iter = iter;
+        iter.next()
+    });
+
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    emitter
+        .emit(Event::diagnostic("blocking", "iter"))
+        .expect("emit");
+
+    let event = handle.await.expect("join").expect("event");
+    assert_eq!(event.message(), "iter");
+    assert_eq!(event.scope_label(), Some("blocking"));
+}
+
+#[tokio::test]
+async fn event_stream_closes_when_bus_dropped() {
+    use std::time::Duration;
+
+    let mut stream = {
+        let bus = EventBus::with_sink(MemorySink::new());
+        bus.listen_for_events();
+        bus.subscribe()
+    };
+
+    assert!(
+        stream
+            .next_timeout(Duration::from_millis(50))
+            .await
+            .is_none(),
+        "expected broadcast stream to close after EventBus drop"
+    );
+}
+
+#[tokio::test]
+async fn invoke_streaming_emits_terminal_event() {
+    use async_trait::async_trait;
+    use futures_util::StreamExt;
+    use weavegraph::event_bus::STREAM_END_SCOPE;
+    use weavegraph::graphs::GraphBuilder;
+    use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
+    use weavegraph::state::{StateSnapshot, VersionedState};
+    use weavegraph::types::NodeKind;
+
+    struct TerminalNode;
+
+    #[async_trait]
+    impl Node for TerminalNode {
+        async fn run(&self, _: StateSnapshot, _: NodeContext) -> Result<NodePartial, NodeError> {
+            Ok(NodePartial::default())
+        }
+    }
+
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("terminal".into()), TerminalNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("terminal".into()))
+        .add_edge(NodeKind::Custom("terminal".into()), NodeKind::End)
+        .compile()
+        .expect("graph");
+
+    let initial = VersionedState::new_with_user_message("finish");
+    let (handle, event_stream) = app.invoke_streaming(initial).await;
+
+    let collector = tokio::spawn(async move {
+        let mut collected = Vec::new();
+        let mut stream = event_stream.into_async_stream();
+        while let Some(event) = stream.next().await {
+            collected.push(event);
+        }
+        collected
+    });
+
+    let final_state = handle.join().await.expect("workflow");
+    assert_eq!(final_state.messages.snapshot().len(), 1);
+
+    let events = collector.await.expect("collector join");
+    let end_event = events.last().expect("at least one terminal event");
+    assert_eq!(end_event.scope_label(), Some(STREAM_END_SCOPE));
 }

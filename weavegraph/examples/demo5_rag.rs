@@ -27,7 +27,7 @@ use weavegraph::event_bus::EventBus;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
-use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};
+use weavegraph::runtimes::{CheckpointerType, EventBusConfig, RuntimeConfig};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 use weavegraph::utils::collections::new_extra_map;
@@ -332,6 +332,7 @@ pub async fn run_demo5() -> Result<()> {
             session_id: Some("scrape6".to_string()),
             checkpointer: Some(CheckpointerType::SQLite),
             sqlite_db_name: None,
+            event_bus: EventBusConfig::with_stdout_only(),
         })
         .compile()?;
 
@@ -1141,7 +1142,7 @@ mod tests {
         };
 
         let mut state = VersionedState::new_with_user_message("Explain ownership");
-        let sender = event_bus.get_sender();
+        let emitter = event_bus.get_emitter();
 
         let mut step = 1u64;
         let partial = scrape_node
@@ -1150,7 +1151,7 @@ mod tests {
                 NodeContext {
                     node_id: "Scrape".into(),
                     step,
-                    event_bus_sender: sender.clone(),
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
@@ -1164,7 +1165,7 @@ mod tests {
                 NodeContext {
                     node_id: "Chunk".into(),
                     step,
-                    event_bus_sender: sender.clone(),
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
@@ -1178,7 +1179,7 @@ mod tests {
                 NodeContext {
                     node_id: "Store".into(),
                     step,
-                    event_bus_sender: sender.clone(),
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await
@@ -1192,7 +1193,7 @@ mod tests {
                 NodeContext {
                     node_id: "Retrieve".into(),
                     step,
-                    event_bus_sender: sender,
+                    event_emitter: Arc::clone(&emitter),
                 },
             )
             .await

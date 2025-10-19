@@ -1,7 +1,7 @@
 use crate::app::App;
 use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::channels::Channel;
-use crate::event_bus::EventBus;
+use crate::event_bus::{Event, EventBus, EventStream, STREAM_END_SCOPE};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
 use crate::runtimes::{
@@ -14,6 +14,7 @@ use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::task::JoinError;
 use tracing::instrument;
 
 /// Result of executing one superstep in a session.
@@ -73,6 +74,11 @@ pub struct PausedReport {
 pub enum StepResult {
     Completed(StepReport),
     Paused(PausedReport),
+}
+
+enum StreamEndReason {
+    Completed { step: u64 },
+    Error { step: Option<u64>, error: String },
 }
 
 /// Runtime execution engine for workflow graphs with session management and event streaming.
@@ -177,6 +183,7 @@ pub struct AppRunner {
     checkpointer: Option<Arc<dyn Checkpointer>>, // optional pluggable persistence
     autosave: bool,
     event_bus: EventBus,
+    event_stream_taken: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,6 +208,10 @@ pub enum RunnerError {
     #[error("unexpected pause during run_until_complete")]
     #[diagnostic(code(weavegraph::runner::unexpected_pause))]
     UnexpectedPause,
+
+    #[error("workflow task join error: {0}")]
+    #[diagnostic(code(weavegraph::runner::join))]
+    Join(#[from] JoinError),
 
     #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::checkpointer))]
@@ -326,8 +337,9 @@ impl AppRunner {
         checkpointer_type: CheckpointerType,
         autosave: bool,
     ) -> Self {
+        let bus = app.runtime_config().event_bus.build_event_bus();
         let app = Arc::new(app);
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, EventBus::default(), true).await
+        Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
     pub async fn with_options_arc(
@@ -335,7 +347,8 @@ impl AppRunner {
         checkpointer_type: CheckpointerType,
         autosave: bool,
     ) -> Self {
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, EventBus::default(), true).await
+        let bus = app.runtime_config().event_bus.build_event_bus();
+        Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
     /// Create an AppRunner with a custom EventBus for advanced event handling.
@@ -362,7 +375,7 @@ impl AppRunner {
     ///                 ↓
     ///      AppRunner { app, event_bus: custom_bus }
     ///                 ↓
-    ///      NodeContext gets event_bus_sender
+    ///      NodeContext gets event_emitter
     ///                 ↓
     ///      Events → EventBus → Your custom sinks
     /// ```
@@ -515,7 +528,19 @@ impl AppRunner {
             checkpointer,
             autosave,
             event_bus,
+            event_stream_taken: false,
         }
+    }
+
+    /// Subscribe to the underlying event stream.
+    ///
+    /// Returns a handle that yields events as they are emitted by workflow nodes.
+    pub fn event_stream(&mut self) -> EventStream {
+        if self.event_stream_taken {
+            panic!("event stream already requested for this runner");
+        }
+        self.event_stream_taken = true;
+        self.event_bus.subscribe()
     }
 
     /// Initialize a new session with the given initial state
@@ -748,7 +773,7 @@ impl AppRunner {
                 session_state.frontier.clone(),
                 snapshot.clone(),
                 step,
-                self.event_bus.get_sender(),
+                self.event_bus.get_emitter(),
             )
             .await?;
 
@@ -877,7 +902,21 @@ impl AppRunner {
             }
 
             // Run one step
-            let step_result = self.run_step(session_id, StepOptions::default()).await?;
+            let step_result = match self.run_step(session_id, StepOptions::default()).await {
+                Ok(res) => res,
+                Err(err) => {
+                    let reason = err.to_string();
+                    let step = self.sessions.get(session_id).map(|state| state.step);
+                    self.finalize_event_stream(
+                        session_id,
+                        StreamEndReason::Error {
+                            step,
+                            error: reason,
+                        },
+                    );
+                    return Err(err);
+                }
+            };
 
             match step_result {
                 StepResult::Completed(report) => {
@@ -887,36 +926,62 @@ impl AppRunner {
                 }
                 StepResult::Paused(_) => {
                     // This shouldn't happen with default options, but handle gracefully
+                    let step = self.sessions.get(session_id).map(|state| state.step);
+                    self.finalize_event_stream(
+                        session_id,
+                        StreamEndReason::Error {
+                            step,
+                            error: "execution paused unexpectedly".to_string(),
+                        },
+                    );
                     return Err(RunnerError::UnexpectedPause);
                 }
             }
         }
 
         println!("\n== Final state ==");
-        let final_session =
-            self.sessions
-                .get(session_id)
-                .ok_or_else(|| RunnerError::SessionNotFound {
-                    session_id: session_id.to_string(),
-                })?;
-        let final_state = final_session.state.clone();
+        let (
+            final_state,
+            messages_snapshot,
+            messages_version,
+            extra_snapshot,
+            extra_version,
+            final_step,
+        ) = {
+            let final_session =
+                self.sessions
+                    .get(session_id)
+                    .ok_or_else(|| RunnerError::SessionNotFound {
+                        session_id: session_id.to_string(),
+                    })?;
+            let final_state = final_session.state.clone();
+            let messages_snapshot = final_state.messages.snapshot();
+            let messages_version = final_state.messages.version();
+            let extra_snapshot = final_state.extra.snapshot();
+            let extra_version = final_state.extra.version();
+            let final_step = final_session.step;
+            (
+                final_state,
+                messages_snapshot,
+                messages_version,
+                extra_snapshot,
+                extra_version,
+                final_step,
+            )
+        };
 
         // Print final state summary (matching App::invoke output)
-        for (i, m) in final_state.messages.snapshot().iter().enumerate() {
+        for (i, m) in messages_snapshot.iter().enumerate() {
             println!("#{:02} [{}] {}", i, m.role, m.content);
         }
-        println!("messages.version = {}", final_state.messages.version());
+        println!("messages.version = {}", messages_version);
 
-        let extra_snapshot = final_state.extra.snapshot();
-        println!(
-            "extra (v {}) keys={}",
-            final_state.extra.version(),
-            extra_snapshot.len()
-        );
+        println!("extra (v {}) keys={}", extra_version, extra_snapshot.len());
         for (k, v) in extra_snapshot.iter() {
             println!("  {k}: {v}");
         }
 
+        self.finalize_event_stream(session_id, StreamEndReason::Completed { step: final_step });
         Ok(final_state)
     }
 
@@ -942,5 +1007,37 @@ impl AppRunner {
     #[must_use]
     pub fn list_sessions(&self) -> Vec<&String> {
         self.sessions.keys().collect()
+    }
+}
+
+impl AppRunner {
+    fn finalize_event_stream(&mut self, session_id: &str, reason: StreamEndReason) {
+        let message = match reason {
+            StreamEndReason::Completed { step } => {
+                format!("session={session_id} status=completed step={step}")
+            }
+            StreamEndReason::Error { step, error } => step
+                .map(|s| format!("session={session_id} status=error step={s} error={error}"))
+                .unwrap_or_else(|| format!("session={session_id} status=error error={error}")),
+        };
+
+        if let Err(err) = self
+            .event_bus
+            .get_emitter()
+            .emit(Event::diagnostic(STREAM_END_SCOPE, message.clone()))
+        {
+            tracing::debug!(
+                session = %session_id,
+                scope = STREAM_END_SCOPE,
+                completion_message = %message,
+                error = ?err,
+                "failed to emit stream termination event"
+            );
+        }
+
+        if self.event_stream_taken {
+            self.event_bus.close_channel();
+            self.event_stream_taken = false;
+        }
     }
 }

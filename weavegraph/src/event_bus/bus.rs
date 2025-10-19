@@ -1,7 +1,9 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::{sync::oneshot, task};
 
-use super::event::Event;
+use super::emitter::EventEmitter;
+use super::hub::{EventHub, EventStream};
 use super::sink::{EventSink, StdOutSink};
 
 /// Central event broadcasting system for workflow execution events.
@@ -144,10 +146,12 @@ use super::sink::{EventSink, StdOutSink};
 /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - How to use custom EventBus
 /// - [`ChannelSink`](crate::event_bus::ChannelSink) - For streaming events
 /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
+const DEFAULT_BUFFER_CAPACITY: usize = 1024;
+
 pub struct EventBus {
-    sinks: Arc<Mutex<Vec<Box<dyn EventSink>>>>,
-    event_channel: (flume::Sender<Event>, flume::Receiver<Event>),
-    listener: Arc<Mutex<Option<ListenerState>>>,
+    sinks: Arc<Mutex<Vec<SinkEntry>>>,
+    hub: Arc<EventHub>,
+    started: AtomicBool,
 }
 
 impl Default for EventBus {
@@ -157,115 +161,147 @@ impl Default for EventBus {
 }
 
 impl EventBus {
-    /// Create an EventBus with a single sink.
     pub fn with_sink<T>(sink: T) -> Self
     where
         T: EventSink + 'static,
     {
-        Self {
-            sinks: Arc::new(Mutex::new(vec![Box::new(sink)])),
-            event_channel: flume::unbounded(),
-            listener: Arc::new(Mutex::new(None)),
-        }
+        Self::with_sinks(vec![Box::new(sink)])
     }
 
-    /// Create an EventBus with multiple sinks.
     pub fn with_sinks(sinks: Vec<Box<dyn EventSink>>) -> Self {
+        Self::with_capacity(sinks, DEFAULT_BUFFER_CAPACITY)
+    }
+
+    pub(crate) fn with_capacity(sinks: Vec<Box<dyn EventSink>>, buffer_capacity: usize) -> Self {
+        let hub = EventHub::new(buffer_capacity);
+        let entries = sinks.into_iter().map(SinkEntry::new).collect();
         Self {
-            sinks: Arc::new(Mutex::new(sinks)),
-            event_channel: flume::unbounded(),
-            listener: Arc::new(Mutex::new(None)),
+            sinks: Arc::new(Mutex::new(entries)),
+            hub,
+            started: AtomicBool::new(false),
         }
     }
 
-    /// Dynamically add a sink (useful for per-request streaming).
-    ///
-    /// # Example
-    /// ```no_run
-    /// use weavegraph::event_bus::{EventBus, ChannelSink};
-    ///
-    /// let bus = EventBus::default();
-    /// bus.listen_for_events();
-    ///
-    /// let (tx, rx) = flume::unbounded();
-    /// bus.add_sink(ChannelSink::new(tx));
-    /// // Now events go to both stdout and the channel
-    /// ```
     pub fn add_sink<T: EventSink + 'static>(&self, sink: T) {
-        self.sinks.lock().unwrap().push(Box::new(sink));
+        self.add_boxed_sink(Box::new(sink));
     }
 
-    /// Get a clone of the sender side so producers can emit events.
-    pub fn get_sender(&self) -> flume::Sender<Event> {
-        self.event_channel.0.clone()
+    pub fn add_boxed_sink(&self, sink: Box<dyn EventSink>) {
+        let mut sinks = self.sinks.lock().unwrap();
+        let mut entry = SinkEntry::new(sink);
+        if self.started.load(Ordering::SeqCst) {
+            entry.spawn_worker(self.hub.clone());
+        }
+        sinks.push(entry);
     }
 
-    /// Spawn a background task that listens for events and broadcasts to all sinks.
-    /// Idempotent: calling multiple times has no effect.
+    pub fn get_emitter(&self) -> Arc<dyn EventEmitter> {
+        Arc::new(self.hub.emitter())
+    }
+
+    pub fn subscribe(&self) -> EventStream {
+        self.listen_for_events();
+        self.hub.subscribe()
+    }
+
     pub fn listen_for_events(&self) {
-        let mut guard = self.listener.lock().expect("listener poisoned");
-        if guard.is_some() {
-            return; // Already listening
+        if self.started.swap(true, Ordering::SeqCst) {
+            return;
         }
-
-        let receiver_clone = self.event_channel.1.clone();
-        let sinks = self.sinks.clone();
-        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
-
-        let handle = task::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = &mut shutdown_rx => break,
-                    recv = receiver_clone.recv_async() => match recv {
-                        Err(e) => {
-                            eprintln!("EventBus receiver error: {e}");
-                            break;
-                        }
-                        Ok(event) => {
-                            // Broadcast to all sinks
-                            let mut sinks_guard = sinks.lock().unwrap();
-                            for sink in sinks_guard.iter_mut() {
-                                if let Err(e) = sink.handle(&event) {
-                                    eprintln!("EventBus sink error: {e}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        *guard = Some(ListenerState {
-            shutdown_tx,
-            handle,
-        });
+        let mut sinks = self.sinks.lock().unwrap();
+        for entry in sinks.iter_mut() {
+            entry.spawn_worker(self.hub.clone());
+        }
     }
 
-    /// Stop the background listener task.
     pub async fn stop_listener(&self) {
-        let state = {
-            let mut guard = self.listener.lock().expect("listener poisoned");
-            guard.take()
-        };
-        if let Some(state) = state {
-            let _ = state.shutdown_tx.send(());
-            let _ = state.handle.await;
+        if !self.started.swap(false, Ordering::SeqCst) {
+            return;
         }
+        let mut sinks = self.sinks.lock().unwrap();
+        for entry in sinks.iter_mut() {
+            entry.stop_worker().await;
+        }
+    }
+
+    pub fn close_channel(&self) {
+        self.hub.close();
     }
 }
 
 impl Drop for EventBus {
     fn drop(&mut self) {
-        if let Ok(mut guard) = self.listener.lock() {
-            if let Some(state) = guard.take() {
-                let _ = state.shutdown_tx.send(());
-                state.handle.abort();
+        self.hub.close();
+        if self.started.load(Ordering::SeqCst) {
+            if let Ok(mut sinks) = self.sinks.lock() {
+                for entry in sinks.iter_mut() {
+                    entry.abort_worker();
+                }
             }
         }
     }
 }
 
-struct ListenerState {
-    shutdown_tx: oneshot::Sender<()>,
+struct SinkEntry {
+    sink: Arc<Mutex<Box<dyn EventSink>>>,
+    worker: Option<SinkWorker>,
+}
+
+impl SinkEntry {
+    fn new(sink: Box<dyn EventSink>) -> Self {
+        Self {
+            sink: Arc::new(Mutex::new(sink)),
+            worker: None,
+        }
+    }
+
+    fn spawn_worker(&mut self, hub: Arc<EventHub>) {
+        if self.worker.is_some() {
+            return;
+        }
+        let sink = Arc::clone(&self.sink);
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+        let mut stream = hub.subscribe();
+        let handle = task::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut shutdown_rx => break,
+                    event = stream.recv() => match event {
+                        Ok(event) => {
+                            if let Ok(mut guard) = sink.lock() {
+                                if let Err(err) = guard.handle(&event) {
+                                    eprintln!("EventBus sink error: {err}");
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    }
+                }
+            }
+        });
+        self.worker = Some(SinkWorker {
+            shutdown: shutdown_tx,
+            handle,
+        });
+    }
+
+    async fn stop_worker(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.shutdown.send(());
+            let _ = worker.handle.await;
+        }
+    }
+
+    fn abort_worker(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.shutdown.send(());
+            worker.handle.abort();
+        }
+    }
+}
+
+struct SinkWorker {
+    shutdown: oneshot::Sender<()>,
     handle: task::JoinHandle<()>,
 }

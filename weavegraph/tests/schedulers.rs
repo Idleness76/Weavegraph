@@ -26,7 +26,7 @@ async fn test_superstep_propagates_node_error() {
             frontier,
             snap,
             1,
-            event_bus.get_sender(),
+            event_bus.get_emitter(),
         )
         .await;
     match res {
@@ -88,7 +88,7 @@ async fn test_superstep_skips_end_and_nochange() {
             frontier.clone(),
             snap.clone(),
             1,
-            event_bus.get_sender(),
+            event_bus.get_emitter(),
         )
         .await
         .unwrap();
@@ -109,7 +109,7 @@ async fn test_superstep_skips_end_and_nochange() {
             frontier.clone(),
             snap.clone(),
             2,
-            event_bus.get_sender(),
+            event_bus.get_emitter(),
         )
         .await
         .unwrap();
@@ -131,7 +131,7 @@ async fn test_superstep_skips_end_and_nochange() {
             frontier.clone(),
             snap_bump,
             3,
-            event_bus.get_sender(),
+            event_bus.get_emitter(),
         )
         .await
         .unwrap();
@@ -156,7 +156,7 @@ async fn test_superstep_outputs_order_agnostic() {
             frontier.clone(),
             snap,
             1,
-            event_bus.get_sender(),
+            event_bus.get_emitter(),
         )
         .await
         .unwrap();
@@ -191,7 +191,7 @@ async fn test_superstep_serialized_with_limit_1() {
             frontier.clone(),
             snap,
             1,
-            event_bus.get_sender(),
+            event_bus.get_emitter(),
         )
         .await
         .unwrap();

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use super::edges::{ConditionalEdge, EdgePredicate};
 use crate::node::Node;
-use crate::runtimes::RuntimeConfig;
+use crate::runtimes::{EventBusConfig, RuntimeConfig};
 use crate::types::NodeKind;
 
 /// Type alias for the internal parts of a GraphBuilder.
@@ -213,6 +213,15 @@ impl GraphBuilder {
     /// - `runtime_config`: Configuration for the compiled application
     #[must_use]
     pub fn with_runtime_config(mut self, runtime_config: RuntimeConfig) -> Self {
+        self.runtime_config = runtime_config;
+        self
+    }
+
+    /// Overrides only the event bus configuration while keeping other runtime settings.
+    #[must_use]
+    pub fn with_event_bus_config(mut self, config: EventBusConfig) -> Self {
+        let mut runtime_config = self.runtime_config.clone();
+        runtime_config.event_bus = config;
         self.runtime_config = runtime_config;
         self
     }

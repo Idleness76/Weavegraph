@@ -18,6 +18,7 @@ tempfile = "3"
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 url = "2"
 httpmock = "0.7"
+axum = { version = "0.7", features = ["macros"] }
 
 [dependencies]
 # Error handling & diagnostics

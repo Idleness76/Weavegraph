@@ -298,6 +298,31 @@ app.invoke_with_sinks(
 
 See `cargo run --example convenience_streaming` for complete examples.
 
+#### Web Servers (SSE/WebSockets)
+
+Use [`App::invoke_streaming`](weavegraph/src/app.rs) to run a workflow while streaming events to clients:
+
+```rust
+let initial = VersionedState::new_with_user_message("Live stream this workflow");
+let (invocation, events) = app.invoke_streaming(initial).await;
+
+tokio::spawn(async move {
+    if let Err(err) = invocation.join().await {
+        tracing::error!("workflow failed: {err}");
+    }
+});
+
+let sse_stream = events
+    .into_async_stream()
+    .map(|event| SseEvent::default().json_data(event).unwrap());
+
+Sse::new(sse_stream)
+
+// Event stream ends automatically once the workflow finishes.
+```
+
+See `cargo run --example demo7_axum_sse` for an Axum SSE demo that requires no direct interaction with `AppRunner`.
+
 #### Production Pattern (Web Servers)
 
 For per-request isolation with SSE/WebSocket:

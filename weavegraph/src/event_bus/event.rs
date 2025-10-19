@@ -1,9 +1,16 @@
 use std::fmt;
 
+use chrono::{DateTime, Utc};
+use rustc_hash::FxHashMap;
+use serde_json::Value;
+
+pub const STREAM_END_SCOPE: &str = "__weavegraph_stream_end__";
+
 #[derive(Clone, Debug)]
 pub enum Event {
     Node(NodeEvent),
     Diagnostic(DiagnosticEvent),
+    LLM(LLMStreamingEvent),
 }
 
 impl Event {
@@ -36,6 +43,11 @@ impl Event {
         match self {
             Event::Node(node) => Some(node.scope()),
             Event::Diagnostic(diag) => Some(diag.scope()),
+            Event::LLM(llm) => llm
+                .stream_id()
+                .or_else(|| llm.node_id())
+                .or_else(|| llm.session_id())
+                .or(Some("llm_stream")),
         }
     }
 
@@ -43,6 +55,7 @@ impl Event {
         match self {
             Event::Node(node) => node.message(),
             Event::Diagnostic(diag) => diag.message(),
+            Event::LLM(llm) => llm.chunk(),
         }
     }
 }
@@ -57,6 +70,15 @@ impl fmt::Display for Event {
                 (None, None) => write!(f, "{}", node.message()),
             },
             Event::Diagnostic(diag) => write!(f, "{}", diag.message()),
+            Event::LLM(llm) => {
+                if let Some(stream_id) = llm.stream_id() {
+                    write!(f, "[LLM {stream_id}] {}", llm.chunk())
+                } else if let Some(node_id) = llm.node_id() {
+                    write!(f, "[LLM {node_id}] {}", llm.chunk())
+                } else {
+                    write!(f, "{}", llm.chunk())
+                }
+            }
         }
     }
 }
@@ -109,5 +131,131 @@ impl DiagnosticEvent {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LLMStreamingEvent {
+    session_id: Option<String>,
+    node_id: Option<String>,
+    stream_id: Option<String>,
+    chunk: String,
+    is_final: bool,
+    metadata: FxHashMap<String, Value>,
+    timestamp: DateTime<Utc>,
+}
+
+impl LLMStreamingEvent {
+    pub fn new(
+        session_id: Option<String>,
+        node_id: Option<String>,
+        stream_id: Option<String>,
+        chunk: impl Into<String>,
+        is_final: bool,
+        metadata: FxHashMap<String, Value>,
+        timestamp: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            session_id,
+            node_id,
+            stream_id,
+            chunk: chunk.into(),
+            is_final,
+            metadata,
+            timestamp,
+        }
+    }
+
+    pub fn chunk_event(
+        session_id: Option<String>,
+        node_id: Option<String>,
+        stream_id: Option<String>,
+        chunk: impl Into<String>,
+        metadata: FxHashMap<String, Value>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            node_id,
+            stream_id,
+            chunk,
+            false,
+            metadata,
+            Utc::now(),
+        )
+    }
+
+    pub fn final_event(
+        session_id: Option<String>,
+        node_id: Option<String>,
+        stream_id: Option<String>,
+        chunk: impl Into<String>,
+        metadata: FxHashMap<String, Value>,
+    ) -> Self {
+        Self::new(
+            session_id,
+            node_id,
+            stream_id,
+            chunk,
+            true,
+            metadata,
+            Utc::now(),
+        )
+    }
+
+    pub fn error_event(
+        session_id: Option<String>,
+        node_id: Option<String>,
+        stream_id: Option<String>,
+        error_message: impl Into<String>,
+    ) -> Self {
+        let mut metadata = FxHashMap::default();
+        metadata.insert("severity".to_string(), Value::String("error".to_string()));
+        Self::new(
+            session_id,
+            node_id,
+            stream_id,
+            error_message,
+            true,
+            metadata,
+            Utc::now(),
+        )
+    }
+
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub fn node_id(&self) -> Option<&str> {
+        self.node_id.as_deref()
+    }
+
+    pub fn stream_id(&self) -> Option<&str> {
+        self.stream_id.as_deref()
+    }
+
+    pub fn chunk(&self) -> &str {
+        &self.chunk
+    }
+
+    pub fn is_final(&self) -> bool {
+        self.is_final
+    }
+
+    pub fn metadata(&self) -> &FxHashMap<String, Value> {
+        &self.metadata
+    }
+
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
+    }
+
+    pub fn with_metadata(mut self, metadata: FxHashMap<String, Value>) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub fn with_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
+        self.timestamp = timestamp;
+        self
     }
 }

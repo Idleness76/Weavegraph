@@ -44,7 +44,7 @@
 //! # }
 //! ```
 
-use crate::event_bus::Event;
+use crate::event_bus::EventEmitter;
 use crate::node::{Node, NodeContext, NodeError, NodePartial};
 use crate::state::StateSnapshot;
 use crate::types::NodeKind;
@@ -454,7 +454,7 @@ impl Scheduler {
     /// * `frontier` - Vector of nodes eligible for execution this step
     /// * `snap` - Pre-barrier state snapshot for version gating
     /// * `step` - Current workflow step number (for context and logging)
-    /// * `event_bus_sender` - Channel for sending execution events
+    /// * `event_emitter` - Cloneable handle for sending execution events
     ///
     /// # Returns
     /// * `Ok(StepRunResult)` - Execution results with ran/skipped nodes and outputs
@@ -492,7 +492,7 @@ impl Scheduler {
     ///     frontier,
     ///     snapshot,
     ///     1,
-    ///     event_bus.get_sender(),
+    ///     event_bus.get_emitter(),
     /// ).await?;
     ///
     /// println!("Executed {} nodes, skipped {}",
@@ -515,7 +515,7 @@ impl Scheduler {
         frontier: Vec<NodeKind>,                    // frontier for this step
         snap: StateSnapshot,                        // pre-barrier snapshot
         step: u64,
-        event_bus_sender: flume::Sender<Event>,
+        event_emitter: Arc<dyn EventEmitter>,
     ) -> Result<StepRunResult, SchedulerError> {
         // Partition frontier into to_run vs skipped using a skip predicate and version gating.
         let channels = Self::channel_versions(&snap);
@@ -547,11 +547,11 @@ impl Scheduler {
                     .get(&kind)
                     .expect("node in frontier not found")
                     .clone();
-                let event_bus_sender = event_bus_sender.clone();
+                let event_emitter = Arc::clone(&event_emitter);
                 let ctx = NodeContext {
                     node_id: id_str.clone(),
                     step,
-                    event_bus_sender,
+                    event_emitter,
                 };
                 let s = snap.clone();
                 async move {

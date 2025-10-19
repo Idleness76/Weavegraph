@@ -59,5 +59,5 @@ pub use runner::{
     StepReport, StepResult,
 };
 
-pub use runtime_config::RuntimeConfig;
+pub use runtime_config::{EventBusConfig, RuntimeConfig, SinkConfig};
 pub use types::{SessionId, StepNumber};

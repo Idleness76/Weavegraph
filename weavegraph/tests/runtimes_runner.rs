@@ -82,6 +82,21 @@ async fn test_conditional_edge_routing() {
 }
 
 #[tokio::test]
+async fn runner_event_stream_only_once() {
+    let app = make_test_app();
+    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+
+    let stream = runner.event_stream();
+    drop(stream);
+
+    let result = catch_unwind(AssertUnwindSafe(|| runner.event_stream()));
+    assert!(
+        result.is_err(),
+        "expected panic on second event_stream call"
+    );
+}
+
+#[tokio::test]
 async fn test_create_session() {
     let app = make_test_app();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;

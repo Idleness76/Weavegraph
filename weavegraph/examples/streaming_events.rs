@@ -1,15 +1,16 @@
 //! # Streaming Events Example
 //!
 //! This example demonstrates how to stream events from a Weavegraph workflow
-//! using the `ChannelSink`. This pattern is the foundation for building real-time
-//! web dashboards, SSE endpoints, or WebSocket connections.
+//! using `App::invoke_streaming`. This pattern is the foundation for building
+//! real-time web dashboards, SSE endpoints, or WebSocket connections without
+//! wiring `AppRunner` by hand.
 //!
 //! ## What This Example Shows
 //!
-//! 1. **Creating a streaming channel** - Using `tokio::sync::mpsc`
-//! 2. **Registering a ChannelSink** - Forwarding events to the channel
-//! 3. **Running a workflow** - While capturing events in real-time
-//! 4. **Consuming the stream** - Processing events as they arrive
+//! 1. **Invoking the workflow** - `App::invoke_streaming(initial_state)`
+//! 2. **Consuming events** - Convert `EventStream` into an async iterator
+//! 3. **Forwarding to clients** - Serialize events to JSON/SSE/WebSocket frames
+//! 4. **Awaiting completion** - Join the workflow handle for the final state
 //!
 //! ## Architecture
 //!
@@ -19,63 +20,43 @@
 //! └─────────────────┘                │
 //!                                    ▼
 //! ┌────────────────────────────────────────┐
-//! │  EventBus (broadcasts to all sinks)    │
+//! │  EventHub (broadcasts to all streams)  │
 //! └─────────┬──────────────────────────────┘
 //!           │
 //!           ├─────────────┐
 //!           ▼             ▼
-//!     StdOutSink     ChannelSink ──→ mpsc::channel ──→ Your Code
-//!     (terminal)     (streaming)
+//!     StdOutSink     EventStream ──→ Your Code / SSE / WebSocket
 //! ```
 //!
 //! ## Web Integration
 //!
-//! For Axum/HTTP integration, create the EventBus with ChannelSink and pass it
-//! to the AppRunner:
+//! For Axum/HTTP integration, convert the `EventStream` returned by
+//! `invoke_streaming` into SSE frames (see `demo7_axum_sse.rs`).
 //!
 //! ```ignore
-//! // With Axum (requires adding axum dependency):
 //! use axum::response::sse::{Event as SseEvent, Sse};
-//! use tokio_stream::wrappers::UnboundedReceiverStream;
+//! use futures_util::StreamExt;
 //!
-//! async fn stream_handler(
-//!     State(graph): State<Arc<App>>
-//! ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-//!     let (tx, rx) = mpsc::unbounded_channel();
-//!     
-//!     // Create EventBus with ChannelSink for this client
-//!     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-//!     
-//!     // Run workflow with custom EventBus using AppRunner
-//!     let graph_clone = graph.clone();
+//! async fn stream_handler(State(app): State<Arc<App>>) -> Sse<_> {
+//!     let (workflow, events) = app.invoke_streaming(initial_state).await;
+//!
 //!     tokio::spawn(async move {
-//!         let mut runner = AppRunner::with_options_and_bus(
-//!             Arc::try_unwrap(graph_clone).unwrap_or_else(|arc| (*arc).clone()),
-//!             CheckpointerType::InMemory,
-//!             false,
-//!             bus,
-//!             true,
-//!         ).await;
-//!         
-//!         let session_id = format!("client-{}", uuid::Uuid::new_v4());
-//!         let initial_state = VersionedState::new_with_user_message("...");
-//!         runner.create_session(session_id.clone(), initial_state).await.ok();
-//!         runner.run_until_complete(&session_id).await
+//!         if let Err(err) = workflow.await.and_then(|res| res) {
+//!             tracing::error!("workflow failed: {err}");
+//!         }
 //!     });
-//!     
-//!     // Stream events as Server-Sent Events
-//!     let stream = UnboundedReceiverStream::new(rx).map(|event| {
+//!
+//!     let sse_stream = events.into_async_stream().map(|event| {
 //!         Ok(SseEvent::default().json_data(event).unwrap())
 //!     });
-//!     Sse::new(stream)
+//!     Sse::new(sse_stream)
 //! }
 //! ```
 //!
 //! **Key Points:**
-//! - Each client connection gets its own `ChannelSink` and `EventBus`
-//! - Use `AppRunner::with_options_and_bus()` to inject the custom EventBus
-//! - The workflow runs in a background task while the stream is returned immediately
-//! - See `STREAMING_IMPLEMENTATION.md` for complete Axum examples
+//! - `App::invoke_streaming` handles the `AppRunner` boilerplate for you
+//! - `EventStream::into_async_stream` is ideal for SSE/WebSocket integrations
+//! - Drop-in convenience methods (`invoke_with_channel`, `invoke_with_sinks`) remain for simple scripts
 //!
 //! ## Run This Example
 //!
@@ -90,7 +71,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use weavegraph::{
-    event_bus::{ChannelSink, Event, EventBus},
+    channels::Channel,
+    event_bus::Event,
     graphs::GraphBuilder,
     message::Message,
     node::{Node, NodeContext, NodeError, NodePartial},

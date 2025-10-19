@@ -2,14 +2,16 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 use crate::channels::Channel;
+use crate::event_bus::{ChannelSink, EventBus, EventStream};
 use crate::message::*;
 use crate::node::*;
 use crate::reducers::ReducerRegistry;
 use crate::runtimes::runner::RunnerError;
-use crate::runtimes::{CheckpointerType, RuntimeConfig, SessionInit};
+use crate::runtimes::{AppRunner, CheckpointerType, RuntimeConfig, SessionInit};
 use crate::state::*;
 use crate::types::*;
 use crate::utils::collections::new_extra_map;
+use tokio::task::JoinHandle;
 use tracing::instrument;
 
 /// Orchestrates graph execution and applies reducers at barriers.
@@ -56,6 +58,100 @@ pub struct App {
     conditional_edges: Vec<crate::graphs::ConditionalEdge>,
     reducer_registry: ReducerRegistry,
     runtime_config: RuntimeConfig,
+}
+
+pub struct AppEventStream {
+    event_bus: EventBus,
+    event_stream: Option<EventStream>,
+}
+
+/// Handle for a streaming workflow invocation.
+pub struct InvocationHandle {
+    join_handle: Option<JoinHandle<Result<VersionedState, RunnerError>>>,
+}
+
+impl AppEventStream {
+    fn new(event_bus: EventBus, event_stream: EventStream) -> Self {
+        Self {
+            event_bus,
+            event_stream: Some(event_stream),
+        }
+    }
+
+    pub fn event_bus(&self) -> &EventBus {
+        &self.event_bus
+    }
+
+    pub fn event_stream(&mut self) -> &mut EventStream {
+        self.event_stream
+            .as_mut()
+            .expect("event stream already taken")
+    }
+
+    pub fn into_stream(mut self) -> EventStream {
+        self.event_stream
+            .take()
+            .expect("event stream already taken")
+    }
+
+    pub fn into_event_bus(self) -> EventBus {
+        self.event_bus
+    }
+
+    pub fn split(mut self) -> (EventBus, EventStream) {
+        let stream = self
+            .event_stream
+            .take()
+            .expect("event stream already taken");
+        (self.event_bus, stream)
+    }
+
+    pub fn into_blocking_iter(self) -> crate::event_bus::BlockingEventIter {
+        self.into_stream().into_blocking_iter()
+    }
+
+    pub fn into_async_stream(
+        self,
+    ) -> impl futures_util::stream::Stream<Item = crate::event_bus::Event> {
+        self.into_stream().into_async_stream()
+    }
+
+    pub async fn next_timeout(
+        &mut self,
+        duration: std::time::Duration,
+    ) -> Option<crate::event_bus::Event> {
+        self.event_stream().next_timeout(duration).await
+    }
+}
+
+impl InvocationHandle {
+    /// Abort the underlying workflow task. `join` will return a join error afterwards.
+    pub fn abort(&self) {
+        if let Some(handle) = &self.join_handle {
+            handle.abort();
+        }
+    }
+
+    /// Returns true if the underlying workflow task has completed or aborted.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join_handle
+            .as_ref()
+            .map(|h| h.is_finished())
+            .unwrap_or(true)
+    }
+
+    /// Await the workflow result.
+    pub async fn join(mut self) -> Result<VersionedState, RunnerError> {
+        let handle = self
+            .join_handle
+            .take()
+            .expect("join_handle already awaited");
+        match handle.await {
+            Ok(result) => result,
+            Err(err) => Err(RunnerError::Join(err)),
+        }
+    }
 }
 
 impl App {
@@ -127,6 +223,65 @@ impl App {
     #[must_use]
     pub fn runtime_config(&self) -> &RuntimeConfig {
         &self.runtime_config
+    }
+
+    /// Create a subscription to the configured event bus without starting execution.
+    #[must_use]
+    pub fn event_stream(&self) -> AppEventStream {
+        let event_bus = self.runtime_config.event_bus.build_event_bus();
+        let event_stream = event_bus.subscribe();
+        AppEventStream::new(event_bus, event_stream)
+    }
+
+    /// Invoke the workflow asynchronously while streaming events to the caller.
+    ///
+    /// Returns a join handle for the workflow outcome and an `EventStream` that yields
+    /// every event emitted during execution.
+    pub async fn invoke_streaming(
+        &self,
+        initial_state: VersionedState,
+    ) -> (InvocationHandle, EventStream) {
+        let checkpointer_type = self
+            .runtime_config
+            .checkpointer
+            .clone()
+            .unwrap_or(CheckpointerType::InMemory);
+
+        let event_handle = self.event_stream();
+        let (event_bus, event_stream) = event_handle.split();
+
+        let mut runner =
+            AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
+                .await;
+
+        let session_id = self
+            .runtime_config
+            .session_id
+            .clone()
+            .unwrap_or_else(|| "temp_invoke_session".to_string());
+
+        let join = tokio::spawn(async move {
+            let init_state = runner
+                .create_session(session_id.clone(), initial_state)
+                .await?;
+
+            if let SessionInit::Resumed { checkpoint_step } = init_state {
+                tracing::info!(
+                    session = %session_id,
+                    checkpoint_step,
+                    "Resuming session from checkpoint"
+                );
+            }
+
+            runner.run_until_complete(&session_id).await
+        });
+
+        (
+            InvocationHandle {
+                join_handle: Some(join),
+            },
+            event_stream,
+        )
     }
 
     /// Execute the entire workflow until completion or no nodes remain.
@@ -222,35 +377,8 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> Result<VersionedState, RunnerError> {
-        use crate::runtimes::AppRunner;
-
-        // Determine checkpointer type (default to InMemory if none supplied)
-        let checkpointer_type = self
-            .runtime_config
-            .checkpointer
-            .clone()
-            .unwrap_or(CheckpointerType::InMemory);
-
-        // Create async runner
-        let mut runner = AppRunner::new(self.clone(), checkpointer_type).await;
-
-        let session_id = self
-            .runtime_config
-            .session_id
-            .clone()
-            .unwrap_or_else(|| "temp_invoke_session".to_string());
-
-        let init_state = runner
-            .create_session(session_id.clone(), initial_state)
-            .await?;
-
-        if let SessionInit::Resumed { checkpoint_step } = init_state {
-            println!(
-                "Resuming session '{}' from checkpoint at step {}",
-                session_id, checkpoint_step
-            );
-        }
-        runner.run_until_complete(&session_id).await
+        let (handle, _events) = self.invoke_streaming(initial_state).await;
+        handle.join().await
     }
 
     /// Execute workflow with event streaming to a channel.
@@ -327,6 +455,13 @@ impl App {
     ///             Event::Diagnostic(de) => {
     ///                 println!("Diagnostic: {}", de.message());
     ///             }
+    ///             Event::LLM(llm) => {
+    ///                 println!(
+    ///                     "LLM stream {}: {}",
+    ///                     llm.stream_id().unwrap_or("default"),
+    ///                     llm.chunk()
+    ///                 );
+    ///             }
     ///         }
     ///         collected.push(event);
     ///     }
@@ -361,14 +496,13 @@ impl App {
         Result<VersionedState, RunnerError>,
         flume::Receiver<crate::event_bus::Event>,
     ) {
-        use crate::event_bus::{ChannelSink, EventBus};
-        use crate::runtimes::AppRunner;
-
         // Create channel for events
         let (tx, rx) = flume::unbounded();
 
-        // Create EventBus with ChannelSink only (no stdout spam)
-        let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
+        // Build configured event bus and add channel sink for streaming
+        let event_handle = self.event_stream();
+        event_handle.event_bus().add_sink(ChannelSink::new(tx));
+        let event_bus = event_handle.into_event_bus();
 
         // Determine checkpointer type
         let checkpointer_type = self
@@ -382,7 +516,7 @@ impl App {
             self.clone(),
             checkpointer_type,
             false, // autosave
-            bus,
+            event_bus,
             true, // start listener
         )
         .await;
@@ -507,13 +641,14 @@ impl App {
     pub async fn invoke_with_sinks(
         &self,
         initial_state: VersionedState,
-        sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
+        mut sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
     ) -> Result<VersionedState, RunnerError> {
-        use crate::event_bus::EventBus;
-        use crate::runtimes::AppRunner;
-
-        // Create EventBus with provided sinks
-        let bus = EventBus::with_sinks(sinks);
+        // Create EventBus from configuration and append provided sinks
+        let event_handle = self.event_stream();
+        for sink in sinks.drain(..) {
+            event_handle.event_bus().add_boxed_sink(sink);
+        }
+        let event_bus = event_handle.into_event_bus();
 
         // Determine checkpointer type
         let checkpointer_type = self
@@ -527,7 +662,7 @@ impl App {
             self.clone(),
             checkpointer_type,
             false, // autosave
-            bus,
+            event_bus,
             true, // start listener
         )
         .await;
