@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use tokio::{sync::oneshot, task};
 
 use super::emitter::EventEmitter;
-use super::hub::{EventHub, EventStream};
+use super::hub::{EventHub, EventHubMetrics, EventStream};
 use super::sink::{EventSink, StdOutSink};
 
 /// Central event broadcasting system for workflow execution events.
@@ -197,6 +197,11 @@ impl EventBus {
 
     pub fn get_emitter(&self) -> Arc<dyn EventEmitter> {
         Arc::new(self.hub.emitter())
+    }
+
+    /// Return current hub metrics (buffer capacity and cumulative drop count).
+    pub fn metrics(&self) -> EventHubMetrics {
+        self.hub.metrics()
     }
 
     pub fn subscribe(&self) -> EventStream {

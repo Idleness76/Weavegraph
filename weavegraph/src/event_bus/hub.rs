@@ -12,6 +12,15 @@ use tokio::time::timeout;
 use super::emitter::{EmitterError, EventEmitter};
 use super::event::Event;
 
+/// Snapshot of hub health for monitoring and diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventHubMetrics {
+    /// Maximum number of events buffered per subscriber before lag occurs.
+    pub capacity: usize,
+    /// Total count of events dropped due to slow subscribers.
+    pub dropped: usize,
+}
+
 #[derive(Debug)]
 pub struct EventHub {
     sender: RwLock<Option<Sender<Event>>>,
@@ -72,6 +81,13 @@ impl EventHub {
         self.dropped_events.load(Ordering::Relaxed)
     }
 
+    pub fn metrics(&self) -> EventHubMetrics {
+        EventHubMetrics {
+            capacity: self.capacity(),
+            dropped: self.dropped(),
+        }
+    }
+
     pub fn emitter(self: &Arc<Self>) -> HubEmitter {
         HubEmitter {
             hub: Arc::clone(self),
@@ -109,6 +125,12 @@ impl EventStream {
                 self.hub
                     .dropped_events
                     .fetch_add(missed as usize, Ordering::Relaxed);
+                tracing::warn!(
+                    target: "weavegraph::event_bus",
+                    missed,
+                    total_dropped = self.hub.dropped(),
+                    "event stream lagged; dropped events"
+                );
                 Err(broadcast::error::RecvError::Lagged(missed))
             }
             Err(err) => Err(err),
@@ -122,6 +144,12 @@ impl EventStream {
                 self.hub
                     .dropped_events
                     .fetch_add(missed as usize, Ordering::Relaxed);
+                tracing::warn!(
+                    target: "weavegraph::event_bus",
+                    missed,
+                    total_dropped = self.hub.dropped(),
+                    "event stream lagged; dropped events"
+                );
                 Err(broadcast::error::TryRecvError::Lagged(missed))
             }
             Err(err) => Err(err),
@@ -166,6 +194,12 @@ impl EventStream {
                                 Ok(event) => return Some((event, (receiver, hub.clone(), shutdown))),
                                 Err(broadcast::error::RecvError::Lagged(missed)) => {
                                     hub.dropped_events.fetch_add(missed as usize, Ordering::Relaxed);
+                                    tracing::warn!(
+                                        target: "weavegraph::event_bus",
+                                        missed,
+                                        total_dropped = hub.dropped_events.load(Ordering::Relaxed),
+                                        "event stream lagged; dropped events"
+                                    );
                                     continue;
                                 }
                                 Err(broadcast::error::RecvError::Closed) => return None,
@@ -177,6 +211,12 @@ impl EventStream {
                         Ok(event) => return Some((event, (receiver, hub.clone(), shutdown))),
                         Err(broadcast::error::RecvError::Lagged(missed)) => {
                             hub.dropped_events.fetch_add(missed as usize, Ordering::Relaxed);
+                            tracing::warn!(
+                                target: "weavegraph::event_bus",
+                                missed,
+                                total_dropped = hub.dropped_events.load(Ordering::Relaxed),
+                                "event stream lagged; dropped events"
+                            );
                             continue;
                         }
                         Err(broadcast::error::RecvError::Closed) => return None,

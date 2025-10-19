@@ -1,8 +1,15 @@
+use chrono::Utc;
 use futures_util::{pin_mut, StreamExt};
+use proptest::prelude::*;
+use rustc_hash::FxHashMap;
+use serde_json::{Number, Value};
 use std::sync::Arc;
 use std::time::Duration;
 use weavegraph::channels::Channel;
-use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
+use weavegraph::event_bus::{
+    ChannelSink, Event, EventBus, EventEmitter, LLMStreamingEvent, MemorySink, NodeEvent,
+    STREAM_END_SCOPE,
+};
 
 #[tokio::test]
 async fn stop_listener_flushes_pending_events() {
@@ -316,7 +323,6 @@ async fn event_stream_closes_when_bus_dropped() {
 async fn invoke_streaming_emits_terminal_event() {
     use async_trait::async_trait;
     use futures_util::StreamExt;
-    use weavegraph::event_bus::STREAM_END_SCOPE;
     use weavegraph::graphs::GraphBuilder;
     use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
     use weavegraph::state::{StateSnapshot, VersionedState};
@@ -356,4 +362,108 @@ async fn invoke_streaming_emits_terminal_event() {
     let events = collector.await.expect("collector join");
     let end_event = events.last().expect("at least one terminal event");
     assert_eq!(end_event.scope_label(), Some(STREAM_END_SCOPE));
+}
+
+#[tokio::test]
+async fn event_hub_metrics_track_drops() {
+    use tokio::sync::broadcast::error::RecvError;
+    use weavegraph::event_bus::EventHub;
+
+    let hub = EventHub::new(1);
+    let emitter = hub.emitter();
+    let mut stream = hub.subscribe();
+
+    emitter
+        .emit(Event::diagnostic("metrics", "first"))
+        .expect("emit first event");
+    emitter
+        .emit(Event::diagnostic("metrics", "second"))
+        .expect("emit second event");
+
+    let missed = match stream.recv().await {
+        Err(RecvError::Lagged(missed)) => missed,
+        Ok(event) => {
+            panic!("expected lagged error, received event: {:?}", event);
+        }
+        Err(err) => panic!("unexpected recv error: {err:?}"),
+    };
+
+    assert_eq!(missed, 1);
+
+    let metrics = hub.metrics();
+    assert_eq!(metrics.capacity, 1);
+    assert_eq!(metrics.dropped, 1);
+}
+
+#[test]
+fn event_bus_metrics_expose_capacity() {
+    let bus = EventBus::default();
+    let metrics = bus.metrics();
+    assert_eq!(metrics.capacity, 1024);
+    assert_eq!(metrics.dropped, 0);
+}
+
+fn text_strategy() -> impl Strategy<Value = String> {
+    proptest::string::string_regex("[A-Za-z0-9 _-]{0,32}").unwrap()
+}
+
+fn json_value_strategy() -> impl Strategy<Value = Value> {
+    prop_oneof![
+        Just(Value::Null),
+        text_strategy().prop_map(Value::String),
+        any::<bool>().prop_map(Value::Bool),
+        prop::num::f64::NORMAL.prop_map(|f| {
+            Number::from_f64(f).map_or(Value::Number(Number::from(0)), Value::Number)
+        }),
+    ]
+}
+
+fn event_strategy() -> impl Strategy<Value = Event> {
+    let diagnostic = (text_strategy(), text_strategy())
+        .prop_map(|(scope, message)| Event::diagnostic(scope, message));
+
+    let node = (
+        prop::option::of(text_strategy()),
+        prop::option::of(any::<u64>()),
+        text_strategy(),
+        text_strategy(),
+    )
+        .prop_map(|(node_id, step, scope, message)| {
+            Event::Node(NodeEvent::new(node_id, step, scope, message))
+        });
+
+    let llm = (
+        prop::option::of(text_strategy()),
+        prop::option::of(text_strategy()),
+        prop::option::of(text_strategy()),
+        text_strategy(),
+        prop::collection::hash_map(text_strategy(), json_value_strategy(), 0..4),
+        any::<bool>(),
+    )
+        .prop_map(
+            |(session_id, node_id, stream_id, chunk, metadata, is_final)| {
+                let meta: FxHashMap<String, Value> = metadata.into_iter().collect();
+                let event = LLMStreamingEvent::new(
+                    session_id,
+                    node_id,
+                    stream_id,
+                    chunk,
+                    is_final,
+                    meta,
+                    Utc::now(),
+                );
+                Event::LLM(event)
+            },
+        );
+
+    prop_oneof![diagnostic, node, llm]
+}
+
+proptest! {
+    #[test]
+    fn event_serialization_roundtrip(event in event_strategy()) {
+        let json = serde_json::to_string(&event).expect("serialize");
+        let decoded: Event = serde_json::from_str(&json).expect("deserialize");
+        prop_assert_eq!(decoded, event);
+    }
 }

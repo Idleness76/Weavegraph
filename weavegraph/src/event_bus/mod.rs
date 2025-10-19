@@ -6,6 +6,6 @@ pub mod sink;
 
 pub use bus::EventBus;
 pub use emitter::{EmitterError, EventEmitter};
-pub use event::{Event, STREAM_END_SCOPE};
-pub use hub::{BlockingEventIter, EventHub, EventStream, HubEmitter};
+pub use event::{Event, LLMStreamingEvent, NodeEvent, STREAM_END_SCOPE};
+pub use hub::{BlockingEventIter, EventHub, EventHubMetrics, EventStream, HubEmitter};
 pub use sink::{ChannelSink, EventSink, MemorySink, StdOutSink};

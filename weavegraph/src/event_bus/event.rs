@@ -2,11 +2,12 @@ use std::fmt;
 
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const STREAM_END_SCOPE: &str = "__weavegraph_stream_end__";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Event {
     Node(NodeEvent),
     Diagnostic(DiagnosticEvent),
@@ -83,7 +84,7 @@ impl fmt::Display for Event {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NodeEvent {
     node_id: Option<String>,
     step: Option<u64>,
@@ -118,7 +119,7 @@ impl NodeEvent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiagnosticEvent {
     scope: String,
     message: String,
@@ -134,7 +135,7 @@ impl DiagnosticEvent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LLMStreamingEvent {
     session_id: Option<String>,
     node_id: Option<String>,
