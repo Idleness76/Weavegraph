@@ -223,10 +223,15 @@ impl EventBus {
             entry.stop_worker().await;
         }
     }
+
+    pub fn close_channel(&self) {
+        self.hub.close();
+    }
 }
 
 impl Drop for EventBus {
     fn drop(&mut self) {
+        self.hub.close();
         if self.started.load(Ordering::SeqCst) {
             if let Ok(mut sinks) = self.sinks.lock() {
                 for entry in sinks.iter_mut() {
