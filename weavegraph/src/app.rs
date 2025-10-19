@@ -307,6 +307,7 @@ impl App {
     /// use weavegraph::event_bus::STREAM_END_SCOPE;
     /// # async fn run(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
     /// let (handle, events) = app.invoke_streaming(state).await;
+    /// let mut handle_slot = Some(handle);
     ///
     /// let mut events = events.into_async_stream();
     /// tokio::spawn(async move {
@@ -318,10 +319,22 @@ impl App {
     /// });
     ///
     /// tokio::select! {
-    ///     result = handle.join() => { result?; }
+    ///     result = async {
+    ///         handle_slot
+    ///             .take()
+    ///             .expect("join branch must own the handle")
+    ///             .join()
+    ///             .await
+    ///     } => {
+    ///         if let Err(err) = result {
+    ///             tracing::error!("workflow failed: {err}");
+    ///         }
+    ///     }
     ///     _ = sleep(Duration::from_secs(30)) => {
     ///         tracing::warn!("cancelling run after timeout");
-    ///         handle.abort();
+    ///         if let Some(handle) = handle_slot.as_ref() {
+    ///             handle.abort();
+    ///         }
     ///     }
     /// }
     /// # Ok(())

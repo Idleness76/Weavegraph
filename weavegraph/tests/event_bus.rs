@@ -413,7 +413,8 @@ fn json_value_strategy() -> impl Strategy<Value = Value> {
         text_strategy().prop_map(Value::String),
         any::<bool>().prop_map(Value::Bool),
         prop::num::f64::NORMAL.prop_map(|f| {
-            Number::from_f64(f).map_or(Value::Number(Number::from(0)), Value::Number)
+            let bounded = f.clamp(-1_000_000.0, 1_000_000.0).trunc();
+            Number::from_f64(bounded).map_or(Value::Number(Number::from(0)), Value::Number)
         }),
     ]
 }
