@@ -69,10 +69,12 @@ use flume;
 use miette::{self, IntoDiagnostic, Result};
 use serde_json::json;
 use std::sync::Arc;
+use tokio::signal;
 
 use weavegraph::{
     channels::Channel,
     event_bus::Event,
+    event_bus::STREAM_END_SCOPE,
     graphs::GraphBuilder,
     message::Message,
     node::{Node, NodeContext, NodeError, NodePartial},
@@ -201,6 +203,15 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 let _ = tx.send(Event::diagnostic("workflow", format!("Error: {e}")));
+            }
+
+            if matches!(event, Event::LLM(llm) if llm.is_final()) {
+                println!("💡 received final LLM chunk");
+            }
+
+            if event.scope_label() == Some(STREAM_END_SCOPE) {
+                println!("✅ workflow stream finished");
+                break;
             }
         }
     });

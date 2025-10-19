@@ -80,13 +80,19 @@ async fn stream_workflow(
     let initial_state =
         VersionedState::new_with_user_message("Stream this workflow's progress over SSE.");
     let (invocation, event_stream) = app.invoke_streaming(initial_state).await;
+    let invocation = Arc::new(tokio::sync::Mutex::new(Some(invocation)));
 
-    tokio::spawn(async move {
-        match invocation.join().await {
-            Ok(_) => tracing::info!("workflow completed"),
-            Err(err) => tracing::error!("workflow error: {err:?}"),
-        }
-    });
+    {
+        let invocation = Arc::clone(&invocation);
+        tokio::spawn(async move {
+            if let Some(handle) = invocation.lock().await.take() {
+                match handle.join().await {
+                    Ok(_) => tracing::info!("workflow completed"),
+                    Err(err) => tracing::error!("workflow error: {err:?}"),
+                }
+            }
+        });
+    }
 
     let sse_stream = event_stream.into_async_stream().map(|event| {
         let event_type = match &event {
@@ -94,6 +100,13 @@ async fn stream_workflow(
             weavegraph::event_bus::Event::Diagnostic(_) => "diagnostic",
             weavegraph::event_bus::Event::LLM(_) => "llm",
         };
+        if let weavegraph::event_bus::Event::LLM(llm) = &event {
+            tracing::debug!(
+                stream = %llm.stream_id().unwrap_or("default"),
+                final_chunk = llm.is_final(),
+                "forwarding LLM token"
+            );
+        }
         let payload = json!({
             "type": event_type,
             "scope": event.scope_label(),
@@ -103,7 +116,15 @@ async fn stream_workflow(
         Ok(SseEvent::default().json_data(payload).unwrap())
     });
 
-    Sse::new(sse_stream)
+    Sse::new(sse_stream).on_close({
+        let invocation = Arc::clone(&invocation);
+        async move {
+            if let Some(handle) = invocation.lock().await.take() {
+                tracing::info!("client disconnected, aborting workflow");
+                handle.abort();
+            }
+        }
+    })
 }
 
 #[tokio::main]
