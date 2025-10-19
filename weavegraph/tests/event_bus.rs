@@ -1,6 +1,7 @@
 use futures_util::{pin_mut, StreamExt};
 use std::sync::Arc;
 use std::time::Duration;
+use weavegraph::channels::Channel;
 use weavegraph::event_bus::{ChannelSink, Event, EventBus, MemorySink};
 
 #[tokio::test]
@@ -290,4 +291,69 @@ async fn blocking_iterator_receives_events() {
     let event = handle.await.expect("join").expect("event");
     assert_eq!(event.message(), "iter");
     assert_eq!(event.scope_label(), Some("blocking"));
+}
+
+#[tokio::test]
+async fn event_stream_closes_when_bus_dropped() {
+    use std::time::Duration;
+
+    let mut stream = {
+        let bus = EventBus::with_sink(MemorySink::new());
+        bus.listen_for_events();
+        bus.subscribe()
+    };
+
+    assert!(
+        stream
+            .next_timeout(Duration::from_millis(50))
+            .await
+            .is_none(),
+        "expected broadcast stream to close after EventBus drop"
+    );
+}
+
+#[tokio::test]
+async fn invoke_streaming_emits_terminal_event() {
+    use async_trait::async_trait;
+    use futures_util::StreamExt;
+    use weavegraph::event_bus::STREAM_END_SCOPE;
+    use weavegraph::graphs::GraphBuilder;
+    use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
+    use weavegraph::state::{StateSnapshot, VersionedState};
+    use weavegraph::types::NodeKind;
+
+    struct TerminalNode;
+
+    #[async_trait]
+    impl Node for TerminalNode {
+        async fn run(&self, _: StateSnapshot, _: NodeContext) -> Result<NodePartial, NodeError> {
+            Ok(NodePartial::default())
+        }
+    }
+
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("terminal".into()), TerminalNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("terminal".into()))
+        .add_edge(NodeKind::Custom("terminal".into()), NodeKind::End)
+        .compile()
+        .expect("graph");
+
+    let initial = VersionedState::new_with_user_message("finish");
+    let (handle, event_stream) = app.invoke_streaming(initial).await;
+
+    let collector = tokio::spawn(async move {
+        let mut collected = Vec::new();
+        let mut stream = event_stream.into_async_stream();
+        while let Some(event) = stream.next().await {
+            collected.push(event);
+        }
+        collected
+    });
+
+    let final_state = handle.join().await.expect("workflow");
+    assert_eq!(final_state.messages.snapshot().len(), 1);
+
+    let events = collector.await.expect("collector join");
+    let end_event = events.last().expect("at least one terminal event");
+    assert_eq!(end_event.scope_label(), Some(STREAM_END_SCOPE));
 }
