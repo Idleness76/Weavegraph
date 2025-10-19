@@ -65,6 +65,11 @@ pub struct AppEventStream {
     event_stream: Option<EventStream>,
 }
 
+/// Handle for a streaming workflow invocation.
+pub struct InvocationHandle {
+    join_handle: Option<JoinHandle<Result<VersionedState, RunnerError>>>,
+}
+
 impl AppEventStream {
     fn new(event_bus: EventBus, event_stream: EventStream) -> Self {
         Self {
@@ -116,6 +121,36 @@ impl AppEventStream {
         duration: std::time::Duration,
     ) -> Option<crate::event_bus::Event> {
         self.event_stream().next_timeout(duration).await
+    }
+}
+
+impl InvocationHandle {
+    /// Abort the underlying workflow task. `join` will return a join error afterwards.
+    pub fn abort(&self) {
+        if let Some(handle) = &self.join_handle {
+            handle.abort();
+        }
+    }
+
+    /// Returns true if the underlying workflow task has completed or aborted.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join_handle
+            .as_ref()
+            .map(|h| h.is_finished())
+            .unwrap_or(true)
+    }
+
+    /// Await the workflow result.
+    pub async fn join(mut self) -> Result<VersionedState, RunnerError> {
+        let handle = self
+            .join_handle
+            .take()
+            .expect("join_handle already awaited");
+        match handle.await {
+            Ok(result) => result,
+            Err(err) => Err(RunnerError::Join(err)),
+        }
     }
 }
 
@@ -205,7 +240,7 @@ impl App {
     pub async fn invoke_streaming(
         &self,
         initial_state: VersionedState,
-    ) -> (JoinHandle<Result<VersionedState, RunnerError>>, EventStream) {
+    ) -> (InvocationHandle, EventStream) {
         let checkpointer_type = self
             .runtime_config
             .checkpointer
@@ -241,7 +276,12 @@ impl App {
             runner.run_until_complete(&session_id).await
         });
 
-        (join, event_stream)
+        (
+            InvocationHandle {
+                join_handle: Some(join),
+            },
+            event_stream,
+        )
     }
 
     /// Execute the entire workflow until completion or no nodes remain.
@@ -337,12 +377,8 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> Result<VersionedState, RunnerError> {
-        let (handle, event_stream) = self.invoke_streaming(initial_state).await;
-        drop(event_stream);
-        match handle.await {
-            Ok(result) => result,
-            Err(err) => panic!("App invocation task panicked: {err}"),
-        }
+        let (handle, _events) = self.invoke_streaming(initial_state).await;
+        handle.join().await
     }
 
     /// Execute workflow with event streaming to a channel.

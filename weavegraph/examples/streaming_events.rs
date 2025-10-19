@@ -160,11 +160,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // 4. Wait for the workflow to finish and surface the result
-    let final_state = match workflow_handle.await {
-        Ok(Ok(state)) => state,
-        Ok(Err(err)) => return Err(err.into()),
-        Err(err) => return Err(err.into()),
-    };
+    let final_state = workflow_handle
+        .join()
+        .await
+        .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
 
     let _ = printer.await;
 

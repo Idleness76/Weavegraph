@@ -29,10 +29,10 @@ Use [`App::invoke_streaming`](../../src/app.rs) to launch the workflow and get a
 
 ```rust
 let initial = VersionedState::new_with_user_message("Stream me");
-let (workflow, events) = app.invoke_streaming(initial).await;
+let (invocation, events) = app.invoke_streaming(initial).await;
 
 tokio::spawn(async move {
-    if let Err(err) = workflow.await.and_then(|res| res) {
+    if let Err(err) = invocation.join().await {
         tracing::error!("workflow failed: {err}");
     }
 });
@@ -71,7 +71,7 @@ This demonstrates the core pattern without requiring additional dependencies.
 `EventStream` represents the broadcast output of the EventBus. Convert it to different consumption styles:
 
 ```rust
-let (workflow, events) = app.invoke_streaming(initial_state).await;
+let (invocation, events) = app.invoke_streaming(initial_state).await;
 
 // Async iterator (SSE/WebSocket)
 let mut stream = events.into_async_stream();
@@ -99,10 +99,10 @@ let (result, events) = app.invoke_with_channel(initial_state).await;
 ### Pattern for HTTP Streaming (Axum Example)
 
 ```rust
-let (workflow, events) = app.invoke_streaming(initial_state).await;
+let (invocation, events) = app.invoke_streaming(initial_state).await;
 
 tokio::spawn(async move {
-    if let Err(err) = workflow.await.and_then(|res| res) {
+    if let Err(err) = invocation.join().await {
         tracing::error!("workflow failed: {err}");
     }
 });

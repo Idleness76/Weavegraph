@@ -221,22 +221,22 @@ The refactor is feature-complete and covered by tests, but a few clarity, docume
 
 ### A. API Clarity & Ergonomics
 
-1. **`App::invoke_streaming` handle** — *needs refinement*  
-   - Provide a dedicated `InvocationHandle` struct with `join()`, `cancel()`, and `events()` methods instead of returning a bare `JoinHandle`.  
-   - Ensure `join()` never panics: convert task panics into `InvocationError::Join` and propagate gracefully.  
-   - Document cancellation semantics (dropping the handle vs. dropping the stream) and add rustdoc examples.
-2. **`EventStream::into_async_stream` signature** — *needs refinement*  
-   - Return `Pin<Box<dyn Stream<Item = Event> + Send>>` so consumers no longer need to `pin!` or `boxed()`.  
-   - Update examples/tests after the signature change and note in docs that the stream is `Send`.
+1. **`App::invoke_streaming` handle** — *in-progress*  
+   - ✅ Implemented `InvocationHandle::join`, `abort`, and `is_finished`; `join` surfaces `RunnerError::Join` instead of panicking.  
+   - ⬜ Document cancellation semantics (dropping the handle vs. dropping the stream) and add rustdoc examples.  
+   - ⬜ Consider exposing a scoped cancellation token instead of `abort` for finer control.  
+2. **`EventStream::into_async_stream` signature** — *complete*  
+   - Returns `BoxStream<'static, Event>`; callers get a `Send` stream without manual boxing/pinning.  
+   - Examples updated to rely directly on the boxed stream.
 3. **`AppRunner::event_stream` guard** — *production ready (stub)*  
    - Panic on double subscription already covered by tests; no action required.
 
 ### B. Code Cleanliness & Idiomatic Usage
 
-1. **Examples (`streaming_events.rs`, `demo7_axum_sse.rs`)** — *needs cleanup*  
-   - Refactor JSON logging into helper returning `Result<()>` to avoid manual `eprintln!` fallbacks.  
-   - Demonstrate optional cancellation using `tokio::select!` (e.g., stop streaming when client disconnects).  
-   - Highlight `Event::LLM` handling in comments for consumers.
+1. **Examples (`streaming_events.rs`, `demo7_axum_sse.rs`)** — *in-progress*  
+   - ✅ Updated to call `invoke_streaming` + `InvocationHandle::join`; JSON logging simplified.  
+   - ⬜ Demonstrate optional cancellation using `tokio::select!` (e.g., stop streaming when client disconnects).  
+   - ⬜ Highlight `Event::LLM` handling in comments for consumers.
 2. **App rustdoc** — *needs documentation*  
    - Expand rustdoc for `AppEventStream` and `invoke_streaming` with async + blocking usage snippets.  
    - Link rustdoc examples to the Axum demo and CLI streaming example.

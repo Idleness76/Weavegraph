@@ -304,10 +304,10 @@ Use [`App::invoke_streaming`](weavegraph/src/app.rs) to run a workflow while str
 
 ```rust
 let initial = VersionedState::new_with_user_message("Live stream this workflow");
-let (workflow, events) = app.invoke_streaming(initial).await;
+let (invocation, events) = app.invoke_streaming(initial).await;
 
 tokio::spawn(async move {
-    if let Err(err) = workflow.await.and_then(|res| res) {
+    if let Err(err) = invocation.join().await {
         tracing::error!("workflow failed: {err}");
     }
 });

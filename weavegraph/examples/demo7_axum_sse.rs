@@ -79,13 +79,12 @@ async fn stream_workflow(
 ) -> Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>> {
     let initial_state =
         VersionedState::new_with_user_message("Stream this workflow's progress over SSE.");
-    let (join_handle, event_stream) = app.invoke_streaming(initial_state).await;
+    let (invocation, event_stream) = app.invoke_streaming(initial_state).await;
 
     tokio::spawn(async move {
-        match join_handle.await {
-            Ok(Ok(_)) => tracing::info!("workflow completed"),
-            Ok(Err(err)) => tracing::error!("workflow error: {err:?}"),
-            Err(err) => tracing::error!("workflow task panicked: {err:?}"),
+        match invocation.join().await {
+            Ok(_) => tracing::info!("workflow completed"),
+            Err(err) => tracing::error!("workflow error: {err:?}"),
         }
     });
 

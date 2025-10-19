@@ -14,6 +14,7 @@ use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::task::JoinError;
 use tracing::instrument;
 
 /// Result of executing one superstep in a session.
@@ -202,6 +203,10 @@ pub enum RunnerError {
     #[error("unexpected pause during run_until_complete")]
     #[diagnostic(code(weavegraph::runner::unexpected_pause))]
     UnexpectedPause,
+
+    #[error("workflow task join error: {0}")]
+    #[diagnostic(code(weavegraph::runner::join))]
+    Join(#[from] JoinError),
 
     #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::checkpointer))]

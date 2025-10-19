@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::stream;
+use futures_util::stream::{self, BoxStream, StreamExt};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::time::timeout;
 
@@ -114,16 +114,23 @@ impl EventStream {
         }
     }
 
-    pub fn into_async_stream(self) -> impl futures_util::stream::Stream<Item = Event> {
+    pub fn into_async_stream(self) -> BoxStream<'static, Event> {
         stream::unfold(self, |mut stream| async move {
             loop {
                 match stream.recv().await {
                     Ok(event) => return Some((event, stream)),
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Lagged(missed)) => {
+                        stream
+                            .hub
+                            .dropped_events
+                            .fetch_add(missed as usize, Ordering::Relaxed);
+                        continue;
+                    }
                     Err(broadcast::error::RecvError::Closed) => return None,
                 }
             }
         })
+        .boxed()
     }
 
     pub async fn next_timeout(&mut self, duration: Duration) -> Option<Event> {
