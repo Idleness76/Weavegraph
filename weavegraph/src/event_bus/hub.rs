@@ -1,8 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::stream::{self, BoxStream, StreamExt};
+use parking_lot::RwLock;
 use tokio::sync::{
     broadcast::{self, Receiver, Sender},
     watch,
@@ -41,7 +42,7 @@ impl EventHub {
 
     pub fn publish(&self, event: Event) -> Result<(), EmitterError> {
         let maybe_sender = {
-            let guard = self.sender.read().unwrap();
+            let guard = self.sender.read();
             guard.as_ref().cloned()
         };
         match maybe_sender {
@@ -58,7 +59,7 @@ impl EventHub {
 
     pub fn subscribe(self: &Arc<Self>) -> EventStream {
         let maybe_receiver = {
-            let guard = self.sender.read().unwrap();
+            let guard = self.sender.read();
             guard.as_ref().cloned().map(|sender| sender.subscribe())
         };
         let receiver = maybe_receiver.unwrap_or_else(|| {
@@ -95,7 +96,7 @@ impl EventHub {
     }
 
     pub fn close(&self) {
-        let _ = self.sender.write().unwrap().take();
+        let _ = self.sender.write().take();
     }
 }
 
