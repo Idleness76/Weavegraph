@@ -313,25 +313,19 @@ let initial = VersionedState::new_with_user_message("Live stream this workflow")
 let (invocation, events) = app.invoke_streaming(initial).await;
 let invocation = Arc::new(Mutex::new(Some(invocation)));
 
-let mut stream = events.into_async_stream();
 let sse_stream = async_stream::stream! {
+    let mut stream = events.into_async_stream();
     while let Some(event) = stream.next().await {
-        let payload = SseEvent::default().json_data(event.clone()).unwrap();
-        yield Ok::<_, std::convert::Infallible>(payload);
+        yield Ok::<SseEvent, std::convert::Infallible>(
+            SseEvent::default().json_data(event.clone()).unwrap()
+        );
         if event.scope_label() == Some(STREAM_END_SCOPE) {
             break;
         }
     }
 };
 
-let response = Sse::new(sse_stream).on_close({
-    let invocation = Arc::clone(&invocation);
-    async move {
-        if let Some(handle) = invocation.lock().await.take() {
-            handle.abort();
-        }
-    }
-});
+let response = Sse::new(sse_stream);
 
 tokio::spawn({
     let invocation = Arc::clone(&invocation);
@@ -364,6 +358,39 @@ response
 ```
 
 See `cargo run --example demo7_axum_sse` for an Axum SSE demo that requires no direct interaction with `AppRunner`. The event stream closes once the sentinel diagnostic with scope `STREAM_END_SCOPE` is received.
+
+#### Pre-Invocation Event Subscription
+
+Need to add sinks or instrumentation before the workflow starts? Call [`App::event_stream`](weavegraph/src/app.rs) to obtain an `AppEventStream` handle, configure the bus, and then drive execution with `AppRunner::with_options_and_bus`:
+
+```rust,no_run
+use futures_util::StreamExt;
+use weavegraph::event_bus::{Event, MemorySink};
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+
+let mut handle = app.event_stream();
+handle.event_bus().add_sink(MemorySink::new());
+
+let (event_bus, event_stream) = handle.split();
+let mut runner = AppRunner::with_options_and_bus(
+    app.clone(),
+    CheckpointerType::InMemory,
+    false,
+    event_bus,
+    true,
+).await;
+
+tokio::spawn(async move {
+    let mut stream = event_stream.into_async_stream();
+    while let Some(event) = stream.next().await {
+        if matches!(event, Event::LLM(llm) if llm.is_final()) {
+            tracing::info!("final streaming chunk delivered");
+        }
+    }
+});
+```
+
+The helper constructors described in the [event bus migration guide](docs/event_bus_migration.md) (`RuntimeConfig::with_event_bus`, `EventBusConfig::with_memory_sink`, etc.) pair nicely with this approach when you want to declare sinks and buffer capacities up front.
 
 #### Production Pattern (Web Servers)
 

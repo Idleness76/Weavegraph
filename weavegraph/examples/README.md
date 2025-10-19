@@ -13,6 +13,7 @@ This directory contains examples demonstrating various Weavegraph features and p
 | `demo4.rs` | Advanced patterns | Complex workflows |
 | `demo5_rag.rs` | RAG pipeline | Document processing, retrieval |
 | `demo6_agent_mcp.rs` | LLM agent with MCP | Tool calling, streaming responses |
+| `demo7_axum_sse.rs` | SSE streaming | Axum SSE streaming with cancellation hooks |
 | `streaming_events.rs` | **Event streaming** | **ChannelSink, AppRunner, web integration** |
 | `convenience_streaming.rs` | **Simple streaming** | **NEW: invoke_with_channel(), invoke_with_sinks()** |
 | `cap_demo.rs` | CAP framework | Structured outputs |
@@ -50,7 +51,7 @@ cargo run --example streaming_events
 - ✅ Using `AppRunner::with_options_and_bus()` instead of `App.invoke()`
 - ✅ Creating custom `EventBus` with `ChannelSink`
 - ✅ Per-request event isolation in web servers
-- ✅ SSE/WebSocket integration patterns
+- ✅ HTTP streaming integration patterns (Axum JSON lines)
 
 **Documentation:**
 - See `STREAMING_QUICKSTART.md` for a quick guide
@@ -205,7 +206,7 @@ runner.create_session(session_id.clone(), initial_state).await?;
 runner.run_until_complete(&session_id).await?;
 ```
 
-**Use this for:** Web servers with SSE/WebSocket, per-request event isolation
+**Use this for:** Web servers with streaming responses (JSON Lines/SSE/WebSocket), per-request event isolation
 
 ### When to Use Which Pattern
 
@@ -214,7 +215,7 @@ runner.run_until_complete(&session_id).await?;
 | Simple script | `invoke()` | No streaming needed |
 | CLI with progress | `invoke_with_channel()` ⭐NEW | Simple, one-shot streaming |
 | Multiple sinks | `invoke_with_sinks()` ⭐NEW | Need stdout + channel + file |
-| Web server (SSE/WebSocket) | `AppRunner::with_options_and_bus()` | Per-request isolation required |
+| Web server (streaming) | `AppRunner::with_options_and_bus()` | Per-request isolation required |
 | Shared app, many clients | `AppRunner::with_options_and_bus()` | One App, many runners |
 
 ### Per-Request Isolation (Web Server)
