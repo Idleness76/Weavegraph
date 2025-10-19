@@ -14,8 +14,6 @@ pub trait EventEmitter: Send + Sync + fmt::Debug {
 pub enum EmitterError {
     #[error("event hub closed")]
     Closed,
-    #[error("event lag exceeded buffer; dropped {0} messages")]
-    Lagged(usize),
     #[error("event emission failed: {0}")]
     Other(String),
 }

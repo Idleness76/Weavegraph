@@ -536,12 +536,14 @@ impl AppRunner {
     /// Subscribe to the underlying event stream.
     ///
     /// Returns a handle that yields events as they are emitted by workflow nodes.
-    pub fn event_stream(&mut self) -> EventStream {
+    /// Subsequent calls after the first return `None` until the stream is
+    /// finalized (e.g., when a session completes and the runner resets the flag).
+    pub fn event_stream(&mut self) -> Option<EventStream> {
         if self.event_stream_taken {
-            panic!("event stream already requested for this runner");
+            return None;
         }
         self.event_stream_taken = true;
-        self.event_bus.subscribe()
+        Some(self.event_bus.subscribe())
     }
 
     /// Initialize a new session with the given initial state

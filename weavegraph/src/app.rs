@@ -11,6 +11,9 @@ use crate::runtimes::{AppRunner, CheckpointerType, RuntimeConfig, SessionInit};
 use crate::state::*;
 use crate::types::*;
 use crate::utils::collections::new_extra_map;
+use crate::utils::id_generator::IdGenerator;
+use futures_util::stream::BoxStream;
+use thiserror::Error;
 use tokio::task::JoinHandle;
 use tracing::instrument;
 
@@ -70,6 +73,14 @@ pub struct AppEventStream {
     event_stream: Option<EventStream>,
 }
 
+#[derive(Debug, Error)]
+pub enum AppEventStreamError {
+    #[error("event stream has already been taken")]
+    AlreadyTaken,
+}
+
+type AppEventStreamResult<T> = Result<T, AppEventStreamError>;
+
 /// Handle for a streaming workflow invocation.
 ///
 /// Dropping the handle aborts the workflow task. Use [`join`](InvocationHandle::join)
@@ -93,17 +104,17 @@ impl AppEventStream {
     }
 
     /// Mutable access to the underlying broadcast subscription.
-    pub fn event_stream(&mut self) -> &mut EventStream {
+    pub fn event_stream(&mut self) -> AppEventStreamResult<&mut EventStream> {
         self.event_stream
             .as_mut()
-            .expect("event stream already taken")
+            .ok_or(AppEventStreamError::AlreadyTaken)
     }
 
     /// Consume the handle and return the raw event stream.
-    pub fn into_stream(mut self) -> EventStream {
+    pub fn into_stream(mut self) -> AppEventStreamResult<EventStream> {
         self.event_stream
             .take()
-            .expect("event stream already taken")
+            .ok_or(AppEventStreamError::AlreadyTaken)
     }
 
     /// Consume the handle and return the event bus.
@@ -112,32 +123,32 @@ impl AppEventStream {
     }
 
     /// Split the handle into the bus and event stream.
-    pub fn split(mut self) -> (EventBus, EventStream) {
+    pub fn split(mut self) -> AppEventStreamResult<(EventBus, EventStream)> {
         let stream = self
             .event_stream
             .take()
-            .expect("event stream already taken");
-        (self.event_bus, stream)
+            .ok_or(AppEventStreamError::AlreadyTaken)?;
+        Ok((self.event_bus, stream))
     }
 
     /// Consume and convert the stream into a blocking iterator.
-    pub fn into_blocking_iter(self) -> crate::event_bus::BlockingEventIter {
-        self.into_stream().into_blocking_iter()
+    pub fn into_blocking_iter(self) -> AppEventStreamResult<crate::event_bus::BlockingEventIter> {
+        Ok(self.into_stream()?.into_blocking_iter())
     }
 
     /// Consume and convert the stream into an async iterator.
     pub fn into_async_stream(
         self,
-    ) -> impl futures_util::stream::Stream<Item = crate::event_bus::Event> {
-        self.into_stream().into_async_stream()
+    ) -> AppEventStreamResult<BoxStream<'static, crate::event_bus::Event>> {
+        Ok(self.into_stream()?.into_async_stream())
     }
 
     /// Await the next event with a timeout, skipping lag notifications.
     pub async fn next_timeout(
         &mut self,
         duration: std::time::Duration,
-    ) -> Option<crate::event_bus::Event> {
-        self.event_stream().next_timeout(duration).await
+    ) -> AppEventStreamResult<Option<crate::event_bus::Event>> {
+        Ok(self.event_stream()?.next_timeout(duration).await)
     }
 }
 
@@ -258,7 +269,9 @@ impl App {
     /// # async fn example(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
     /// let mut handle = app.event_stream();
     /// handle.event_bus().add_sink(MemorySink::new());
-    /// let (event_bus, event_stream) = handle.split();
+    /// let (event_bus, event_stream) = handle
+    ///     .split()
+    ///     .expect("fresh event stream handle should still own the stream");
     ///
     /// let mut runner = AppRunner::with_options_and_bus(
     ///     app.clone(),
@@ -354,7 +367,9 @@ impl App {
             .unwrap_or(CheckpointerType::InMemory);
 
         let event_handle = self.event_stream();
-        let (event_bus, event_stream) = event_handle.split();
+        let (event_bus, event_stream) = event_handle
+            .split()
+            .expect("fresh App::event_stream() should yield an unused event stream");
 
         let mut runner =
             AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
@@ -364,7 +379,7 @@ impl App {
             .runtime_config
             .session_id
             .clone()
-            .unwrap_or_else(|| "temp_invoke_session".to_string());
+            .unwrap_or_else(|| IdGenerator::new().generate_run_id());
 
         let join = tokio::spawn(async move {
             let init_state = runner
@@ -632,7 +647,7 @@ impl App {
             .runtime_config
             .session_id
             .clone()
-            .unwrap_or_else(|| "temp_invoke_session".to_string());
+            .unwrap_or_else(|| IdGenerator::new().generate_run_id());
 
         // Execute workflow
         let result = async move {
@@ -778,7 +793,7 @@ impl App {
             .runtime_config
             .session_id
             .clone()
-            .unwrap_or_else(|| "temp_invoke_session".to_string());
+            .unwrap_or_else(|| IdGenerator::new().generate_run_id());
 
         // Execute workflow
         let init_state = runner
