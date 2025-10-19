@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 
+pub const STREAM_END_SCOPE: &str = "__weavegraph_stream_end__";
+
 #[derive(Clone, Debug)]
 pub enum Event {
     Node(NodeEvent),

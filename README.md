@@ -317,6 +317,8 @@ let sse_stream = events
     .map(|event| SseEvent::default().json_data(event).unwrap());
 
 Sse::new(sse_stream)
+
+// Event stream ends automatically once the workflow finishes.
 ```
 
 See `cargo run --example demo7_axum_sse` for an Axum SSE demo that requires no direct interaction with `AppRunner`.

@@ -42,6 +42,8 @@ let sse_stream = events
     .map(|event| SseEvent::default().json_data(event).unwrap());
 
 Sse::new(sse_stream)
+
+// The stream ends (returns `None`) once the workflow completes.
 ```
 
 **When to use:** SSE, WebSocket, per-client event streams

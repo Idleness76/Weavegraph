@@ -1,9 +1,12 @@
+use async_trait::async_trait;
+use futures_util::StreamExt;
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
-use weavegraph::node::NodePartial;
+use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
+use weavegraph::state::VersionedState;
 use weavegraph::types::NodeKind;
 
 mod common;
@@ -77,6 +80,42 @@ async fn test_apply_barrier_saturating_version() {
         .await
         .unwrap();
     assert_eq!(state.messages.version(), u32::MAX);
+}
+
+struct EmitOnce;
+
+#[async_trait]
+impl Node for EmitOnce {
+    async fn run(
+        &self,
+        _snapshot: weavegraph::state::StateSnapshot,
+        ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        ctx.emit("test", "event").unwrap();
+        Ok(NodePartial::default())
+    }
+}
+
+#[tokio::test]
+async fn invoke_streaming_closes_stream() {
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("emit".into()), EmitOnce)
+        .add_edge(NodeKind::Start, NodeKind::Custom("emit".into()))
+        .add_edge(NodeKind::Custom("emit".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+
+    let initial = VersionedState::new_with_user_message("hello");
+    let (invocation, events) = app.invoke_streaming(initial).await;
+
+    let mut stream = events.into_async_stream();
+    let mut seen = 0;
+    while let Some(_event) = stream.next().await {
+        seen += 1;
+    }
+
+    assert_eq!(seen, 1);
+    invocation.join().await.unwrap();
 }
 
 #[tokio::test]
