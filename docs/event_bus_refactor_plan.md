@@ -213,3 +213,63 @@ EventEmitter────────────────┐
 - **Stage 6 – Step 17** *(complete)*: Added blocking iterator, timeout helper, and async stream adapter on `EventStream`/`AppEventStream`; examples still pending coverage updates.
 - **Stage 6 – Step 15 (start)**: Baseline `cargo check` clean; begin sketching `AppEventStream` wrapper and `App::event_stream()` signature.
 - **Stage 6 – Step 17 (verification)**: `cargo check -p weavegraph` passes with the new iterator/timeout helpers.
+- **Stage 9 – Step 23** *(todo)*: Migration appendix remaining (document API changes + SSE recipe).
+
+## Production Hardening Plan
+
+The refactor is feature-complete and covered by tests, but a few clarity, documentation, and performance polish tasks remain before we can declare the event bus architecture production-grade. The checklist below evaluates each changed area and details the next actions.
+
+### A. API Clarity & Ergonomics
+
+1. **`App::invoke_streaming` handle** — *needs refinement*  
+   - Provide a dedicated `InvocationHandle` struct with `join()`, `cancel()`, and `events()` methods instead of returning a bare `JoinHandle`.  
+   - Ensure `join()` never panics: convert task panics into `InvocationError::Join` and propagate gracefully.  
+   - Document cancellation semantics (dropping the handle vs. dropping the stream) and add rustdoc examples.
+2. **`EventStream::into_async_stream` signature** — *needs refinement*  
+   - Return `Pin<Box<dyn Stream<Item = Event> + Send>>` so consumers no longer need to `pin!` or `boxed()`.  
+   - Update examples/tests after the signature change and note in docs that the stream is `Send`.
+3. **`AppRunner::event_stream` guard** — *production ready (stub)*  
+   - Panic on double subscription already covered by tests; no action required.
+
+### B. Code Cleanliness & Idiomatic Usage
+
+1. **Examples (`streaming_events.rs`, `demo7_axum_sse.rs`)** — *needs cleanup*  
+   - Refactor JSON logging into helper returning `Result<()>` to avoid manual `eprintln!` fallbacks.  
+   - Demonstrate optional cancellation using `tokio::select!` (e.g., stop streaming when client disconnects).  
+   - Highlight `Event::LLM` handling in comments for consumers.
+2. **App rustdoc** — *needs documentation*  
+   - Expand rustdoc for `AppEventStream` and `invoke_streaming` with async + blocking usage snippets.  
+   - Link rustdoc examples to the Axum demo and CLI streaming example.
+3. **Legacy convenience APIs** — *production ready (stub)*  
+   - Internals already use the broadcast hub; no further action.
+
+### C. Documentation & Migration Strategy
+
+1. **README & quickstart polish** — *needs polish*  
+   - Finalize README sample to include imports and demonstrate mapping to SSE frames.  
+   - In `STREAMING_QUICKSTART.md`, add a comparison table (`invoke_with_channel` vs `invoke_streaming` vs `AppRunner`) and document `next_timeout`.
+2. **Migration guide (Stage 9 Step 23)** — *todo*  
+   - Author `docs/event_bus_migration.md` covering: removal of raw `flume::Sender`, new `RuntimeConfig::event_bus`, and SSE recipe.  
+   - Link the migration doc from README and this plan.
+
+### D. Performance & Observability
+
+1. **Broadcast buffer sizing** — *needs evaluation*  
+   - Benchmark high-throughput workflows to validate default capacity (1024).  
+   - Expose `EventHub::dropped()` metrics via tracing warning when lag occurs.  
+   - Document guidance for tuning `EventBusConfig::buffer_capacity`.
+2. **Lag handling helpers** — *production ready (stub)*  
+   - `next_timeout` already updates metrics; no additional work required.
+
+### E. Testing & Tooling
+
+1. **SSE integration test** — *needs addition*  
+   - Add a `trycmd`/integration test gated behind `--ignored` that launches the Axum example and validates SSE output shape.
+2. **Fuzz/property tests for event serialization** — *optional improvement*  
+   - Consider QuickCheck/proptest ensuring serialization never panics with complex metadata payloads.
+
+### F. Summary of Readiness
+
+- **Production-ready**: `LLMStreamingEvent`, runtime configuration plumbing, EventHub broadcast model, legacy convenience adapters, lag metrics.  
+- **Follow-up required**: `invoke_streaming` ergonomics, async stream signature, documentation/migration notes, perf benchmarking, optional integration tests.  
+- Completing the tasks above will position the new event bus architecture for a production flag.

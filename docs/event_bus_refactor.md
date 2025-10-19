@@ -73,6 +73,7 @@ tokio::spawn(async move {
         println!("scope={:?} message={}", event.scope_label(), event.message());
     }
 });
+app.invoke();
 ```
 
 This refactor provides a solid base for future sinks (Redis Streams, Kafka) and more advanced observability tooling without breaking existing convenience APIs.
