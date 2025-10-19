@@ -20,6 +20,10 @@ use async_trait::async_trait;
 use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
@@ -102,19 +106,45 @@ impl Node for SimpleNode {
 /// - State snapshots before and after mutations
 /// - Barrier operation results with channel updates
 /// - Expected error cases for validation
+fn init_tracing() {
+    let fmt_layer = fmt::layer()
+        .with_target(false)
+        .with_file(false)
+        .with_line_number(false)
+        // Log when spans are created/closed so we see instrumented async boundaries
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("error,weavegraph=error"))
+        .unwrap();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    // Pretty panic reports
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
     demo().await
 }
 
 async fn demo() -> Result<()> {
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                        Demo 1                           ║");
-    println!("║              Basic Graph Building & Execution           ║");
-    println!("╚══════════════════════════════════════════════════════════╝\n");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                        Demo 1                           ║");
+    info!("║              Basic Graph Building & Execution           ║");
+    info!("╚══════════════════════════════════════════════════════════╝\n");
 
     // ✅ STEP 1: Modern State Construction
-    println!("📊 Step 1: Creating initial state with modern patterns");
+    info!("📊 Step 1: Creating initial state with modern patterns");
 
     // Using the builder pattern for rich initial state
     let init = VersionedState::builder()
@@ -130,18 +160,18 @@ async fn demo() -> Result<()> {
         )
         .build();
 
-    println!("   ✓ Initial state created with builder pattern");
-    println!(
+    info!("   ✓ Initial state created with builder pattern");
+    info!(
         "   ✓ User message: {:?}",
         init.messages.snapshot()[0].content
     );
-    println!(
+    info!(
         "   ✓ Extra data keys: {:?}",
         init.extra.snapshot().keys().collect::<Vec<_>>()
     );
 
     // ✅ STEP 2: Modern Graph Building
-    println!("\n🔗 Step 2: Building workflow graph with modern GraphBuilder");
+    info!("\n🔗 Step 2: Building workflow graph with modern GraphBuilder");
 
     let app = GraphBuilder::new()
         .add_node(
@@ -171,34 +201,34 @@ async fn demo() -> Result<()> {
         .add_edge(NodeKind::Start, NodeKind::Custom("ProcessorB".into()))
         .compile()?;
 
-    println!("   ✓ Graph compiled successfully");
-    println!("   ✓ Nodes: Initializer, ProcessorA, ProcessorB, End");
-    println!("   ✓ Edges: Start→A→B→End, Start→B (fan-out pattern)");
+    info!("   ✓ Graph compiled successfully");
+    info!("   ✓ Nodes: Initializer, ProcessorA, ProcessorB, End");
+    info!("   ✓ Edges: Start→A→B→End, Start→B (fan-out pattern)");
 
     // ✅ STEP 3: Full Workflow Execution
-    println!("\n🚀 Step 3: Executing complete workflow");
+    info!("\n🚀 Step 3: Executing complete workflow");
 
     let final_state = app.invoke(init).await?;
 
-    println!("   ✓ Workflow execution completed");
+    info!("   ✓ Workflow execution completed");
     let final_snapshot = final_state.snapshot();
-    println!(
+    info!(
         "   ✓ Final message count: {}",
         final_snapshot.messages.len()
     );
-    println!("   ✓ Messages version: {}", final_snapshot.messages_version);
+    info!("   ✓ Messages version: {}", final_snapshot.messages_version);
 
     // Display the conversation flow
-    println!("\n   📨 Message Flow:");
+    info!("\n   📨 Message Flow:");
     for (i, msg) in final_snapshot.messages.iter().enumerate() {
-        println!("      {}: [{}] {}", i + 1, msg.role, msg.content);
+        info!("      {}: [{}] {}", i + 1, msg.role, msg.content);
     }
 
     // ✅ STEP 4: State Snapshots and Mutations
-    println!("\n📸 Step 4: Demonstrating state snapshots and mutations");
+    info!("\n📸 Step 4: Demonstrating state snapshots and mutations");
 
     let pre_mutation_snapshot = final_state.snapshot();
-    println!(
+    info!(
         "   Pre-mutation: {} messages, {} extra keys",
         pre_mutation_snapshot.messages.len(),
         pre_mutation_snapshot.extra.len()
@@ -226,15 +256,15 @@ async fn demo() -> Result<()> {
     );
 
     let post_mutation_snapshot = mutated_state.snapshot();
-    println!(
+    info!(
         "   Post-mutation: {} messages, {} extra keys",
         post_mutation_snapshot.messages.len(),
         post_mutation_snapshot.extra.len()
     );
-    println!("   ✓ Original state remains unchanged (immutability preserved)");
+    info!("   ✓ Original state remains unchanged (immutability preserved)");
 
     // ✅ STEP 5: Manual Barrier Operations
-    println!("\n🚧 Step 5: Demonstrating manual barrier operations");
+    info!("\n🚧 Step 5: Demonstrating manual barrier operations");
 
     let mut barrier_state = final_state.clone();
 
@@ -270,21 +300,21 @@ async fn demo() -> Result<()> {
         .await
         .map_err(|e| miette::miette!("Barrier operation failed: {e}"))?;
 
-    println!("   ✓ Barrier applied successfully");
-    println!("   ✓ Updated channels: {:?}", updated_channels);
+    info!("   ✓ Barrier applied successfully");
+    info!("   ✓ Updated channels: {:?}", updated_channels);
 
     let barrier_snapshot = barrier_state.snapshot();
-    println!(
+    info!(
         "   ✓ Messages after barrier: {}",
         barrier_snapshot.messages.len()
     );
-    println!(
+    info!(
         "   ✓ Extra keys after barrier: {:?}",
         barrier_snapshot.extra.keys().collect::<Vec<_>>()
     );
 
     // Demonstrate no-op barrier (should not change versions)
-    println!("\n   🔄 Testing no-op barrier operations");
+    info!("\n   🔄 Testing no-op barrier operations");
     let pre_noop_version = barrier_state.messages.version();
 
     let noop_partials = vec![NodePartial::new().with_messages(vec![])]; // Empty - should not update
@@ -295,21 +325,21 @@ async fn demo() -> Result<()> {
         .map_err(|e| miette::miette!("No-op barrier failed: {e}"))?;
 
     let post_noop_version = barrier_state.messages.version();
-    println!("   ✓ No-op barrier completed");
-    println!(
+    info!("   ✓ No-op barrier completed");
+    info!(
         "   ✓ Version unchanged: {} -> {} (expected same)",
         pre_noop_version, post_noop_version
     );
-    println!("   ✓ Updated channels: {:?}", noop_updated);
+    info!("   ✓ Updated channels: {:?}", noop_updated);
 
     // ✅ STEP 6: Error Handling Demonstrations
-    println!("\n❌ Step 6: Demonstrating error handling and validation");
+    info!("\n❌ Step 6: Demonstrating error handling and validation");
 
     // (Removed obsolete test: entry point validation no longer enforced. Start/End are virtual.)
-    println!("   🧪 Skipping deprecated entry-point error test (Start/End now virtual).");
+    info!("   🧪 Skipping deprecated entry-point error test (Start/End now virtual).");
 
     // Test 3: Version saturation behavior
-    println!("   🧪 Test 3: Version saturation behavior");
+    info!("   🧪 Test 3: Version saturation behavior");
     let mut saturation_state = final_state.clone();
     saturation_state.messages.set_version(u32::MAX);
 
@@ -324,24 +354,24 @@ async fn demo() -> Result<()> {
         .map_err(|e| miette::miette!("Saturation test failed: {e}"))?;
 
     let post_saturation_version = saturation_state.messages.version();
-    println!("   ✓ Version saturation test completed");
-    println!(
+    info!("   ✓ Version saturation test completed");
+    info!(
         "   ✓ Version remained at MAX: {} -> {} (expected same)",
         pre_saturation_version, post_saturation_version
     );
 
     // ✅ FINAL SUMMARY
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                      Demo 1 Complete                    ║");
-    println!("╚══════════════════════════════════════════════════════════╝");
-    println!("\n✅ Key patterns demonstrated:");
-    println!("   • Modern message construction with convenience methods");
-    println!("   • State building with fluent builder pattern");
-    println!("   • Graph compilation and execution");
-    println!("   • State snapshots and mutation safety");
-    println!("   • Manual barrier operations");
-    println!("   • Error handling and validation");
-    println!("\n🎯 Next: Run demo2 to see scheduler-driven execution patterns");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                      Demo 1 Complete                    ║");
+    info!("╚══════════════════════════════════════════════════════════╝");
+    info!("\n✅ Key patterns demonstrated:");
+    info!("   • Modern message construction with convenience methods");
+    info!("   • State building with fluent builder pattern");
+    info!("   • Graph compilation and execution");
+    info!("   • State snapshots and mutation safety");
+    info!("   • Manual barrier operations");
+    info!("   • Error handling and validation");
+    info!("\n🎯 Next: Run demo2 to see scheduler-driven execution patterns");
 
     Ok(())
 }

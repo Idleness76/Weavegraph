@@ -9,8 +9,12 @@
 //! Run with: `cargo run --example basic_nodes`
 
 use async_trait::async_trait;
+use miette::Result;
 use serde_json::json;
-use std::sync::Arc;
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use weavegraph::event_bus::EventBus;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -206,10 +210,37 @@ impl Node for AggregatorNode {
     }
 }
 
+fn init_tracing() {
+    let fmt_layer = fmt::layer()
+        .with_target(false)
+        .with_file(false)
+        .with_line_number(false)
+        // Log when spans are created/closed so we see instrumented async boundaries
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("error,weavegraph=error"))
+        .unwrap();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    // Pretty panic reports
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔧 Basic Node Examples");
-    println!("======================");
+async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
+
+    info!("🔧 Basic Node Examples");
+    info!("======================");
 
     // Set up event bus for observability
     let event_bus = EventBus::default();
@@ -235,12 +266,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         errors_version: 1,
     };
 
-    println!("\n📊 Initial State:");
-    println!("  Messages: {}", state.messages.len());
-    println!("  Extra keys: {:?}", state.extra.keys().collect::<Vec<_>>());
+    info!("\n📊 Initial State:");
+    info!("  Messages: {}", state.messages.len());
+    info!("  Extra keys: {:?}", state.extra.keys().collect::<Vec<_>>());
 
     // Run MessageCounterNode
-    println!("\n🔄 Running MessageCounterNode...");
+    info!("\n🔄 Running MessageCounterNode...");
     let counter_node = MessageCounterNode {
         node_name: "CounterExample".to_string(),
     };
@@ -263,14 +294,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.extra.extend(extra);
     }
 
-    println!("  ✅ Messages now: {}", state.messages.len());
-    println!(
+    info!("  ✅ Messages now: {}", state.messages.len());
+    info!(
         "  ✅ Extra keys: {:?}",
         state.extra.keys().collect::<Vec<_>>()
     );
 
     // Run ValidationNode
-    println!("\n🔍 Running ValidationNode...");
+    info!("\n🔍 Running ValidationNode...");
     let validation_node = ValidationNode {
         required_fields: vec!["processor".to_string(), "step".to_string()],
         min_message_count: 1,
@@ -288,10 +319,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.extra.extend(extra);
     }
 
-    println!("  ✅ Validation passed");
+    info!("  ✅ Validation passed");
 
     // Run AggregatorNode
-    println!("\n📈 Running AggregatorNode...");
+    info!("\n📈 Running AggregatorNode...");
     let aggregator_node = AggregatorNode;
 
     let ctx3 = NodeContext {
@@ -309,15 +340,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.extra.extend(extra);
     }
 
-    println!("  ✅ Aggregation completed");
+    info!("  ✅ Aggregation completed");
 
     // Display final state
-    println!("\n📋 Final State:");
-    println!("  Messages: {}", state.messages.len());
+    info!("\n📋 Final State:");
+    info!("  Messages: {}", state.messages.len());
     for (i, msg) in state.messages.iter().enumerate() {
-        println!("    {}: [{}] {}", i + 1, msg.role, msg.content);
+        info!("    {}: [{}] {}", i + 1, msg.role, msg.content);
     }
-    println!(
+    info!(
         "  Extra data keys: {:?}",
         state.extra.keys().collect::<Vec<_>>()
     );
@@ -328,6 +359,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Stop the event listener
     event_bus.stop_listener().await;
 
-    println!("\n✅ Example completed successfully!");
+    info!("\n✅ Example completed successfully!");
     Ok(())
 }

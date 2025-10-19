@@ -12,10 +12,15 @@
 //! providing efficient concurrent execution while respecting the dependency graph.
 
 use async_trait::async_trait;
+use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::time::Duration;
 use tokio::time::sleep;
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
@@ -111,13 +116,13 @@ impl Node for SchedulerDemoNode {
 
 /// Main demonstration function showing scheduler-driven execution
 async fn run_demo2() -> miette::Result<()> {
-    println!("\n╔══════════════════════════════════════════════════════════╗");
-    println!("║                        Demo 2                           ║");
-    println!("║         Scheduler-Driven Workflow Execution             ║");
-    println!("╚══════════════════════════════════════════════════════════╝\n");
+    info!("\n╔══════════════════════════════════════════════════════════╗");
+    info!("║                        Demo 2                           ║");
+    info!("║         Scheduler-Driven Workflow Execution             ║");
+    info!("╚══════════════════════════════════════════════════════════╝\n");
 
     // ✅ STEP 1: Modern State Construction with Rich Context
-    println!("📊 Step 1: Creating initial state for scheduler demonstration");
+    info!("📊 Step 1: Creating initial state for scheduler demonstration");
 
     let init = VersionedState::builder()
         .with_user_message(
@@ -141,15 +146,15 @@ async fn run_demo2() -> miette::Result<()> {
         )
         .build();
 
-    println!("   ✓ Rich initial state created");
-    println!("   ✓ User query: {}", init.messages.snapshot()[0].content);
-    println!(
+    info!("   ✓ Rich initial state created");
+    info!("   ✓ User query: {}", init.messages.snapshot()[0].content);
+    info!(
         "   ✓ Configuration keys: {:?}",
         init.extra.snapshot().keys().collect::<Vec<_>>()
     );
 
     // ✅ STEP 2: Building a Complex Graph for Scheduler Demo
-    println!("\n🔗 Step 2: Building complex graph with dependencies and fan-out");
+    info!("\n🔗 Step 2: Building complex graph with dependencies and fan-out");
 
     let app = GraphBuilder::new()
         .add_node(
@@ -203,37 +208,63 @@ async fn run_demo2() -> miette::Result<()> {
         // .set_entry(NodeKind::Start) // removed: Start is virtual, no explicit entry required
         .compile()?;
 
-    println!("   ✓ Complex graph compiled successfully");
-    println!("   ✓ Nodes: Start → [Analyzer, ProcessorA] → ProcessorB → Synthesizer → End");
-    println!("   ✓ Dependencies: Multiple fan-out and convergence points");
+    info!("   ✓ Complex graph compiled successfully");
+    info!("   ✓ Nodes: Start → [Analyzer, ProcessorA] → ProcessorB → Synthesizer → End");
+    info!("   ✓ Dependencies: Multiple fan-out and convergence points");
 
     // ✅ STEP 3: Execute the workflow
-    println!("\n🚀 Step 3: Executing scheduler-driven workflow");
-    println!("   🕐 Watch the timing - dependencies control execution order");
+    info!("\n🚀 Step 3: Executing scheduler-driven workflow");
+    info!("   🕐 Watch the timing - dependencies control execution order");
 
     let start_time = std::time::Instant::now();
     let final_state = app.invoke(init).await?;
     let total_time = start_time.elapsed();
 
-    println!("\n✅ Demo 2 completed - Scheduler execution successful!");
-    println!("   ⏱️  Total execution time: {:?}", total_time);
-    println!(
+    info!("\n✅ Demo 2 completed - Scheduler execution successful!");
+    info!("   ⏱️  Total execution time: {:?}", total_time);
+    info!(
         "   📨 Final messages: {}",
         final_state.messages.snapshot().len()
     );
-    println!("   ✓ Complex dependency graph executed");
-    println!("   ✓ Concurrency control demonstrated");
+    info!("   ✓ Complex dependency graph executed");
+    info!("   ✓ Concurrency control demonstrated");
 
     // Show the message flow
-    println!("\n   📨 Execution Flow:");
+    info!("\n   📨 Execution Flow:");
     for (i, msg) in final_state.messages.snapshot().iter().enumerate() {
-        println!("      {}: [{}] {}", i + 1, msg.role, msg.content);
+        info!("      {}: [{}] {}", i + 1, msg.role, msg.content);
     }
 
     Ok(())
 }
 
+fn init_tracing() {
+    let fmt_layer = fmt::layer()
+        .with_target(false)
+        .with_file(false)
+        .with_line_number(false)
+        // Log when spans are created/closed so we see instrumented async boundaries
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE);
+
+    let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("error,weavegraph=error"))
+        .unwrap();
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    // Pretty panic reports
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
 async fn main() -> miette::Result<()> {
+    init_tracing();
+    init_miette();
     run_demo2().await
 }

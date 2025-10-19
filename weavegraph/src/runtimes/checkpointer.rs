@@ -176,6 +176,7 @@ pub enum CheckpointerError {
 pub enum CheckpointerType {
     /// In‑memory (non‑durable) checkpointing.
     InMemory,
+    #[cfg(feature = "sqlite")]
     /// SQLite‑backed durable checkpointing (see `SQLiteCheckpointer`).
     SQLite,
 }

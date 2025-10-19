@@ -200,7 +200,7 @@ Troubleshooting:
 
 ## 🔧 Examples
 
-The repository includes comprehensive examples demonstrating different patterns:
+The repository includes comprehensive examples demonstrating various patterns and integrations. See `weavegraph/examples/README.md` for detailed information on running examples, including which ones require specific Cargo features.
 
 ```bash
 # Basic node patterns and message handling

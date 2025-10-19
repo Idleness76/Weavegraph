@@ -65,7 +65,8 @@
 //! ```
 
 use async_trait::async_trait;
-use futures_util::StreamExt;
+use flume;
+use miette::{self, IntoDiagnostic, Result};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -78,6 +79,32 @@ use weavegraph::{
     state::{StateSnapshot, VersionedState},
     types::NodeKind,
 };
+
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_thread_ids(false)
+                .with_thread_names(false)
+                .compact(),
+        )
+        .with(
+            EnvFilter::from_default_env()
+                .add_directive("weavegraph=info".parse().unwrap())
+                .add_directive("streaming_events=info".parse().unwrap()),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    miette::set_panic_hook();
+}
 
 /// Demo node that emits several events during execution.
 /// This simulates a real workflow that produces incremental updates.
@@ -118,11 +145,14 @@ impl Node for ProcessingNode {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Streaming Events Example ===\n");
+async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
+
+    info!("=== Streaming Events Example ===\n");
 
     // 1. Build the workflow graph (compile once, reuse many times)
-    println!("Building workflow graph...");
+    info!("Building workflow graph...");
     let graph = Arc::new(
         GraphBuilder::new()
             .add_node(NodeKind::Custom("Processor".into()), ProcessingNode)
@@ -131,47 +161,85 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .compile()?,
     );
 
-    // 2. Kick off the workflow using invoke_streaming and grab the live event stream
-    println!("Setting up event stream...\n");
-    let initial_state = VersionedState::new_with_user_message("Process my data");
-    let (workflow_handle, event_stream) = graph.invoke_streaming(initial_state).await;
+    // 2. Create streaming channel (one per client/request in production)
+    info!("Setting up event stream...\n");
+    let (tx, rx) = flume::unbounded();
 
-    // 3. Spawn a task to render each event as JSON (similar to forwarding over SSE)
-    let printer = tokio::spawn(async move {
-        println!("📡 Streaming events (these could be sent to a web client):\n");
-        let mut stream = event_stream.into_async_stream().boxed();
-        while let Some(event) = stream.next().await {
-            let json_payload = json!({
-                "type": match &event {
-                    Event::Node(_) => "node",
-                    Event::Diagnostic(_) => "diagnostic",
-                    Event::LLM(_) => "llm",
-                },
-                "scope": event.scope_label(),
-                "message": event.message(),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            });
+    // 3. Create EventBus with custom sink
+    let bus = EventBus::with_sinks(vec![
+        Box::new(weavegraph::event_bus::StdOutSink::default()),
+        Box::new(ChannelSink::new(tx.clone())),
+    ]);
 
-            match serde_json::to_string_pretty(&json_payload) {
-                Ok(pretty) => println!("📨 Stream event: {pretty}"),
-                Err(err) => eprintln!("failed to render event as json: {err}"),
+    // 4. Run workflow in background with custom event bus
+    let graph_clone = graph.clone();
+    let workflow_task = tokio::spawn(async move {
+        use weavegraph::runtimes::{runner::AppRunner, CheckpointerType};
+
+        let initial_state = VersionedState::new_with_user_message("Process my data");
+
+        // Create runner with our custom EventBus (don't auto-start listener)
+        let mut runner = AppRunner::with_options_and_bus(
+            Arc::try_unwrap(graph_clone).unwrap_or_else(|arc| (*arc).clone()),
+            CheckpointerType::InMemory,
+            false,
+            bus,
+            true, // start_listener=true
+        )
+        .await;
+
+        // Create session and run
+        let session_id = "stream-example-session".to_string();
+        runner
+            .create_session(session_id.clone(), initial_state)
+            .await
+            .ok();
+
+        match runner.run_until_complete(&session_id).await {
+            Ok(_) => {
+                let _ = tx.send(Event::diagnostic("workflow", "Workflow completed"));
+            }
+            Err(e) => {
+                let _ = tx.send(Event::diagnostic("workflow", format!("Error: {e}")));
             }
         }
     });
 
-    // 4. Wait for the workflow to finish and surface the result
-    let final_state = workflow_handle
-        .join()
-        .await
-        .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+    // 6. Consume streamed events as they arrive
+    info!("📡 Streaming events (these could be sent to a web client):\n");
 
-    let _ = printer.await;
+    while let Ok(event) = rx.recv_async().await {
+        // Convert event to JSON (like you would for SSE or WebSocket)
+        let json_payload = json!({
+            "type": match event {
+                Event::Node(_) => "node",
+                Event::Diagnostic(_) => "diagnostic",
+            },
+            "scope": event.scope_label(),
+            "message": event.message(),
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+        });
 
-    println!("\n=== Example Complete ===");
-    let final_snapshot = final_state.messages.snapshot();
-    if let Some(msg) = final_snapshot.last() {
-        println!("Final assistant message: {}", msg.content);
+        // In production, you'd send this to a web client
+        info!(
+            "📨 Stream event: {}",
+            serde_json::to_string_pretty(&json_payload).into_diagnostic()?
+        );
+
+        // Break on completion event
+        if event.message().contains("completed") {
+            break;
+        }
     }
+
+    // Wait for workflow to finish
+    workflow_task.await.into_diagnostic()?;
+
+    info!("\n=== Example Complete ===");
+    info!("\n💡 Next Steps:");
+    info!("   - Use this pattern with Axum for SSE endpoints");
+    info!("   - Add multiple ChannelSinks for different clients");
+    info!("   - Filter events by scope before streaming");
 
     Ok(())
 }

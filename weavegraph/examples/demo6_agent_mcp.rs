@@ -8,7 +8,7 @@
 //! 5. Gracefully shut down the MCP child process
 //!
 //! Run with:
-//!   cargo run --example demo6_agent_mcp
+//!   cargo run --example demo6_agent_mcp --features llm
 //!
 //! Prereqs:
 //!   1. Ollama running locally (`ollama serve`) and model pulled (e.g. `ollama pull gemma3:latest`)
@@ -43,6 +43,11 @@ use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{CheckpointerType, EventBusConfig, RuntimeConfig};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+
+use miette::Result;
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 /// System prompt guiding the agent's behavior.
 /// - Keep responses concise and technically accurate
@@ -306,9 +311,31 @@ impl Node for AgentNode {
     }
 }
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_filter(
+                    EnvFilter::from_default_env()
+                        .add_directive("weavegraph=info".parse().unwrap())
+                        .add_directive("demo6_agent_mcp=info".parse().unwrap()),
+                ),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    miette::set_panic_hook();
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Demo 6: Agent + MCP Tools ===");
+async fn main() -> Result<()> {
+    init_tracing();
+    init_miette();
+
+    info!("=== Demo 6: Agent + MCP Tools ===");
 
     // Initial user query (single-pass request)
     let initial_state = VersionedState::new_with_user_message(
@@ -342,27 +369,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Assistant messages
     for (i, m) in snapshot.messages.iter().enumerate() {
         if m.has_role(Message::ASSISTANT) {
-            println!("\n[Assistant Message {}]\n{}\n", i + 1, m.content);
+            info!("\n[Assistant Message {}]\n{}\n", i + 1, m.content);
         }
     }
 
     // Extra metadata
     if !snapshot.extra.is_empty() {
-        println!("--- Extra Metadata ---");
+        info!("--- Extra Metadata ---");
         for (k, v) in &snapshot.extra {
-            println!("{k}: {v}");
+            info!("{k}: {v}");
         }
     }
 
     // Collected errors / warnings
     let errors = snapshot.errors;
     if !errors.is_empty() {
-        println!("\n⚠️  Errors encountered during generation:");
-        println!("{}", pretty_print(&errors));
+        info!("\n⚠️  Errors encountered during generation:");
+        info!("{}", pretty_print(&errors));
     } else {
-        println!("\n🎯 Content generation completed successfully!");
+        info!("\n🎯 Content generation completed successfully!");
     }
 
-    println!("\n=== Demo Complete ===");
+    info!("\n=== Demo Complete ===");
     Ok(())
 }

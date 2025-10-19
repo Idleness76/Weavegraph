@@ -35,6 +35,10 @@ use wg_ragsmith::semantic_chunking::service::{ChunkDocumentRequest, ChunkSource}
 use wg_ragsmith::semantic_chunking::SemanticChunkingService;
 use wg_ragsmith::stores::sqlite::{ChunkDocument, SqliteChunkStore};
 
+use tracing::info;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+
 mod scraping_helpers {
     use url::Url;
 
@@ -184,7 +188,29 @@ where
 
 struct GenerateAnswerNode;
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_filter(
+                    EnvFilter::from_default_env()
+                        .add_directive("weavegraph=info".parse().unwrap())
+                        .add_directive("demo5_rag=info".parse().unwrap()),
+                ),
+        )
+        .with(ErrorLayer::default())
+        .init();
+}
+
+fn init_miette() {
+    miette::set_panic_hook();
+}
+
 pub async fn run_demo5() -> Result<()> {
+    init_tracing();
+    init_miette();
+
     dotenvy::dotenv().ok();
 
     let base_url = env::var("RUST_BOOK_BASE_URL")
@@ -316,10 +342,10 @@ pub async fn run_demo5() -> Result<()> {
 
     let snapshot = final_state.snapshot();
     if let Some(last) = snapshot.messages.last() {
-        println!("\nAssistant response:\n{}", last.content);
+        info!("\nAssistant response:\n{}", last.content);
     }
 
-    println!(
+    info!(
         "\nArtifacts:\n  cache_dir: {}\n  db_path: {}",
         pipeline_config.cache_dir.display(),
         pipeline_config.db_path.display()

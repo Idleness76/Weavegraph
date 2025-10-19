@@ -286,6 +286,7 @@ impl AppRunner {
     ) -> Option<Arc<dyn Checkpointer>> {
         match checkpointer_type {
             CheckpointerType::InMemory => Some(Arc::new(InMemoryCheckpointer::new())),
+            #[cfg(feature = "sqlite")]
             CheckpointerType::SQLite => {
                 let db_url = std::env::var("WEAVEGRAPH_SQLITE_URL")
                     .ok()
