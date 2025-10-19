@@ -1,9 +1,11 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::io::{self, ErrorKind};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::{sync::oneshot, task};
+use tokio::sync::oneshot;
+use tokio::task;
 
 use super::emitter::EventEmitter;
-use super::hub::{EventHub, EventStream};
+use super::hub::{EventHub, EventHubMetrics, EventStream};
 use super::sink::{EventSink, StdOutSink};
 
 /// Central event broadcasting system for workflow execution events.
@@ -152,6 +154,8 @@ pub struct EventBus {
     sinks: Arc<Mutex<Vec<SinkEntry>>>,
     hub: Arc<EventHub>,
     started: AtomicBool,
+    /// Generation counter tracking listener restarts so stale workers exit.
+    generation: Arc<AtomicU64>,
 }
 
 impl Default for EventBus {
@@ -179,6 +183,7 @@ impl EventBus {
             sinks: Arc::new(Mutex::new(entries)),
             hub,
             started: AtomicBool::new(false),
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -186,17 +191,24 @@ impl EventBus {
         self.add_boxed_sink(Box::new(sink));
     }
 
+    /// Attach a new sink to the hub, starting a worker immediately if the bus is live.
     pub fn add_boxed_sink(&self, sink: Box<dyn EventSink>) {
-        let mut sinks = self.sinks.lock().unwrap();
+        let mut sinks_guard = self.sinks.lock().unwrap();
         let mut entry = SinkEntry::new(sink);
         if self.started.load(Ordering::SeqCst) {
-            entry.spawn_worker(self.hub.clone());
+            let generation = self.generation.load(Ordering::SeqCst);
+            entry.spawn_worker(self.hub.clone(), Arc::clone(&self.generation), generation);
         }
-        sinks.push(entry);
+        sinks_guard.push(entry);
     }
 
     pub fn get_emitter(&self) -> Arc<dyn EventEmitter> {
         Arc::new(self.hub.emitter())
+    }
+
+    /// Return current hub metrics (buffer capacity and cumulative drop count).
+    pub fn metrics(&self) -> EventHubMetrics {
+        self.hub.metrics()
     }
 
     pub fn subscribe(&self) -> EventStream {
@@ -204,20 +216,24 @@ impl EventBus {
         self.hub.subscribe()
     }
 
+    /// Spawn workers for every registered sink. Safe to call multiple times.
     pub fn listen_for_events(&self) {
         if self.started.swap(true, Ordering::SeqCst) {
             return;
         }
         let mut sinks = self.sinks.lock().unwrap();
+        let generation = self.generation.load(Ordering::SeqCst);
         for entry in sinks.iter_mut() {
-            entry.spawn_worker(self.hub.clone());
+            entry.spawn_worker(self.hub.clone(), Arc::clone(&self.generation), generation);
         }
     }
 
+    /// Signal all sink workers to stop pulling from the hub.
     pub async fn stop_listener(&self) {
         if !self.started.swap(false, Ordering::SeqCst) {
             return;
         }
+        self.generation.fetch_add(1, Ordering::SeqCst);
         let mut sinks = self.sinks.lock().unwrap();
         for entry in sinks.iter_mut() {
             entry.stop_worker().await;
@@ -255,22 +271,47 @@ impl SinkEntry {
         }
     }
 
-    fn spawn_worker(&mut self, hub: Arc<EventHub>) {
+    fn spawn_worker(
+        &mut self,
+        hub: Arc<EventHub>,
+        generation_state: Arc<AtomicU64>,
+        active_generation: u64,
+    ) {
         if self.worker.is_some() {
             return;
         }
+        // Each worker holds an `Arc` to the sink so consumers can add/remove sinks without
+        // racing the async tasks we spawn here.
         let sink = Arc::clone(&self.sink);
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let mut stream = hub.subscribe();
         let handle = task::spawn(async move {
             loop {
+                // Bail out early if the bus has been stopped/restarted since this worker spawned.
+                if generation_state.load(Ordering::SeqCst) != active_generation {
+                    break;
+                }
                 tokio::select! {
                     _ = &mut shutdown_rx => break,
                     event = stream.recv() => match event {
                         Ok(event) => {
-                            if let Ok(mut guard) = sink.lock() {
-                                if let Err(err) = guard.handle(&event) {
-                                    eprintln!("EventBus sink error: {err}");
+                            let sink = Arc::clone(&sink);
+                            // Dispatch potentially blocking sink logic onto the dedicated
+                            // blocking pool so we never park the async runtime thread.
+                            let dispatch = task::spawn_blocking(move || -> io::Result<()> {
+                                let mut guard = sink.lock().map_err(|_| {
+                                    io::Error::new(
+                                        ErrorKind::Other,
+                                        "event sink mutex poisoned",
+                                    )
+                                })?;
+                                guard.handle(&event)
+                            });
+                            match dispatch.await {
+                                Ok(Ok(())) => {}
+                                Ok(Err(err)) => eprintln!("EventBus sink error: {err}"),
+                                Err(err) => {
+                                    eprintln!("EventBus sink worker join error: {err}");
                                 }
                             }
                         }

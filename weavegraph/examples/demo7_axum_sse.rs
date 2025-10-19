@@ -2,15 +2,15 @@
 //!
 //! This example shows how to expose Weavegraph events over Server-Sent Events (SSE)
 //! using Axum. Each HTTP request spins up an isolated workflow run whose events are
-//! streamed to the client in real time.
+//! streamed back to the client in real time.
 //!
 //! ## Key ideas
-//! - `App::invoke_streaming(initial_state)` hides the `AppRunner` plumbing and returns a pair:
-//!   a join handle for the workflow result and the `EventStream` you can expose to users.
+//! - `App::invoke_streaming(initial_state)` hides the `AppRunner` plumbing and returns a
+//!   workflow join handle alongside an `EventStream`.
 //! - `EventStream::into_async_stream()` adapts the broadcast-backed stream into an async iterator
-//!   that plugs directly into Axum’s SSE response.
-//! - Because `invoke_streaming` launches the workflow on a Tokio task, the HTTP handler immediately
-//!   returns an SSE stream while the workflow continues running in the background.
+//!   that plugs directly into Axum's SSE response type.
+//! - Because `invoke_streaming` launches the workflow on a Tokio task, the HTTP handler can
+//!   return immediately while the workflow continues running in the background.
 //!
 //! ## Run it
 //! ```bash
@@ -34,6 +34,7 @@ use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use weavegraph::{
+    event_bus::STREAM_END_SCOPE,
     graphs::GraphBuilder,
     message::Message,
     node::{Node, NodeContext, NodeError, NodePartial},
@@ -78,30 +79,53 @@ async fn stream_workflow(
     State(app): State<Arc<weavegraph::app::App>>,
 ) -> Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>> {
     let initial_state =
-        VersionedState::new_with_user_message("Stream this workflow's progress over SSE.");
+        VersionedState::new_with_user_message("Stream this workflow's progress over HTTP.");
     let (invocation, event_stream) = app.invoke_streaming(initial_state).await;
+    let invocation = Arc::new(tokio::sync::Mutex::new(Some(invocation)));
 
-    tokio::spawn(async move {
-        match invocation.join().await {
-            Ok(_) => tracing::info!("workflow completed"),
-            Err(err) => tracing::error!("workflow error: {err:?}"),
-        }
-    });
-
-    let sse_stream = event_stream.into_async_stream().map(|event| {
-        let event_type = match &event {
-            weavegraph::event_bus::Event::Node(_) => "node",
-            weavegraph::event_bus::Event::Diagnostic(_) => "diagnostic",
-            weavegraph::event_bus::Event::LLM(_) => "llm",
-        };
-        let payload = json!({
-            "type": event_type,
-            "scope": event.scope_label(),
-            "message": event.message(),
-            "timestamp": chrono::Utc::now().to_rfc3339(),
+    {
+        let invocation = Arc::clone(&invocation);
+        tokio::spawn(async move {
+            if let Some(handle) = invocation.lock().await.take() {
+                match handle.join().await {
+                    Ok(_) => tracing::info!("workflow completed"),
+                    Err(err) => tracing::error!("workflow error: {err:?}"),
+                }
+            }
         });
-        Ok(SseEvent::default().json_data(payload).unwrap())
-    });
+    }
+
+    let sse_stream = async_stream::stream! {
+        let mut stream = event_stream.into_async_stream();
+        while let Some(event) = stream.next().await {
+            let scope = event.scope_label().map(|s| s.to_string());
+            let event_type = match &event {
+                weavegraph::event_bus::Event::Node(_) => "node",
+                weavegraph::event_bus::Event::Diagnostic(_) => "diagnostic",
+                weavegraph::event_bus::Event::LLM(_) => "llm",
+            };
+            if let weavegraph::event_bus::Event::LLM(llm) = &event {
+                tracing::debug!(
+                    stream = %llm.stream_id().unwrap_or("default"),
+                    final_chunk = llm.is_final(),
+                    "forwarding LLM token"
+                );
+            }
+            let payload = json!({
+                "type": event_type,
+                "scope": event.scope_label(),
+                "message": event.message(),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            let event = SseEvent::default()
+                .json_data(payload)
+                .expect("serialise SSE payload");
+            yield Ok::<SseEvent, Infallible>(event);
+            if scope.as_deref() == Some(STREAM_END_SCOPE) {
+                break;
+            }
+        }
+    };
 
     Sse::new(sse_stream)
 }

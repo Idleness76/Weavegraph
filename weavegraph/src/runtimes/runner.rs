@@ -320,9 +320,10 @@ impl AppRunner {
                 match crate::runtimes::SQLiteCheckpointer::connect(&db_url).await {
                     Ok(cp) => Some(Arc::new(cp) as Arc<dyn Checkpointer>),
                     Err(e) => {
-                        eprintln!(
-                            "SQLiteCheckpointer initialization failed ({}): {}",
-                            db_url, e
+                        tracing::error!(
+                            url = %db_url,
+                            error = %e,
+                            "SQLiteCheckpointer initialization failed"
                         );
                         None
                     }
@@ -535,12 +536,14 @@ impl AppRunner {
     /// Subscribe to the underlying event stream.
     ///
     /// Returns a handle that yields events as they are emitted by workflow nodes.
-    pub fn event_stream(&mut self) -> EventStream {
+    /// Subsequent calls after the first return `None` until the stream is
+    /// finalized (e.g., when a session completes and the runner resets the flag).
+    pub fn event_stream(&mut self) -> Option<EventStream> {
         if self.event_stream_taken {
-            panic!("event stream already requested for this runner");
+            return None;
         }
         self.event_stream_taken = true;
-        self.event_bus.subscribe()
+        Some(self.event_bus.subscribe())
     }
 
     /// Initialize a new session with the given initial state
@@ -753,15 +756,16 @@ impl AppRunner {
         session_state.step += 1;
         let step = session_state.step;
 
-        println!("\n-- Superstep {} --", step);
+        tracing::debug!(step, "starting superstep");
 
         let snapshot = session_state.state.snapshot();
-        println!(
-            "msgs={} v{}; extra_keys={} v{}",
-            snapshot.messages.len(),
-            snapshot.messages_version,
-            snapshot.extra.len(),
-            snapshot.extra_version
+        tracing::debug!(
+            step,
+            messages = snapshot.messages.len(),
+            messages_version = snapshot.messages_version,
+            extra_keys = snapshot.extra.len(),
+            extra_version = snapshot.extra_version,
+            "state snapshot prior to scheduling"
         );
 
         // Execute via scheduler
@@ -816,7 +820,7 @@ impl AppRunner {
             }
             // Conditional edges
             for ce in conditional_edges.iter().filter(|ce| ce.from() == id) {
-                println!("running conditional edge from {:?}", ce.from());
+                tracing::debug!(from = ?ce.from(), step, "evaluating conditional edge");
                 let target_names = (ce.predicate())(snapshot.clone());
 
                 for target_name in target_names {
@@ -829,7 +833,7 @@ impl AppRunner {
                         NodeKind::Custom(target_name.clone())
                     };
 
-                    println!("conditional edge routing to {:?}", &target);
+                    tracing::debug!(target = ?target, step, "conditional edge routed");
 
                     // Validate that the target node exists or is a virtual endpoint
                     let is_valid_target = match &target {
@@ -846,14 +850,18 @@ impl AppRunner {
                         }
                     } else {
                         // Log a warning but don't fail the execution
-                        println!("Warning: Conditional edge target '{}' does not exist in the graph. Skipping.", target_name);
+                        tracing::warn!(
+                            step,
+                            target = %target_name,
+                            "conditional edge target not found; skipping"
+                        );
                     }
                 }
             }
         }
 
-        println!("Updated channels this step: {:?}", updated_channels);
-        println!("Next frontier: {:?}", next_frontier);
+        tracing::debug!(step, updated_channels = ?updated_channels, "channels updated");
+        tracing::debug!(step, next_frontier = ?next_frontier, "computed next frontier");
 
         let completed =
             next_frontier.is_empty() || next_frontier.iter().all(|n| *n == NodeKind::End);
@@ -883,7 +891,7 @@ impl AppRunner {
         &mut self,
         session_id: &str,
     ) -> Result<VersionedState, RunnerError> {
-        println!("== Begin run ==");
+        tracing::info!(session = %session_id, "workflow run started");
 
         loop {
             // Check if we're done before trying to run
@@ -897,7 +905,11 @@ impl AppRunner {
             if session_state.frontier.is_empty()
                 || session_state.frontier.iter().all(|n| *n == NodeKind::End)
             {
-                println!("Reached END at step {}", session_state.step);
+                tracing::info!(
+                    session = %session_id,
+                    step = session_state.step,
+                    "frontier reached terminal state"
+                );
                 break;
             }
 
@@ -939,7 +951,7 @@ impl AppRunner {
             }
         }
 
-        println!("\n== Final state ==");
+        tracing::info!(session = %session_id, "workflow run completed");
         let (
             final_state,
             messages_snapshot,
@@ -972,13 +984,33 @@ impl AppRunner {
 
         // Print final state summary (matching App::invoke output)
         for (i, m) in messages_snapshot.iter().enumerate() {
-            println!("#{:02} [{}] {}", i, m.role, m.content);
+            tracing::debug!(
+                session = %session_id,
+                message_index = i,
+                role = %m.role,
+                content = %m.content,
+                "final message snapshot entry"
+            );
         }
-        println!("messages.version = {}", messages_version);
+        tracing::debug!(
+            session = %session_id,
+            messages_version,
+            "messages channel version"
+        );
 
-        println!("extra (v {}) keys={}", extra_version, extra_snapshot.len());
+        tracing::debug!(
+            session = %session_id,
+            extra_version,
+            keys = extra_snapshot.len(),
+            "extra channel summary"
+        );
         for (k, v) in extra_snapshot.iter() {
-            println!("  {k}: {v}");
+            tracing::debug!(
+                session = %session_id,
+                key = %k,
+                value = %v,
+                "final extra entry"
+            );
         }
 
         self.finalize_event_stream(session_id, StreamEndReason::Completed { step: final_step });

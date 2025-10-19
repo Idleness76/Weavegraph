@@ -86,13 +86,15 @@ async fn runner_event_stream_only_once() {
     let app = make_test_app();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
 
-    let stream = runner.event_stream();
+    let stream = runner
+        .event_stream()
+        .expect("first event_stream call should succeed");
     drop(stream);
 
-    let result = catch_unwind(AssertUnwindSafe(|| runner.event_stream()));
+    let result = runner.event_stream();
     assert!(
-        result.is_err(),
-        "expected panic on second event_stream call"
+        result.is_none(),
+        "expected None on second event_stream call"
     );
 }
 

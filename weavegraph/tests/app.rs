@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 use weavegraph::channels::Channel;
+use weavegraph::event_bus::STREAM_END_SCOPE;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -109,12 +110,22 @@ async fn invoke_streaming_closes_stream() {
     let (invocation, events) = app.invoke_streaming(initial).await;
 
     let mut stream = events.into_async_stream();
-    let mut seen = 0;
-    while let Some(_event) = stream.next().await {
-        seen += 1;
+    let mut seen_non_terminal = 0;
+    let mut sentinel_seen = false;
+    while let Some(event) = stream.next().await {
+        if event.scope_label() == Some(STREAM_END_SCOPE) {
+            assert!(
+                !sentinel_seen,
+                "STREAM_END_SCOPE should appear exactly once"
+            );
+            sentinel_seen = true;
+        } else {
+            seen_non_terminal += 1;
+        }
     }
 
-    assert_eq!(seen, 1);
+    assert_eq!(seen_non_terminal, 1);
+    assert!(sentinel_seen, "expected terminal sentinel event");
     invocation.join().await.unwrap();
 }
 

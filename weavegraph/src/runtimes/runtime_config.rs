@@ -1,5 +1,4 @@
 use crate::event_bus::{EventBus, EventSink, MemorySink, StdOutSink};
-use crate::utils::id_generator;
 
 use super::CheckpointerType;
 
@@ -14,7 +13,8 @@ pub struct RuntimeConfig {
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            session_id: Some(id_generator::IdGenerator::new().generate_run_id()),
+            // Generate session identifiers lazily so helpers can pick a fresh id per run.
+            session_id: None,
             checkpointer: Some(CheckpointerType::InMemory),
             sqlite_db_name: Self::resolve_sqlite_db_name(None),
             event_bus: EventBusConfig::default(),
@@ -95,10 +95,8 @@ impl EventBusConfig {
 
     #[must_use]
     pub fn with_memory_sink() -> Self {
-        Self::new(
-            Self::DEFAULT_BUFFER_CAPACITY,
-            vec![SinkConfig::StdOut, SinkConfig::Memory],
-        )
+        // Memory sink intentionally omits stdout so callers get a silent capture by default.
+        Self::new(Self::DEFAULT_BUFFER_CAPACITY, vec![SinkConfig::Memory])
     }
 
     #[must_use]

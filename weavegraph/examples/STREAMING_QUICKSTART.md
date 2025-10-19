@@ -4,6 +4,13 @@ This guide shows you how to stream workflow events to web clients using Weavegra
 
 ## Choose Your Pattern
 
+| Scenario | API | Event Consumption | Notes | Example |
+|----------|-----|-------------------|-------|---------|
+| CLI / scripts | `App::invoke_with_channel` | flume receiver | Simplest to wire progress bars, returns `(Result, Receiver)` | `examples/convenience_streaming.rs` |
+| CLI with multiple sinks | `App::invoke_with_sinks` | sinks + optional channel | Inject stdout/file sinks without touching `AppRunner` | same as above |
+| Web servers / SSE/WebSocket | `App::invoke_streaming` | `EventStream` (async/iter/poll) | Preferred for live streaming; emits `STREAM_END_SCOPE` sentinel when finished | `examples/demo7_axum_sse.rs` |
+| Full control | `AppRunner::with_options_and_bus` | custom `EventBus` | Use when you need per-request isolation or reuse a runner | `examples/streaming_events.rs` |
+
 ### ⭐ Simple Patterns (Convenience Methods)
 
 For CLI tools and simple scripts, use the new convenience methods:
@@ -28,25 +35,53 @@ app.invoke_with_sinks(
 Use [`App::invoke_streaming`](../../src/app.rs) to launch the workflow and get an `EventStream` you can forward to SSE/WebSocket clients:
 
 ```rust
-let initial = VersionedState::new_with_user_message("Stream me");
-let (invocation, events) = app.invoke_streaming(initial).await;
+use std::sync::Arc;
+use axum::response::sse::{Event as SseEvent, Sse};
+use futures_util::StreamExt;
+use tokio::{signal, sync::Mutex};
+use weavegraph::event_bus::STREAM_END_SCOPE;
 
-tokio::spawn(async move {
-    if let Err(err) = invocation.join().await {
-        tracing::error!("workflow failed: {err}");
+let (invocation, events) = app.invoke_streaming(initial_state).await;
+let invocation = Arc::new(Mutex::new(Some(invocation)));
+
+let sse_stream = async_stream::stream! {
+    let mut stream = events.into_async_stream();
+    while let Some(event) = stream.next().await {
+        yield Ok::<SseEvent, std::convert::Infallible>(
+            SseEvent::default().json_data(event.clone()).unwrap()
+        );
+        if event.scope_label() == Some(STREAM_END_SCOPE) {
+            break;
+        }
+    }
+};
+
+let response = Sse::new(sse_stream);
+
+tokio::spawn({
+    let invocation = Arc::clone(&invocation);
+    async move {
+        tokio::select! {
+            _ = async {
+                if let Some(handle) = invocation.lock().await.take() {
+                    if let Err(err) = handle.join().await {
+                        tracing::error!("workflow failed: {err}");
+                    }
+                }
+            } => {}
+            _ = signal::ctrl_c() => {
+                if let Some(handle) = invocation.lock().await.take() {
+                    handle.abort();
+                }
+            }
+        }
     }
 });
 
-let sse_stream = events
-    .into_async_stream()
-    .map(|event| SseEvent::default().json_data(event).unwrap());
-
-Sse::new(sse_stream)
-
-// The stream ends (returns `None`) once the workflow completes.
+response
 ```
 
-**When to use:** SSE, WebSocket, per-client event streams
+**When to use:** SSE/WebSocket transports (or as a base for similar streaming adapters). The stream closes automatically when the sentinel diagnostic with scope `STREAM_END_SCOPE` arrives.
 
 **Example:** `cargo run --example demo7_axum_sse`
 
@@ -86,6 +121,8 @@ for event in events.into_blocking_iter() { /* ... */ }
 if let Some(event) = events.next_timeout(Duration::from_secs(1)).await { /* ... */ }
 ```
 
+`next_timeout` skips over lag notifications automatically—if the stream logs a warning about dropped events, consider increasing the configured buffer (see below).
+
 ### 2. Legacy ChannelSink (Optional)
 
 If you still prefer channel-based forwarding, the convenience helpers continue to work:
@@ -95,6 +132,15 @@ let (result, events) = app.invoke_with_channel(initial_state).await;
 ```
 
 - The `Event` enum now includes `Node`, `Diagnostic`, **and** `LLM` variants—remember to handle the streaming case (`Event::LLM`).
+
+Every `invoke_streaming` run ends with a diagnostic whose scope equals `STREAM_END_SCOPE`. Use it to notify clients that the workflow has finished and the event stream is about to close.
+
+## Tuning Buffer Capacity
+
+- Default capacity is `1024` events per broadcast channel.
+- Increase the buffer with `RuntimeConfig::default().with_event_bus(EventBusConfig::new(capacity, sinks))`.
+- Slow consumers trigger a `weavegraph::event_bus` warning (`event stream lagged; dropped events`) and increment `EventStream::dropped()`.
+- Benchmark with `cargo bench --bench event_bus_throughput` to validate settings for your workload.
 
 ## Web Framework Integration
 

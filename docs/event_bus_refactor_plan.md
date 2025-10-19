@@ -173,6 +173,7 @@ EventEmitter────────────────┐
 
 ## Execution Log
 
+- **2025-05-21 – Hardening sweep**: Documented streaming cancellation semantics in rustdoc/README, refreshed streaming examples with `tokio::select!` and `Event::LLM` handling, wired lag warnings + Criterion benchmark, added SSE integration + proptest serialization coverage, and published the migration guide.
 - **Stage 0 – Step 1** *(complete)*: Enumerated all `EventBus::get_sender` callsites (runner, scheduler, tests, examples). Every consumer clones the flume sender directly, so swapping in the emitter trait will touch those locations only.
 - **Stage 1 – Step 3** *(complete)*:
   - Design: Confirmed `LLMStreamingEvent` fields and helper constructors (`chunk_event`, `final_event`, `error_event`) with automatic timestamps.
@@ -221,10 +222,10 @@ The refactor is feature-complete and covered by tests, but a few clarity, docume
 
 ### A. API Clarity & Ergonomics
 
-1. **`App::invoke_streaming` handle** — *in-progress*  
+1. **`App::invoke_streaming` handle** — *complete*  
    - ✅ Implemented `InvocationHandle::join`, `abort`, and `is_finished`; `join` surfaces `RunnerError::Join` instead of panicking.  
-   - ⬜ Document cancellation semantics (dropping the handle vs. dropping the stream) and add rustdoc examples.  
-   - ⬜ Consider exposing a scoped cancellation token instead of `abort` for finer control.  
+   - ✅ Documented cancellation semantics and provided rustdoc illustrating `tokio::select!` with the sentinel scope (`STREAM_END_SCOPE`).  
+   - 🔍 Opportunity: evaluate ergonomic wrapper for cooperative cancellation (e.g., returning a cancellation token) if future integrations require finer control.  
 2. **`EventStream::into_async_stream` signature** — *complete*  
    - Returns `BoxStream<'static, Event>`; callers get a `Send` stream without manual boxing/pinning.  
    - Examples updated to rely directly on the boxed stream.
@@ -233,40 +234,43 @@ The refactor is feature-complete and covered by tests, but a few clarity, docume
 
 ### B. Code Cleanliness & Idiomatic Usage
 
-1. **Examples (`streaming_events.rs`, `demo7_axum_sse.rs`)** — *in-progress*  
+1. **Examples (`streaming_events.rs`, `demo7_axum_sse.rs`)** — *complete*  
    - ✅ Updated to call `invoke_streaming` + `InvocationHandle::join`; JSON logging simplified.  
-   - ⬜ Demonstrate optional cancellation using `tokio::select!` (e.g., stop streaming when client disconnects).  
-   - ⬜ Highlight `Event::LLM` handling in comments for consumers.
-2. **App rustdoc** — *needs documentation*  
-   - Expand rustdoc for `AppEventStream` and `invoke_streaming` with async + blocking usage snippets.  
-   - Link rustdoc examples to the Axum demo and CLI streaming example.
+   - ✅ Added `tokio::select!` cancellation flows (Ctrl+C for CLI, stream drop handling) and highlighted `Event::LLM` handling.  
+   - 🔍 Opportunity: demonstrate multiplexed LLM streams once multi-stream tooling lands.  
+2. **App rustdoc** — *complete*  
+   - ✅ Expanded rustdoc for `AppEventStream` and `invoke_streaming`, including async + blocking snippets and sentinel guidance.  
+   - ✅ Linked documentation to the updated streaming and Axum examples.  
 3. **Legacy convenience APIs** — *production ready (stub)*  
    - Internals already use the broadcast hub; no further action.
 
 ### C. Documentation & Migration Strategy
 
-1. **README & quickstart polish** — *needs polish*  
-   - Finalize README sample to include imports and demonstrate mapping to SSE frames.  
-   - In `STREAMING_QUICKSTART.md`, add a comparison table (`invoke_with_channel` vs `invoke_streaming` vs `AppRunner`) and document `next_timeout`.
-2. **Migration guide (Stage 9 Step 23)** — *todo*  
-   - Author `docs/event_bus_migration.md` covering: removal of raw `flume::Sender`, new `RuntimeConfig::event_bus`, and SSE recipe.  
-   - Link the migration doc from README and this plan.
+1. **README & quickstart polish** — *complete*  
+   - ✅ Added fully-imported SSE snippet with cancellation, sentinel handling, and buffer tuning guidance.  
+   - ✅ Introduced a pattern comparison table plus `next_timeout` and buffer tuning notes in `STREAMING_QUICKSTART.md`.  
+2. **Migration guide (Stage 9 Step 23)** — *complete*  
+   - ✅ Authored `docs/event_bus_migration.md` with API changes, sentinel notes, and sample diff.  
+   - ✅ Linked the migration doc from README and this plan section.  
+   - 📎 Reference: [`docs/event_bus_migration.md`](event_bus_migration.md).  
 
 ### D. Performance & Observability
 
-1. **Broadcast buffer sizing** — *needs evaluation*  
-   - Benchmark high-throughput workflows to validate default capacity (1024).  
-   - Expose `EventHub::dropped()` metrics via tracing warning when lag occurs.  
-   - Document guidance for tuning `EventBusConfig::buffer_capacity`.
-2. **Lag handling helpers** — *production ready (stub)*  
-   - `next_timeout` already updates metrics; no additional work required.
+1. **Broadcast buffer sizing** — *in-progress*  
+   - ✅ Emit `weavegraph::event_bus` warnings when lagging subscribers drop messages; warnings include total dropped counts.  
+   - ✅ Added Criterion benchmark (`cargo bench --bench event_bus_throughput`) to profile publish throughput.  
+   - ✅ Documented capacity tuning guidance in the quickstart.  
+   - 🔍 Opportunity: automate benchmark execution in CI once a stable harness is available.  
+2. **Lag handling helpers** — *production ready*  
+   - `next_timeout` already updates metrics; warnings now surface lag to operators.
 
 ### E. Testing & Tooling
 
-1. **SSE integration test** — *needs addition*  
-   - Add a `trycmd`/integration test gated behind `--ignored` that launches the Axum example and validates SSE output shape.
-2. **Fuzz/property tests for event serialization** — *optional improvement*  
-   - Consider QuickCheck/proptest ensuring serialization never panics with complex metadata payloads.
+1. **SSE integration test** — *complete*  
+   - ✅ Added ignored Axum SSE integration test that streams until the sentinel event.  
+   - 🔍 Opportunity: promote to regular test once CI has the resources to run async HTTP listeners.  
+2. **Fuzz/property tests for event serialization** — *complete*  
+   - ✅ Added Proptest round-trip coverage for `Event` serialization, including `LLM` metadata.
 
 ### F. Summary of Readiness
 

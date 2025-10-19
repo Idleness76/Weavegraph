@@ -71,8 +71,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use weavegraph::{
-    channels::Channel,
-    event_bus::Event,
+    event_bus::{ChannelSink, Event, EventBus},
     graphs::GraphBuilder,
     message::Message,
     node::{Node, NodeContext, NodeError, NodePartial},
@@ -211,9 +210,10 @@ async fn main() -> Result<()> {
     while let Ok(event) = rx.recv_async().await {
         // Convert event to JSON (like you would for SSE or WebSocket)
         let json_payload = json!({
-            "type": match event {
+            "type": match &event {
                 Event::Node(_) => "node",
                 Event::Diagnostic(_) => "diagnostic",
+                Event::LLM(_) => "llm",
             },
             "scope": event.scope_label(),
             "message": event.message(),

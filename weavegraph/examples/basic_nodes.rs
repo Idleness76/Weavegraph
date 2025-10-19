@@ -11,6 +11,7 @@
 use async_trait::async_trait;
 use miette::Result;
 use serde_json::json;
+use std::sync::Arc;
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
