@@ -69,6 +69,9 @@ impl Node for AgentNode {
         snapshot: StateSnapshot,
         ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
+        const TEXT_STREAM_ID: &str = "ollama_text";
+        const REASONING_STREAM_ID: &str = "ollama_reasoning";
+
         ctx.emit(
             "agent",
             "Spawning MCP child process (npx @upstash/context7-mcp)",
@@ -169,6 +172,16 @@ impl Node for AgentNode {
                 }))) => {
                     chunk_index += 1;
                     accumulated.push_str(&text);
+                    let mut metadata = FxHashMap::default();
+                    metadata.insert("chunk_index".into(), json!(chunk_index));
+                    metadata.insert("content_type".into(), json!("assistant_text"));
+                    metadata.insert("total_chars".into(), json!(accumulated.len()));
+                    ctx.emit_llm_chunk(
+                        None,
+                        Some(TEXT_STREAM_ID.to_string()),
+                        text.clone(),
+                        Some(metadata),
+                    )?;
                     if chunk_index % 5 == 1 {
                         ctx.emit(
                             "agent",
@@ -185,6 +198,15 @@ impl Node for AgentNode {
                 ))) => {
                     let rtxt = reasoning.join("\n");
                     ctx.emit("agent", "Received reasoning segment")?;
+                    let mut metadata = FxHashMap::default();
+                    metadata.insert("content_type".into(), json!("reasoning"));
+                    metadata.insert("segment_count".into(), json!(reasoning.len()));
+                    ctx.emit_llm_chunk(
+                        None,
+                        Some(REASONING_STREAM_ID.to_string()),
+                        rtxt.clone(),
+                        Some(metadata),
+                    )?;
                     reasoning_total.push_str(&rtxt);
                 }
                 Ok(MultiTurnStreamItem::FinalResponse(resp)) => {
@@ -193,9 +215,20 @@ impl Node for AgentNode {
                         "agent",
                         format!("Final response received ({} chars)", resp.response().len()),
                     )?;
+                    let mut metadata = FxHashMap::default();
+                    metadata.insert("content_type".into(), json!("final_response"));
+                    metadata.insert("text_chars".into(), json!(resp.response().len()));
+                    metadata.insert("total_chunks".into(), json!(chunk_index));
+                    ctx.emit_llm_final(
+                        None,
+                        Some(TEXT_STREAM_ID.to_string()),
+                        resp.response().to_string(),
+                        Some(metadata),
+                    )?;
                 }
                 Ok(_) => { /* ignore other streamed item variants */ }
                 Err(err) => {
+                    ctx.emit_llm_error(None, Some(TEXT_STREAM_ID.to_string()), err.to_string())?;
                     errors.push(ErrorEvent {
                         when: Utc::now(),
                         scope: ErrorScope::Node {
@@ -344,7 +377,7 @@ async fn main() -> Result<()> {
 
     // Runtime config: named session + SQLite checkpointer
     let runtime_config = RuntimeConfig {
-        session_id: Some("mcp_demo".to_string()),
+        session_id: Some("mcp_demo_13".to_string()),
         checkpointer: Some(CheckpointerType::SQLite),
         sqlite_db_name: Some("weavegraph_demo6.db".to_string()),
         event_bus: EventBusConfig::with_stdout_only(),

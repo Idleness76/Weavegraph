@@ -18,8 +18,6 @@
 //! curl -N http://127.0.0.1:3000/stream
 //! ```
 
-use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
-
 use async_trait::async_trait;
 use axum::{
     extract::State,
@@ -28,7 +26,9 @@ use axum::{
     Router,
 };
 use futures_util::StreamExt;
+use rustc_hash::FxHashMap;
 use serde_json::json;
+use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -59,15 +59,30 @@ impl Node for StreamingNode {
             .map(|m| m.content.clone())
             .unwrap_or_else(|| "No request provided".to_string());
 
-        ctx.emit("stream", format!("Starting work on: {request}"))?;
+        ctx.emit(
+            "mcp stream".to_string(),
+            format!("Starting work on: {request}"),
+        )?;
         sleep(Duration::from_millis(300)).await;
 
         for step in 1..=3 {
-            ctx.emit("stream", format!("Processing step {step}/3..."))?;
+            let mut metadata = FxHashMap::default();
+            metadata.insert("content_type".into(), json!("reasoning"));
+            ctx.emit_llm_chunk(
+                Some("lads".to_owned()),
+                Some("mcp stream".to_string()),
+                format!("Processing step {step}/3..."),
+                Some(metadata),
+            )?;
             sleep(Duration::from_millis(400)).await;
         }
 
-        ctx.emit("stream", "Finalizing response")?;
+        ctx.emit_llm_final(
+            Some("lads".to_owned()),
+            Some("mcp stream".to_string()),
+            "Finalizing response".to_string(),
+            None,
+        )?;
         sleep(Duration::from_millis(300)).await;
 
         Ok(NodePartial::new()

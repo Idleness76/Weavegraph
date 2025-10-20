@@ -12,7 +12,7 @@ use thiserror::Error;
 
 // Internal crate modules
 use crate::channels::errors::ErrorEvent;
-use crate::event_bus::{Event, EventEmitter};
+use crate::event_bus::{Event, EventEmitter, LLMStreamingEvent};
 use crate::message::Message;
 use crate::state::StateSnapshot;
 use std::sync::Arc;
@@ -117,13 +117,87 @@ impl NodeContext {
         scope: impl Into<String>,
         message: impl Into<String>,
     ) -> Result<(), NodeContextError> {
+        self.emit_node(scope, message)
+    }
+
+    /// Emit a node event using this context's node identifier and step metadata.
+    pub fn emit_node(
+        &self,
+        scope: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<(), NodeContextError> {
+        self.emit_event(Event::node_message_with_meta(
+            self.node_id.clone(),
+            self.step,
+            scope,
+            message,
+        ))
+    }
+
+    /// Emit a diagnostic event for general workflow telemetry.
+    pub fn emit_diagnostic(
+        &self,
+        scope: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Result<(), NodeContextError> {
+        self.emit_event(Event::diagnostic(scope, message))
+    }
+
+    /// Emit an LLM streaming chunk event with optional metadata.
+    pub fn emit_llm_chunk(
+        &self,
+        session_id: Option<String>,
+        stream_id: Option<String>,
+        chunk: impl Into<String>,
+        metadata: Option<FxHashMap<String, serde_json::Value>>,
+    ) -> Result<(), NodeContextError> {
+        let event = LLMStreamingEvent::chunk_event(
+            session_id,
+            Some(self.node_id.clone()),
+            stream_id,
+            chunk,
+            metadata.unwrap_or_default(),
+        );
+        self.emit_event(Event::LLM(event))
+    }
+
+    /// Emit a final LLM streaming event signalling completion.
+    pub fn emit_llm_final(
+        &self,
+        session_id: Option<String>,
+        stream_id: Option<String>,
+        chunk: impl Into<String>,
+        metadata: Option<FxHashMap<String, serde_json::Value>>,
+    ) -> Result<(), NodeContextError> {
+        let event = LLMStreamingEvent::final_event(
+            session_id,
+            Some(self.node_id.clone()),
+            stream_id,
+            chunk,
+            metadata.unwrap_or_default(),
+        );
+        self.emit_event(Event::LLM(event))
+    }
+
+    /// Emit an LLM error event with the provided error message.
+    pub fn emit_llm_error(
+        &self,
+        session_id: Option<String>,
+        stream_id: Option<String>,
+        error_message: impl Into<String>,
+    ) -> Result<(), NodeContextError> {
+        let event = LLMStreamingEvent::error_event(
+            session_id,
+            Some(self.node_id.clone()),
+            stream_id,
+            error_message,
+        );
+        self.emit_event(Event::LLM(event))
+    }
+
+    fn emit_event(&self, event: Event) -> Result<(), NodeContextError> {
         self.event_emitter
-            .emit(Event::node_message_with_meta(
-                self.node_id.clone(),
-                self.step,
-                scope,
-                message,
-            ))
+            .emit(event)
             .map_err(|_| NodeContextError::EventBusUnavailable)
     }
 }
