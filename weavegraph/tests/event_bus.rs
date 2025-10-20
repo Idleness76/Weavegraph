@@ -2,14 +2,16 @@ use chrono::Utc;
 use futures_util::{pin_mut, StreamExt};
 use proptest::prelude::*;
 use rustc_hash::FxHashMap;
-use serde_json::{Number, Value};
-use std::sync::Arc;
+use serde_json::{json, Number, Value};
+use std::fmt;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use weavegraph::channels::Channel;
 use weavegraph::event_bus::{
     ChannelSink, Event, EventBus, EventEmitter, LLMStreamingEvent, MemorySink, NodeEvent,
     STREAM_END_SCOPE,
 };
+use weavegraph::node::NodeContext;
 
 #[tokio::test]
 async fn stop_listener_flushes_pending_events() {
@@ -401,6 +403,132 @@ fn event_bus_metrics_expose_capacity() {
     let metrics = bus.metrics();
     assert_eq!(metrics.capacity, 1024);
     assert_eq!(metrics.dropped, 0);
+}
+
+#[derive(Default)]
+struct RecordingEmitter {
+    events: Arc<Mutex<Vec<Event>>>,
+}
+
+impl RecordingEmitter {
+    fn new() -> Self {
+        Self {
+            events: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn record(&self, event: Event) {
+        self.events.lock().unwrap().push(event);
+    }
+
+    fn snapshot(&self) -> Vec<Event> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl fmt::Debug for RecordingEmitter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RecordingEmitter")
+            .field("event_count", &self.events.lock().unwrap().len())
+            .finish()
+    }
+}
+
+impl EventEmitter for RecordingEmitter {
+    fn emit(&self, event: Event) -> Result<(), weavegraph::event_bus::EmitterError> {
+        self.record(event);
+        Ok(())
+    }
+}
+
+#[test]
+fn node_context_emits_all_event_variants() {
+    let emitter = Arc::new(RecordingEmitter::new());
+    let event_emitter: Arc<dyn EventEmitter> = emitter.clone();
+    let ctx = NodeContext {
+        node_id: "node-a".to_string(),
+        step: 7,
+        event_emitter,
+    };
+
+    ctx.emit("progress", "started").unwrap();
+    ctx.emit_diagnostic("diagnostic", "all good").unwrap();
+
+    let mut metadata = FxHashMap::default();
+    metadata.insert("token_count".into(), json!(42));
+    ctx.emit_llm_chunk(
+        Some("session-1".into()),
+        Some("stream-1".into()),
+        "chunk text",
+        Some(metadata),
+    )
+    .unwrap();
+
+    ctx.emit_llm_final(
+        Some("session-1".into()),
+        Some("stream-1".into()),
+        "final chunk",
+        None,
+    )
+    .unwrap();
+
+    ctx.emit_llm_error(
+        Some("session-1".into()),
+        Some("stream-1".into()),
+        "error occurred",
+    )
+    .unwrap();
+
+    let events = emitter.snapshot();
+    assert_eq!(events.len(), 5);
+
+    match &events[0] {
+        Event::Node(node) => {
+            assert_eq!(node.node_id(), Some("node-a"));
+            assert_eq!(node.step(), Some(7));
+            assert_eq!(node.scope(), "progress");
+            assert_eq!(node.message(), "started");
+        }
+        other => panic!("expected node event, got {other:?}"),
+    }
+
+    match &events[1] {
+        Event::Diagnostic(diag) => {
+            assert_eq!(diag.scope(), "diagnostic");
+            assert_eq!(diag.message(), "all good");
+        }
+        other => panic!("expected diagnostic event, got {other:?}"),
+    }
+
+    match &events[2] {
+        Event::LLM(llm) => {
+            assert_eq!(llm.session_id(), Some("session-1"));
+            assert_eq!(llm.node_id(), Some("node-a"));
+            assert_eq!(llm.stream_id(), Some("stream-1"));
+            assert!(!llm.is_final());
+            assert_eq!(llm.chunk(), "chunk text");
+            assert_eq!(llm.metadata().get("token_count"), Some(&json!(42)));
+        }
+        other => panic!("expected LLM chunk event, got {other:?}"),
+    }
+
+    match &events[3] {
+        Event::LLM(llm) => {
+            assert!(llm.is_final());
+            assert_eq!(llm.chunk(), "final chunk");
+            assert!(llm.metadata().is_empty());
+        }
+        other => panic!("expected final LLM event, got {other:?}"),
+    }
+
+    match &events[4] {
+        Event::LLM(llm) => {
+            assert!(llm.is_final());
+            assert_eq!(llm.chunk(), "error occurred");
+            assert_eq!(llm.metadata().get("severity"), Some(&json!("error")));
+        }
+        other => panic!("expected LLM error event, got {other:?}"),
+    }
 }
 
 fn text_strategy() -> impl Strategy<Value = String> {
