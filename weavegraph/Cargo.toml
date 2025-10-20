@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 edition = "2021"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
@@ -15,8 +15,14 @@ documentation = "https://docs.rs/weavegraph"
 [dev-dependencies]
 async-stream = "0.3"
 bytes = "1.7"
-criterion = { version = "0.5", default-features = false, features = ["async_tokio"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+criterion = { version = "0.5", default-features = false, features = [
+    "async_tokio",
+] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "stream",
+] }
 proptest = "1"
 tempfile = "3"
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
