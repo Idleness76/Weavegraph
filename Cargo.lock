@@ -5039,7 +5039,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "wg-ragsmith",
+ "wg-ragsmith 0.1.0-alpha.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5116,6 +5116,32 @@ dependencies = [
  "tokio-rusqlite",
  "tracing",
  "tracing-subscriber",
+ "unicode-segmentation",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "wg-ragsmith"
+version = "0.1.0-alpha.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f858795a9e84b1cbbfa9c8d337eddc428e460f24facc5dd666f976a8b92a0fb"
+dependencies = [
+ "async-trait",
+ "once_cell",
+ "regex",
+ "reqwest",
+ "rig-core",
+ "rig-sqlite",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sqlite-vec",
+ "thiserror 2.0.17",
+ "tiktoken-rs",
+ "tokio",
+ "tokio-rusqlite",
+ "tracing",
  "unicode-segmentation",
  "url",
  "uuid",
