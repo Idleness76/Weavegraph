@@ -578,6 +578,7 @@ fn event_strategy() -> impl Strategy<Value = Event> {
                     stream_id,
                     chunk,
                     is_final,
+                    None,
                     meta,
                     Utc::now(),
                 );

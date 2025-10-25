@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, thread::scope};
 
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
@@ -44,11 +44,7 @@ impl Event {
         match self {
             Event::Node(node) => Some(node.scope()),
             Event::Diagnostic(diag) => Some(diag.scope()),
-            Event::LLM(llm) => llm
-                .stream_id()
-                .or_else(|| llm.node_id())
-                .or_else(|| llm.session_id())
-                .or(Some("llm_stream")),
+            Event::LLM(llm) => Some(llm.scope().as_ref()),
         }
     }
 
@@ -136,12 +132,32 @@ impl DiagnosticEvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LLMStreamingEventScope {
+    Streaming,
+    Chunk,
+    Final,
+    Error,
+}
+
+impl AsRef<str> for LLMStreamingEventScope {
+    fn as_ref(&self) -> &str {
+        match self {
+            LLMStreamingEventScope::Chunk => "chunk",
+            LLMStreamingEventScope::Streaming => "stream",
+            LLMStreamingEventScope::Final => STREAM_END_SCOPE,
+            LLMStreamingEventScope::Error => "error",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LLMStreamingEvent {
     session_id: Option<String>,
     node_id: Option<String>,
     stream_id: Option<String>,
     chunk: String,
     is_final: bool,
+    scope: LLMStreamingEventScope,
     metadata: FxHashMap<String, Value>,
     timestamp: DateTime<Utc>,
 }
@@ -153,6 +169,7 @@ impl LLMStreamingEvent {
         stream_id: Option<String>,
         chunk: impl Into<String>,
         is_final: bool,
+        scope: Option<LLMStreamingEventScope>,
         metadata: FxHashMap<String, Value>,
         timestamp: DateTime<Utc>,
     ) -> Self {
@@ -162,6 +179,7 @@ impl LLMStreamingEvent {
             stream_id,
             chunk: chunk.into(),
             is_final,
+            scope: scope.unwrap_or(LLMStreamingEventScope::Streaming),
             metadata,
             timestamp,
         }
@@ -180,6 +198,7 @@ impl LLMStreamingEvent {
             stream_id,
             chunk,
             false,
+            Some(LLMStreamingEventScope::Chunk),
             metadata,
             Utc::now(),
         )
@@ -198,6 +217,7 @@ impl LLMStreamingEvent {
             stream_id,
             chunk,
             true,
+            Some(LLMStreamingEventScope::Final),
             metadata,
             Utc::now(),
         )
@@ -217,6 +237,7 @@ impl LLMStreamingEvent {
             stream_id,
             error_message,
             true,
+            Some(LLMStreamingEventScope::Error),
             metadata,
             Utc::now(),
         )
@@ -240,6 +261,10 @@ impl LLMStreamingEvent {
 
     pub fn is_final(&self) -> bool {
         self.is_final
+    }
+
+    pub fn scope(&self) -> &LLMStreamingEventScope {
+        &self.scope
     }
 
     pub fn metadata(&self) -> &FxHashMap<String, Value> {
