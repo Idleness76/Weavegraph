@@ -12,7 +12,7 @@ pub trait Clock: Send + Sync {
     /// Get the current time as a Unix timestamp (seconds since epoch).
     fn now(&self) -> u64;
 
-    /// Get the current time as a DateTime<Utc> for more complex time operations.
+    /// Get the current time as a `DateTime<Utc>` for more complex time operations.
     fn now_datetime(&self) -> DateTime<Utc>;
 
     /// Get the current time as SystemTime for compatibility with std library.

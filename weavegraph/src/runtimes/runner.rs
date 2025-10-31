@@ -20,7 +20,7 @@ use tracing::instrument;
 
 /// Result of executing one superstep in a session.
 ///
-/// The embedded [`BarrierOutcome`](crate::app::BarrierOutcome) carries the
+/// The embedded [`BarrierOutcome`] carries the
 /// canonical ordering of updates/errors so callers can persist and resume
 /// without drift.
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ enum StreamEndReason {
 
 /// Runtime execution engine for workflow graphs with session management and event streaming.
 ///
-/// `AppRunner` wraps an [`App`](crate::app::App) and manages the runtime execution environment,
+/// `AppRunner` wraps an [`App`] and manages the runtime execution environment,
 /// including:
 /// - **Session Management**: Multiple isolated workflow executions
 /// - **Event Streaming**: Custom EventBus with pluggable sinks
@@ -107,7 +107,7 @@ enum StreamEndReason {
 ///
 /// # EventBus Integration
 ///
-/// The `AppRunner` owns the [`EventBus`](crate::event_bus::EventBus) that receives events
+/// The `AppRunner` owns the [`EventBus`] that receives events
 /// from workflow nodes. When you need custom event handling:
 ///
 /// ```text
@@ -498,7 +498,7 @@ impl AppRunner {
         Self::with_arc_and_bus(app, checkpointer_type, autosave, event_bus, start_listener).await
     }
 
-    /// Variant that accepts a preconfigured EventBus for an existing Arc<App>.
+    /// Variant that accepts a preconfigured EventBus for an existing `Arc<App>`.
     ///
     /// Same as [`with_options_and_bus()`](Self::with_options_and_bus) but accepts
     /// an `Arc<App>` to avoid unnecessary cloning when you already have the app

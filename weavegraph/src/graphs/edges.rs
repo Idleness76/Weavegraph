@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 /// Predicate function for conditional edge routing.
 ///
-/// Takes a [`StateSnapshot`] and returns target node names to determine
+/// Takes a [`StateSnapshot`](crate::state::StateSnapshot) and returns target node names to determine
 /// which nodes should be executed next. Predicates are used with
-/// [`GraphBuilder::add_conditional_edge`] to create dynamic routing based
+/// [`GraphBuilder::add_conditional_edge`](crate::graphs::GraphBuilder::add_conditional_edge) to create dynamic routing based
 /// on the current state.
 ///
 /// # Examples

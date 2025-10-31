@@ -1,4 +1,4 @@
-use std::{fmt, thread::scope};
+use std::fmt;
 
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
@@ -163,6 +163,7 @@ pub struct LLMStreamingEvent {
 }
 
 impl LLMStreamingEvent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_id: Option<String>,
         node_id: Option<String>,

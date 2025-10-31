@@ -345,8 +345,6 @@ async fn test_invoke_with_channel() {
 
 #[tokio::test]
 async fn test_invoke_with_channel_resumption_updates_versions() {
-    use weavegraph::event_bus::MemorySink;
-
     let app = GraphBuilder::new()
         .add_node(
             NodeKind::Custom("test".into()),
@@ -359,7 +357,7 @@ async fn test_invoke_with_channel_resumption_updates_versions() {
 
     let state = VersionedState::new_with_user_message("first run");
     let (result, _events) = app.invoke_with_channel(state).await;
-    let mut final_state = result.expect("first run succeeds");
+    let final_state = result.expect("first run succeeds");
     assert_eq!(final_state.messages.version(), 2);
 
     // Re-run with the output state to ensure versions bump deterministically.
