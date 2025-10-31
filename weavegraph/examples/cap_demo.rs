@@ -130,6 +130,7 @@ impl Node for OllamaIterativeRefinerNode {
                 messages: Some(vec![Message::assistant(&latest)]),
                 extra: Some(extra),
                 errors: None,
+                frontier: None,
             });
         }
 
@@ -300,6 +301,7 @@ impl Node for OllamaIterativeRefinerNode {
             } else {
                 Some(errors)
             },
+            frontier: None,
         })
     }
 }

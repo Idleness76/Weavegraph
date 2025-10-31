@@ -65,13 +65,13 @@
 //! ```
 
 use async_trait::async_trait;
-use flume;
+use futures_util::StreamExt;
 use miette::{self, IntoDiagnostic, Result};
 use serde_json::json;
-use std::sync::Arc;
 
 use weavegraph::{
-    event_bus::{ChannelSink, Event, EventBus},
+    channels::Channel,
+    event_bus::{Event, STREAM_END_SCOPE},
     graphs::GraphBuilder,
     message::Message,
     node::{Node, NodeContext, NodeError, NodePartial},
@@ -152,93 +152,59 @@ async fn main() -> Result<()> {
 
     // 1. Build the workflow graph (compile once, reuse many times)
     info!("Building workflow graph...");
-    let graph = Arc::new(
-        GraphBuilder::new()
-            .add_node(NodeKind::Custom("Processor".into()), ProcessingNode)
-            .add_edge(NodeKind::Start, NodeKind::Custom("Processor".into()))
-            .add_edge(NodeKind::Custom("Processor".into()), NodeKind::End)
-            .compile()?,
-    );
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("Processor".into()), ProcessingNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("Processor".into()))
+        .add_edge(NodeKind::Custom("Processor".into()), NodeKind::End)
+        .compile()?;
 
-    // 2. Create streaming channel (one per client/request in production)
-    info!("Setting up event stream...\n");
-    let (tx, rx) = flume::unbounded();
+    let initial_state = VersionedState::new_with_user_message("Process my data");
+    let (invocation, event_stream) = app.invoke_streaming(initial_state).await;
 
-    // 3. Create EventBus with custom sink
-    let bus = EventBus::with_sinks(vec![
-        Box::new(weavegraph::event_bus::StdOutSink::default()),
-        Box::new(ChannelSink::new(tx.clone())),
-    ]);
-
-    // 4. Run workflow in background with custom event bus
-    let graph_clone = graph.clone();
-    let workflow_task = tokio::spawn(async move {
-        use weavegraph::runtimes::{runner::AppRunner, CheckpointerType};
-
-        let initial_state = VersionedState::new_with_user_message("Process my data");
-
-        // Create runner with our custom EventBus (don't auto-start listener)
-        let mut runner = AppRunner::with_options_and_bus(
-            Arc::try_unwrap(graph_clone).unwrap_or_else(|arc| (*arc).clone()),
-            CheckpointerType::InMemory,
-            false,
-            bus,
-            true, // start_listener=true
-        )
-        .await;
-
-        // Create session and run
-        let session_id = "stream-example-session".to_string();
-        runner
-            .create_session(session_id.clone(), initial_state)
-            .await
-            .ok();
-
-        match runner.run_until_complete(&session_id).await {
-            Ok(_) => {
-                let _ = tx.send(Event::diagnostic("workflow", "Workflow completed"));
-            }
-            Err(e) => {
-                let _ = tx.send(Event::diagnostic("workflow", format!("Error: {e}")));
-            }
-        }
-    });
-
-    // 6. Consume streamed events as they arrive
+    // 2. Consume streamed events as they arrive
     info!("📡 Streaming events (these could be sent to a web client):\n");
 
-    while let Ok(event) = rx.recv_async().await {
-        // Convert event to JSON (like you would for SSE or WebSocket)
-        let json_payload = json!({
-            "type": match &event {
-                Event::Node(_) => "node",
-                Event::Diagnostic(_) => "diagnostic",
-                Event::LLM(_) => "llm",
-            },
-            "scope": event.scope_label(),
-            "message": event.message(),
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-        });
+    let events_task: tokio::task::JoinHandle<Result<usize>> = tokio::spawn(async move {
+        let mut count = 0usize;
+        let mut events = event_stream.into_async_stream();
+        while let Some(event) = events.next().await {
+            count += 1;
+            let json_payload = json!({
+                "type": match &event {
+                    Event::Node(_) => "node",
+                    Event::Diagnostic(_) => "diagnostic",
+                    Event::LLM(_) => "llm",
+                },
+                "scope": event.scope_label(),
+                "message": event.message(),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
 
-        // In production, you'd send this to a web client
-        info!(
-            "📨 Stream event: {}",
-            serde_json::to_string_pretty(&json_payload).into_diagnostic()?
-        );
+            info!(
+                "📨 Stream event: {}",
+                serde_json::to_string_pretty(&json_payload).into_diagnostic()?
+            );
 
-        // Break on completion event
-        if event.message().contains("completed") {
-            break;
+            if event.scope_label() == Some(STREAM_END_SCOPE) {
+                info!("✅ Received STREAM_END_SCOPE sentinel; closing stream");
+                break;
+            }
         }
-    }
+        Result::Ok(count)
+    });
 
-    // Wait for workflow to finish
-    workflow_task.await.into_diagnostic()?;
+    let final_state = invocation.join().await.into_diagnostic()?;
+    let _event_count = events_task.await.into_diagnostic()??;
+
+    info!(
+        "🧾 Final state contains {} message(s)",
+        final_state.messages.snapshot().len()
+    );
 
     info!("\n=== Example Complete ===");
     info!("\n💡 Next Steps:");
     info!("   - Use this pattern with Axum for SSE endpoints");
-    info!("   - Add multiple ChannelSinks for different clients");
+    info!("   - Use `invoke_with_channel` when you need a flume receiver");
     info!("   - Filter events by scope before streaming");
 
     Ok(())

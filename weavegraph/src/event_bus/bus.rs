@@ -309,9 +309,17 @@ impl SinkEntry {
                             });
                             match dispatch.await {
                                 Ok(Ok(())) => {}
-                                Ok(Err(err)) => eprintln!("EventBus sink error: {err}"),
+                                Ok(Err(err)) => tracing::error!(
+                                    target: "weavegraph::event_bus",
+                                    error = %err,
+                                    "event sink reported an error while handling event"
+                                ),
                                 Err(err) => {
-                                    eprintln!("EventBus sink worker join error: {err}");
+                                    tracing::error!(
+                                        target: "weavegraph::event_bus",
+                                        error = %err,
+                                        "event sink worker task failed to join"
+                                    );
                                 }
                             }
                         }

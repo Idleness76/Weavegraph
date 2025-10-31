@@ -1,11 +1,15 @@
+use async_trait::async_trait;
 #[cfg(feature = "sqlite")]
 use weavegraph::channels::Channel;
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
+use weavegraph::message::Message;
+use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{
     AppRunner, CheckpointerType, PausedReason, SessionInit, StepOptions, StepResult,
 };
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+use weavegraph::{FrontierCommand, NodeRoute};
 
 mod common;
 use common::*;
@@ -134,7 +138,10 @@ async fn test_run_step_basic() {
     if let Ok(StepResult::Completed(report)) = result {
         assert_eq!(report.step, 1);
         assert_eq!(report.ran_nodes.len(), 1);
-        assert!(report.updated_channels.contains(&"messages"));
+        assert!(report
+            .barrier_outcome
+            .updated_channels
+            .contains(&"messages"));
     } else {
         panic!("Expected completed step, got: {:?}", result);
     }
@@ -161,6 +168,91 @@ async fn test_run_until_complete() {
     // user + test node message
     assert_eq!(final_state.messages.len(), 2);
     assert_message_contains(&final_state, "ran:test:step:1");
+}
+
+#[derive(Debug, Clone)]
+struct ReplaceController;
+
+#[async_trait]
+impl Node for ReplaceController {
+    async fn run(
+        &self,
+        _snapshot: StateSnapshot,
+        _ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        Ok(NodePartial::new().with_frontier_replace(vec![NodeKind::Custom("worker".into())]))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct WorkerNode;
+
+#[async_trait]
+impl Node for WorkerNode {
+    async fn run(
+        &self,
+        _snapshot: StateSnapshot,
+        _ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        Ok(NodePartial::new().with_messages(vec![Message::assistant("worker-run")]))
+    }
+}
+
+#[tokio::test]
+async fn test_frontier_command_replace_routes_nodes() {
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("controller".into()), ReplaceController)
+        .add_node(NodeKind::Custom("worker".into()), WorkerNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("controller".into()))
+        .add_edge(NodeKind::Custom("worker".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+
+    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let initial_state = state_with_user("control");
+
+    runner
+        .create_session("frontier-session".into(), initial_state)
+        .await
+        .expect("create session");
+
+    let first_step = runner
+        .run_step("frontier-session", StepOptions::default())
+        .await
+        .expect("first step");
+
+    match first_step {
+        StepResult::Completed(report) => {
+            assert_eq!(
+                report.ran_nodes,
+                vec![NodeKind::Custom("controller".into())]
+            );
+            assert_eq!(report.barrier_outcome.frontier_commands.len(), 1);
+            match &report.barrier_outcome.frontier_commands[0].1 {
+                FrontierCommand::Replace(routes) => {
+                    let kinds: Vec<NodeKind> = routes.iter().map(NodeRoute::to_node_kind).collect();
+                    assert_eq!(kinds.len(), 1);
+                    assert_eq!(kinds[0], NodeKind::Custom("worker".into()));
+                }
+                other => panic!("expected replace command, got {other:?}"),
+            }
+        }
+        other => panic!("expected completed step, got {other:?}"),
+    }
+
+    let second_step = runner
+        .run_step("frontier-session", StepOptions::default())
+        .await
+        .expect("second step");
+
+    match second_step {
+        StepResult::Completed(report) => {
+            assert!(report
+                .ran_nodes
+                .contains(&NodeKind::Custom("worker".into())));
+        }
+        other => panic!("expected completed step, got {other:?}"),
+    }
 }
 
 #[tokio::test]

@@ -33,12 +33,14 @@ async fn test_apply_barrier_messages_update() {
         }]),
         extra: None,
         errors: None,
+        frontier: None,
     };
-    let updated = app
+    let outcome = app
         .apply_barrier(state, &run_ids, vec![partial])
         .await
         .unwrap();
-    assert!(updated.contains(&"messages"));
+    assert!(outcome.updated_channels.contains(&"messages"));
+    assert!(outcome.errors.is_empty());
     assert_eq!(state.messages.snapshot().last().unwrap().content, "foo");
     assert_eq!(state.messages.version(), 2);
     assert_eq!(state.extra.version(), 1);
@@ -53,12 +55,14 @@ async fn test_apply_barrier_no_update() {
         messages: None,
         extra: None,
         errors: None,
+        frontier: None,
     };
-    let updated = app
+    let outcome = app
         .apply_barrier(state, &run_ids, vec![partial])
         .await
         .unwrap();
-    assert!(updated.is_empty());
+    assert!(outcome.updated_channels.is_empty());
+    assert!(outcome.errors.is_empty());
     assert_eq!(state.messages.version(), 1);
     assert_eq!(state.extra.version(), 1);
 }
@@ -76,11 +80,52 @@ async fn test_apply_barrier_saturating_version() {
         }]),
         extra: None,
         errors: None,
+        frontier: None,
     };
     app.apply_barrier(state, &[NodeKind::Start], vec![partial])
         .await
         .unwrap();
     assert_eq!(state.messages.version(), u32::MAX);
+}
+
+#[tokio::test]
+async fn test_apply_barrier_preserves_updated_channel_order() {
+    use weavegraph::channels::errors::{ErrorEvent, ErrorScope};
+
+    let app = make_app();
+    let state = &mut state_with_user("hi");
+    let run_ids = vec![NodeKind::Start];
+
+    let partial_a = NodePartial::new().with_messages(vec![Message::assistant("a")]);
+    let partial_b = NodePartial::new().with_extra({
+        let mut map = FxHashMap::default();
+        map.insert("z".into(), Value::String("1".into()));
+        map.insert("a".into(), Value::String("2".into()));
+        map
+    });
+    let err_event = ErrorEvent {
+        scope: ErrorScope::Node {
+            kind: "anode".into(),
+            step: 2,
+        },
+        when: chrono::Utc::now(),
+        ..Default::default()
+    };
+    let partial_c = NodePartial::new().with_errors(vec![err_event.clone()]);
+
+    let outcome = app
+        .apply_barrier(state, &run_ids, vec![partial_a, partial_b, partial_c])
+        .await
+        .unwrap();
+
+    assert_eq!(outcome.updated_channels, vec!["messages", "extra"]);
+    assert_eq!(outcome.errors, vec![err_event]);
+    assert_eq!(state.messages.version(), 2);
+    assert_eq!(state.extra.version(), 2);
+    let extra_snapshot = state.extra.snapshot();
+    let mut keys: Vec<_> = extra_snapshot.keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["a".to_string(), "z".to_string()]);
 }
 
 struct EmitOnce;
@@ -140,6 +185,7 @@ async fn test_apply_barrier_multiple_updates() {
         }]),
         extra: None,
         errors: None,
+        frontier: None,
     };
     let partial2 = NodePartial {
         messages: Some(vec![Message {
@@ -148,8 +194,9 @@ async fn test_apply_barrier_multiple_updates() {
         }]),
         extra: None,
         errors: None,
+        frontier: None,
     };
-    let updated = app
+    let outcome = app
         .apply_barrier(
             state,
             &[NodeKind::Start, NodeKind::End],
@@ -158,7 +205,7 @@ async fn test_apply_barrier_multiple_updates() {
         .await
         .unwrap();
     let snap = state.messages.snapshot();
-    assert!(updated.contains(&"messages"));
+    assert!(outcome.updated_channels.contains(&"messages"));
     assert_eq!(snap[snap.len() - 2].content, "foo");
     assert_eq!(snap[snap.len() - 1].content, "bar");
     assert_eq!(state.messages.version(), 2);
@@ -173,14 +220,16 @@ async fn test_apply_barrier_empty_vectors_and_maps() {
         messages: Some(vec![]),
         extra: None,
         errors: None,
+        frontier: None,
     };
     // Empty extra map -> Some(empty) should be treated as no-op by guard
     let empty_extra = NodePartial {
         messages: None,
         extra: Some(FxHashMap::default()),
         errors: None,
+        frontier: None,
     };
-    let updated = app
+    let outcome = app
         .apply_barrier(
             state,
             &[NodeKind::Start, NodeKind::End],
@@ -188,7 +237,7 @@ async fn test_apply_barrier_empty_vectors_and_maps() {
         )
         .await
         .unwrap();
-    assert!(updated.is_empty());
+    assert!(outcome.updated_channels.is_empty());
     assert_eq!(state.messages.version(), 1);
     assert_eq!(state.extra.version(), 1);
 }
@@ -209,22 +258,47 @@ async fn test_apply_barrier_extra_merge_and_version() {
         messages: None,
         extra: Some(m1),
         errors: None,
+        frontier: None,
     };
     let p2 = NodePartial {
         messages: None,
         extra: Some(m2),
         errors: None,
+        frontier: None,
     };
 
-    let updated = app
+    let outcome = app
         .apply_barrier(state, &[NodeKind::Start, NodeKind::End], vec![p1, p2])
         .await
         .unwrap();
-    assert!(updated.contains(&"extra"));
+    assert!(outcome.updated_channels.contains(&"extra"));
     let snap = state.extra.snapshot();
     assert_eq!(snap.get("k1"), Some(&Value::String("v3".into())));
     assert_eq!(snap.get("k2"), Some(&Value::String("v2".into())));
     assert_eq!(state.extra.version(), 2);
+}
+
+#[tokio::test]
+async fn test_apply_barrier_collects_errors() {
+    use weavegraph::channels::errors::ErrorEvent;
+
+    let app = make_app();
+    let state = &mut state_with_user("hi");
+    let run_ids = vec![NodeKind::Start];
+    let partial = NodePartial {
+        messages: None,
+        extra: None,
+        errors: Some(vec![ErrorEvent::default()]),
+        frontier: None,
+    };
+
+    let outcome = app
+        .apply_barrier(state, &run_ids, vec![partial])
+        .await
+        .unwrap();
+
+    assert!(outcome.updated_channels.is_empty());
+    assert_eq!(outcome.errors.len(), 1);
 }
 
 #[tokio::test]
@@ -267,6 +341,32 @@ async fn test_invoke_with_channel() {
     // Note: Event count verification is inherently racy due to EventBus Drop behavior
     let _event_count = event_task.await.expect("Event task should complete");
     // We just verify the API works, not exact event counts
+}
+
+#[tokio::test]
+async fn test_invoke_with_channel_resumption_updates_versions() {
+    use weavegraph::event_bus::MemorySink;
+
+    let app = GraphBuilder::new()
+        .add_node(
+            NodeKind::Custom("test".into()),
+            SimpleMessageNode::new("test output"),
+        )
+        .add_edge(NodeKind::Start, NodeKind::Custom("test".into()))
+        .add_edge(NodeKind::Custom("test".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+
+    let state = VersionedState::new_with_user_message("first run");
+    let (result, _events) = app.invoke_with_channel(state).await;
+    let mut final_state = result.expect("first run succeeds");
+    assert_eq!(final_state.messages.version(), 2);
+
+    // Re-run with the output state to ensure versions bump deterministically.
+    let (second_result, _second_events) = app.invoke_with_channel(final_state.clone()).await;
+    let second_state = second_result.expect("second run succeeds");
+    assert_eq!(second_state.messages.version(), 3);
+    assert_eq!(second_state.extra.version(), final_state.extra.version());
 }
 
 #[tokio::test]

@@ -51,6 +51,7 @@ fn test_add_messages_appends_state() {
         }]),
         extra: None,
         errors: None,
+        frontier: None,
     };
 
     reducer.apply(&mut state, &partial);
@@ -74,6 +75,7 @@ fn test_add_messages_empty_partial_noop() {
         messages: Some(vec![]),
         extra: None,
         errors: None,
+        frontier: None,
     };
 
     reducer.apply(&mut state, &partial);
@@ -105,6 +107,7 @@ fn test_map_merge_merges_and_overwrites_state() {
         messages: None,
         extra: Some(extra_update),
         errors: None,
+        frontier: None,
     };
 
     reducer.apply(&mut state, &partial);
@@ -141,6 +144,7 @@ fn test_map_merge_empty_partial_noop() {
         messages: None,
         extra: Some(FxHashMap::default()),
         errors: None,
+        frontier: None,
     };
 
     reducer.apply(&mut state, &partial);
@@ -176,6 +180,7 @@ fn test_enum_wrapper_dispatch() {
         }]),
         extra: Some(extra_update),
         errors: None,
+        frontier: None,
     };
 
     for r in &reducers {
@@ -216,6 +221,7 @@ fn test_channel_guard_logic() {
         messages: None,
         extra: Some(extra_map),
         errors: None,
+        frontier: None,
     };
     assert!(channel_guard(ChannelType::Extra, &extra_partial));
 }
@@ -239,6 +245,7 @@ fn test_registry_integration_like_flow() {
         }]),
         extra: Some(extra_update),
         errors: None,
+        frontier: None,
     };
 
     // Simulate runtime iterating channels

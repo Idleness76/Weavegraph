@@ -17,6 +17,7 @@
 
 pub mod app;
 pub mod channels;
+pub mod control;
 pub mod event_bus;
 pub mod graphs;
 pub mod message;
@@ -28,3 +29,5 @@ pub mod state;
 pub mod telemetry;
 pub mod types;
 pub mod utils;
+
+pub use control::{FrontierCommand, NodeRoute};

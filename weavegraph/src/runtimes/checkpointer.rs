@@ -90,7 +90,7 @@ impl Checkpoint {
     /// # Parameters
     ///
     /// * `session_id` - Unique identifier for the session
-    /// * `session_state` - Current session state after step execution  
+    /// * `session_state` - Current session state after step execution
     /// * `step_report` - Details of what happened during step execution
     ///
     /// # Returns
@@ -126,6 +126,7 @@ impl Checkpoint {
             ran_nodes: step_report.ran_nodes.clone(),
             skipped_nodes: step_report.skipped_nodes.clone(),
             updated_channels: step_report
+                .barrier_outcome
                 .updated_channels
                 .iter()
                 .map(|s| (*s).to_string())
@@ -192,7 +193,7 @@ pub type Result<T> = std::result::Result<T, CheckpointerError>;
 /// # Design Principles
 ///
 /// - **Atomicity**: Checkpoint saves should be all-or-nothing operations
-/// - **Consistency**: The stored state should always be in a valid, resumable state  
+/// - **Consistency**: The stored state should always be in a valid, resumable state
 /// - **Idempotency**: Saving the same checkpoint multiple times should be safe
 /// - **Isolation**: Concurrent access to different sessions should not interfere
 ///

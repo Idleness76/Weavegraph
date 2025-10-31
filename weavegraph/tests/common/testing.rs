@@ -56,6 +56,7 @@ impl Node for TestNode {
             ))]),
             extra: None,
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -81,6 +82,7 @@ impl Node for DelayedNode {
             ))]),
             extra: None,
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -142,6 +144,7 @@ impl Node for RichNode {
             messages,
             extra,
             errors: None,
+            frontier: None,
         })
     }
 }
