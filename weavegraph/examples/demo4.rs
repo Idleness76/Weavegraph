@@ -305,6 +305,7 @@ impl Node for StreamingGeneratorNode {
         Ok(NodePartial {
             messages: Some(vec![response_message]),
             extra: Some(extra_data),
+            frontier: None,
             errors: if errors.is_empty() {
                 None
             } else {
@@ -602,6 +603,7 @@ impl Node for StreamingEnhancerNode {
         Ok(NodePartial {
             messages: Some(vec![enhanced_message]),
             extra: Some(extra_data),
+            frontier: None,
             errors: if errors.is_empty() {
                 None
             } else {

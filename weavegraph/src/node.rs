@@ -348,7 +348,7 @@ pub enum NodeError {
     #[error("missing expected input: {what}")]
     #[diagnostic(
         code(weavegraph::node::missing_input),
-        help("Check that the previous node produced the required data.")
+        help("Check that the previous node produced the required data: {what}.")
     )]
     MissingInput { what: &'static str },
 

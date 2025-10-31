@@ -14,7 +14,7 @@ categories = [
     "text-processing",
     "api-bindings",
 ]
-rust-version = "1.89"
+rust-version = "1.91"
 readme = "README.md"
 
 [dependencies]

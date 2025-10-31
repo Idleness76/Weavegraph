@@ -142,7 +142,7 @@ pub enum CheckpointerError {
     #[error("session not found: {session_id}")]
     #[diagnostic(
         code(weavegraph::checkpointer::not_found),
-        help("Ensure the session ID is correct and the session has been created.")
+        help("Ensure the session ID `{session_id}` is correct and the session has been created.")
     )]
     NotFound { session_id: String },
 
@@ -150,7 +150,7 @@ pub enum CheckpointerError {
     #[error("backend error: {message}")]
     #[diagnostic(
         code(weavegraph::checkpointer::backend),
-        help("Check backend connectivity and permissions.")
+        help("Check backend connectivity and permissions; backend message: {message}.")
     )]
     Backend { message: String },
 

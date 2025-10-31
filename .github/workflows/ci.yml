@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: ["1.89.0", "stable", "nightly"]
+        toolchain: ["1.91.0", "stable", "nightly"]
         command: ["clippy", "test", "doc"]
     steps:
       - uses: actions/checkout@v4
