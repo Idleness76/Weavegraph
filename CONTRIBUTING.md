@@ -12,7 +12,7 @@ While the project started in an educational context, **it has grown beyond the c
 
 ### Prerequisites
 
-- Rust 1.89 or later
+- Rust 1.91 or later
 - Basic familiarity with async Rust and the `tokio` runtime
 - Understanding of graph-based workflows is helpful but not required
 
@@ -34,10 +34,10 @@ While the project started in an educational context, **it has grown beyond the c
    ```bash
    # Start with basic patterns
    cargo run --example basic_nodes
-   
+
    # Explore advanced features
    cargo run --example advanced_patterns
-   
+
    # See error handling in action
    cargo run --example errors_pretty
    ```
