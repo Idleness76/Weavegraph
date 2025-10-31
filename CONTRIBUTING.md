@@ -12,7 +12,7 @@ While the project started in an educational context, **it has grown beyond the c
 
 ### Prerequisites
 
-- Rust 1.83 or later
+- Rust 1.89 or later
 - Basic familiarity with async Rust and the `tokio` runtime
 - Understanding of graph-based workflows is helpful but not required
 

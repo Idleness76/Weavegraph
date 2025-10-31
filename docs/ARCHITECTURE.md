@@ -26,7 +26,7 @@ Makefile                  → Developer/CI task runner (fmt, clippy, test, doc, 
 ARCHITECTURE.md           → This document.
 ```
 
-The workspace targets Rust 1.83 as the minimum supported version and enables 2021 edition
+The workspace targets Rust 1.89 as the minimum supported version and enables 2021 edition
 features across both crates.
 
 ---
@@ -160,7 +160,7 @@ These examples share environment variables with the weavegraph RAG demo (see `.e
   `cargo test`, `cargo doc`, `cargo deny`, `cargo machete`, and `sqlx` migrations so that
   local developers and CI run identical commands.
 * **CI/CD** – `.github/workflows/ci.yml` runs the Makefile/`cargo` commands across three
-  toolchains (`1.83.0`, current stable, nightly) and per workspace member to guard API evolution.
+  toolchains (`1.89.0`, current stable, nightly) and per workspace member to guard API evolution.
 * **Migrations** – `weavegraph/migrations` houses the `sqlx` migration set for the SQLite
   checkpointer. The Makefile’s `migrate*` targets wrap `sqlx` CLI calls.
 * **Docs** – `docs/` captures forward-looking design documents (event bus refactor,
