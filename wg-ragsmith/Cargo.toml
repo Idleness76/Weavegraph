@@ -63,3 +63,10 @@ semantic-chunking-segtok = ["segtok"]
 
 [lib]
 path = "src/lib.rs"
+
+[package.metadata.cargo-machete]
+# These dependencies are optional (or future-facing) and intentionally retained:
+# - rust-bert: gated behind the `semantic-chunking-rust-bert` feature
+# - unicode-segmentation: reserved for upcoming segmentation strategies
+# - httpmock: kept for future integration tests that exercise HTTP flows
+ignored = ["rust-bert", "unicode-segmentation", "httpmock"]

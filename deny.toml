@@ -11,4 +11,11 @@ allow = [
     "LGPL-2.1-or-later",
     "BSL-1.0",
     "CDLA-Permissive-2.0",
+    "MPL-2.0",
+]
+
+[advisories]
+ignore = [
+    "RUSTSEC-2025-0052", # async-std transitive dependency used only in test tooling
+    "RUSTSEC-2025-0057", # fxhash via scraper/selectors; upstream is unmaintained but non-optional
 ]

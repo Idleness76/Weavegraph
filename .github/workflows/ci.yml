@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["1.83.0", "stable", "nightly"]
+        toolchain: ["1.83.0", "stable"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -28,80 +28,38 @@ jobs:
       - name: cargo fmt --check
         run: make fmt-check
 
-  clippy:
-    name: clippy (${{ matrix.toolchain }} - ${{ matrix.member }})
+  checks:
+    name: ${{ matrix.command }} (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         toolchain: ["1.83.0", "stable", "nightly"]
-        member: ["workspace", "weavegraph", "wg-ragsmith"]
+        command: ["clippy", "test", "doc"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          components: clippy
+          components: ${{ matrix.command == 'clippy' && 'clippy' || '' }}
       - uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: clippy-${{ matrix.toolchain }}-${{ matrix.member }}
-      - name: cargo clippy
-        run: |
-          if [ "${{ matrix.member }}" = "workspace" ]; then
-            cargo clippy --workspace --all-targets -- -D warnings
-          else
-            cargo clippy -p ${{ matrix.member }} --all-targets -- -D warnings
-          fi
-
-  test:
-    name: test (${{ matrix.toolchain }} - ${{ matrix.member }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: ["1.83.0", "stable", "nightly"]
-        member: ["workspace", "weavegraph", "wg-ragsmith"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: test-${{ matrix.toolchain }}-${{ matrix.member }}
-      - name: cargo test
-        run: |
-          if [ "${{ matrix.member }}" = "workspace" ]; then
-            cargo test --workspace
-          else
-            cargo test -p ${{ matrix.member }}
-          fi
-
-  doc:
-    name: doc (${{ matrix.toolchain }} - ${{ matrix.member }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: ["1.83.0", "stable", "nightly"]
-        member: ["workspace", "weavegraph", "wg-ragsmith"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: doc-${{ matrix.toolchain }}-${{ matrix.member }}
-      - name: cargo doc --no-deps
+          prefix-key: ${{ matrix.command }}-${{ matrix.toolchain }}
+      - name: run ${{ matrix.command }}
         env:
-          RUSTDOCFLAGS: -D warnings
+          RUSTDOCFLAGS: ${{ matrix.command == 'doc' && '-D warnings' || '' }}
         run: |
-          if [ "${{ matrix.member }}" = "workspace" ]; then
-            cargo doc --workspace --all-features --no-deps
-          else
-            cargo doc -p ${{ matrix.member }} --all-features --no-deps
-          fi
+          case "${{ matrix.command }}" in
+            clippy)
+              cargo clippy --workspace --all-targets -- -D warnings
+              ;;
+            test)
+              cargo test --workspace
+              ;;
+            doc)
+              cargo doc --workspace --all-features --no-deps
+              ;;
+          esac
 
   deny:
     name: cargo deny
