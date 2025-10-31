@@ -1,4 +1,4 @@
-use std::io::{self, ErrorKind};
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
@@ -234,9 +234,20 @@ impl EventBus {
             return;
         }
         self.generation.fetch_add(1, Ordering::SeqCst);
-        let mut sinks = self.sinks.lock().unwrap();
-        for entry in sinks.iter_mut() {
-            entry.stop_worker().await;
+        let workers = {
+            let mut sinks = self.sinks.lock().unwrap();
+            let mut collected = Vec::with_capacity(sinks.len());
+            for entry in sinks.iter_mut() {
+                if let Some(worker) = entry.worker.take() {
+                    collected.push(worker);
+                }
+            }
+            collected
+        };
+        for worker in workers {
+            let SinkWorker { shutdown, handle } = worker;
+            let _ = shutdown.send(());
+            let _ = handle.await;
         }
     }
 
@@ -300,18 +311,23 @@ impl SinkEntry {
                             // blocking pool so we never park the async runtime thread.
                             let dispatch = task::spawn_blocking(move || -> io::Result<()> {
                                 let mut guard = sink.lock().map_err(|_| {
-                                    io::Error::new(
-                                        ErrorKind::Other,
-                                        "event sink mutex poisoned",
-                                    )
+                                    io::Error::other("event sink mutex poisoned")
                                 })?;
                                 guard.handle(&event)
                             });
                             match dispatch.await {
                                 Ok(Ok(())) => {}
-                                Ok(Err(err)) => eprintln!("EventBus sink error: {err}"),
+                                Ok(Err(err)) => tracing::error!(
+                                    target: "weavegraph::event_bus",
+                                    error = %err,
+                                    "event sink reported an error while handling event"
+                                ),
                                 Err(err) => {
-                                    eprintln!("EventBus sink worker join error: {err}");
+                                    tracing::error!(
+                                        target: "weavegraph::event_bus",
+                                        error = %err,
+                                        "event sink worker task failed to join"
+                                    );
                                 }
                             }
                         }
@@ -325,13 +341,6 @@ impl SinkEntry {
             shutdown: shutdown_tx,
             handle,
         });
-    }
-
-    async fn stop_worker(&mut self) {
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.shutdown.send(());
-            let _ = worker.handle.await;
-        }
     }
 
     fn abort_worker(&mut self) {

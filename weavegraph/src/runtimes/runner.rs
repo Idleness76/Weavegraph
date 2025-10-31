@@ -1,6 +1,7 @@
-use crate::app::App;
+use crate::app::{App, BarrierOutcome};
 use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::channels::Channel;
+use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{Event, EventBus, EventStream, STREAM_END_SCOPE};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
@@ -18,12 +19,16 @@ use tokio::task::JoinError;
 use tracing::instrument;
 
 /// Result of executing one superstep in a session.
+///
+/// The embedded [`BarrierOutcome`] carries the
+/// canonical ordering of updates/errors so callers can persist and resume
+/// without drift.
 #[derive(Debug, Clone)]
 pub struct StepReport {
     pub step: u64,
     pub ran_nodes: Vec<NodeKind>,
     pub skipped_nodes: Vec<NodeKind>,
-    pub updated_channels: Vec<&'static str>,
+    pub barrier_outcome: BarrierOutcome,
     pub next_frontier: Vec<NodeKind>,
     pub state_versions: StateVersions,
     pub completed: bool,
@@ -83,7 +88,7 @@ enum StreamEndReason {
 
 /// Runtime execution engine for workflow graphs with session management and event streaming.
 ///
-/// `AppRunner` wraps an [`App`](crate::app::App) and manages the runtime execution environment,
+/// `AppRunner` wraps an [`App`] and manages the runtime execution environment,
 /// including:
 /// - **Session Management**: Multiple isolated workflow executions
 /// - **Event Streaming**: Custom EventBus with pluggable sinks
@@ -102,7 +107,7 @@ enum StreamEndReason {
 ///
 /// # EventBus Integration
 ///
-/// The `AppRunner` owns the [`EventBus`](crate::event_bus::EventBus) that receives events
+/// The `AppRunner` owns the [`EventBus`] that receives events
 /// from workflow nodes. When you need custom event handling:
 ///
 /// ```text
@@ -493,7 +498,7 @@ impl AppRunner {
         Self::with_arc_and_bus(app, checkpointer_type, autosave, event_bus, start_listener).await
     }
 
-    /// Variant that accepts a preconfigured EventBus for an existing Arc<App>.
+    /// Variant that accepts a preconfigured EventBus for an existing `Arc<App>`.
     ///
     /// Same as [`with_options_and_bus()`](Self::with_options_and_bus) but accepts
     /// an `Arc<App>` to avoid unnecessary cloning when you already have the app
@@ -628,7 +633,7 @@ impl AppRunner {
                 step: session_state.step,
                 ran_nodes: vec![],
                 skipped_nodes: session_state.frontier.clone(),
-                updated_channels: vec![],
+                barrier_outcome: BarrierOutcome::default(),
                 next_frontier: vec![],
                 state_versions: versions,
                 completed: true,
@@ -693,6 +698,7 @@ impl AppRunner {
                     messages: None,
                     extra: None,
                     errors: Some(vec![event]),
+                    frontier: None,
                 };
                 // Apply directly using reducer registry through App
                 let _ = self
@@ -747,7 +753,10 @@ impl AppRunner {
         Ok(StepResult::Completed(step_report))
     }
 
-    /// Helper method that executes exactly one superstep on the given session state
+    /// Helper method that executes exactly one superstep on the given session state.
+    ///
+    /// Applies barrier outcomes (including frontier commands) and returns the updated
+    /// step report with deterministic routing decisions.
     #[instrument(skip(self, session_state), err)]
     async fn run_one_superstep(
         &self,
@@ -795,7 +804,7 @@ impl AppRunner {
 
         // Apply barrier using the app's existing method
         let mut update_state = session_state.state.clone();
-        let updated_channels = self
+        let barrier_outcome = self
             .app
             .apply_barrier(&mut update_state, &run_ids, node_partials)
             .await
@@ -804,63 +813,108 @@ impl AppRunner {
         // Update session state with the modified state
         session_state.state = update_state;
 
-        // Compute next frontier: unconditional edges + conditional edges
+        // Compute next frontier: unconditional edges + control commands + conditional edges
         let mut next_frontier: Vec<NodeKind> = Vec::new();
         let app_edges = self.app.edges();
         let conditional_edges = self.app.conditional_edges();
         let snapshot = session_state.state.snapshot();
+
+        let mut command_map: FxHashMap<NodeKind, Vec<FrontierCommand>> = FxHashMap::default();
+        for (origin, command) in &barrier_outcome.frontier_commands {
+            command_map
+                .entry(origin.clone())
+                .or_default()
+                .push(command.clone());
+        }
+
         for id in run_ids.iter() {
-            // Unconditional edges
-            if let Some(dests) = app_edges.get(id) {
-                for d in dests {
-                    if !next_frontier.contains(d) {
-                        next_frontier.push(d.clone());
+            let default_edges = app_edges.get(id).cloned().unwrap_or_default();
+            let mut routes: Vec<NodeKind> = Vec::new();
+            let mut replaced = false;
+
+            if let Some(commands) = command_map.get(id) {
+                // Commands are processed in emission order to preserve author intent.
+                for command in commands {
+                    match command {
+                        FrontierCommand::Replace(entries) => {
+                            if replaced {
+                                tracing::warn!(
+                                    step,
+                                    origin = %id.encode(),
+                                    target = %entries.iter().fold(String::new(),
+                                        |acc, e| format!("{} + {}", acc, e.to_node_kind())
+                                    ),
+                                    "Rplace frontier command has been issued once already during this step, skipping."
+                                );
+                                continue;
+                            }
+                            routes = entries.iter().map(NodeRoute::to_node_kind).collect();
+                            replaced = true;
+                        }
+                        FrontierCommand::Append(entries) => {
+                            if routes.is_empty() && !replaced {
+                                routes.extend(default_edges.clone());
+                            }
+                            routes.extend(entries.iter().map(NodeRoute::to_node_kind));
+                        }
+                    }
+                }
+
+                if routes.is_empty() && !replaced {
+                    routes.extend(default_edges.clone());
+                }
+            } else {
+                routes.extend(default_edges.clone());
+            }
+
+            if !replaced {
+                for ce in conditional_edges.iter().filter(|ce| ce.from() == id) {
+                    tracing::debug!(from = ?ce.from(), step, "evaluating conditional edge");
+                    let target_names = (ce.predicate())(snapshot.clone());
+
+                    for target_name in target_names {
+                        let target = if target_name == "End" {
+                            NodeKind::End
+                        } else if target_name == "Start" {
+                            NodeKind::Start
+                        } else {
+                            NodeKind::Custom(target_name.clone())
+                        };
+
+                        tracing::debug!(target = ?target, step, "conditional edge routed");
+
+                        routes.push(target);
                     }
                 }
             }
-            // Conditional edges
-            for ce in conditional_edges.iter().filter(|ce| ce.from() == id) {
-                tracing::debug!(from = ?ce.from(), step, "evaluating conditional edge");
-                let target_names = (ce.predicate())(snapshot.clone());
 
-                for target_name in target_names {
-                    // Convert target name to NodeKind
-                    let target = if target_name == "End" {
-                        NodeKind::End
-                    } else if target_name == "Start" {
-                        NodeKind::Start
-                    } else {
-                        NodeKind::Custom(target_name.clone())
-                    };
+            for target in routes {
+                let is_valid_target = match &target {
+                    NodeKind::End | NodeKind::Start => true,
+                    NodeKind::Custom(_) => self.app.nodes().contains_key(&target),
+                };
 
-                    tracing::debug!(target = ?target, step, "conditional edge routed");
-
-                    // Validate that the target node exists or is a virtual endpoint
-                    let is_valid_target = match &target {
-                        NodeKind::End | NodeKind::Start => true, // Virtual endpoints are always valid
-                        NodeKind::Custom(_) => {
-                            // Check if the node is registered in the app
-                            self.app.nodes().contains_key(&target)
-                        }
-                    };
-
-                    if is_valid_target {
-                        if !next_frontier.contains(&target) {
-                            next_frontier.push(target);
-                        }
-                    } else {
-                        // Log a warning but don't fail the execution
-                        tracing::warn!(
-                            step,
-                            target = %target_name,
-                            "conditional edge target not found; skipping"
-                        );
+                if is_valid_target {
+                    if !next_frontier.contains(&target) {
+                        next_frontier.push(target);
                     }
+                } else {
+                    tracing::warn!(
+                        step,
+                        origin = %id.encode(),
+                        target = %target.encode(),
+                        "frontier target not found; skipping"
+                    );
                 }
             }
         }
 
-        tracing::debug!(step, updated_channels = ?updated_channels, "channels updated");
+        tracing::debug!(
+            step,
+            updated_channels = ?barrier_outcome.updated_channels,
+            error_count = barrier_outcome.errors.len(),
+            "barrier applied"
+        );
         tracing::debug!(step, next_frontier = ?next_frontier, "computed next frontier");
 
         let completed =
@@ -878,7 +932,7 @@ impl AppRunner {
             step,
             ran_nodes: run_ids,
             skipped_nodes: step_result.skipped_nodes,
-            updated_channels,
+            barrier_outcome,
             next_frontier,
             state_versions,
             completed,

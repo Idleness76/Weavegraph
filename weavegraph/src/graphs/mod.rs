@@ -3,15 +3,15 @@
 //! This module provides the core graph building functionality for creating
 //! workflow graphs with nodes, edges, and conditional routing. The main
 //! entry point is [`GraphBuilder`], which uses a builder pattern to
-//! construct workflows that compile into executable [`App`] instances.
+//! construct workflows that compile into executable [`App`](crate::app::App) instances.
 //!
 //! # Core Concepts
 //!
-//! - **Nodes**: Executable units of work implementing the [`Node`] trait
+//! - **Nodes**: Executable units of work implementing the [`Node`](crate::node::Node) trait
 //! - **Edges**: Connections between nodes defining execution flow
 //! - **Conditional Edges**: Dynamic routing based on state predicates
 //! - **Virtual Endpoints**: `NodeKind::Start` and `NodeKind::End` for structural definition
-//! - **Compilation**: Validation and conversion to executable [`App`]
+//! - **Compilation**: Validation and conversion to executable [`App`](crate::app::App)
 //!
 //! # Quick Start
 //!

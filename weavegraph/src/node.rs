@@ -12,9 +12,11 @@ use thiserror::Error;
 
 // Internal crate modules
 use crate::channels::errors::ErrorEvent;
+use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{Event, EventEmitter, LLMStreamingEvent};
 use crate::message::Message;
 use crate::state::StateSnapshot;
+use crate::types::NodeKind;
 use std::sync::Arc;
 
 // ============================================================================
@@ -252,6 +254,8 @@ pub struct NodePartial {
     pub extra: Option<FxHashMap<String, serde_json::Value>>,
     /// Errors to add to the workflow's error collection.
     pub errors: Option<Vec<ErrorEvent>>,
+    /// Frontier commands emitted by the node to influence subsequent routing.
+    pub frontier: Option<FrontierCommand>,
 }
 
 impl NodePartial {
@@ -278,6 +282,41 @@ impl NodePartial {
     #[must_use]
     pub fn with_errors(mut self, errors: Vec<ErrorEvent>) -> Self {
         self.errors = Some(errors);
+        self
+    }
+
+    /// Replace the default frontier with the provided list of targets.
+    ///
+    /// The runner will skip conditional edges for the originating node when a
+    /// replace command is present.
+    #[must_use]
+    pub fn with_frontier_replace<I>(mut self, targets: I) -> Self
+    where
+        I: IntoIterator<Item = NodeKind>,
+    {
+        let routes = targets.into_iter().map(NodeRoute::from).collect();
+        self.frontier = Some(FrontierCommand::Replace(routes));
+        self
+    }
+
+    /// Append additional targets to the frontier alongside the default routes.
+    ///
+    /// The default unconditional edges remain in place and the supplied
+    /// routes are appended in-order for deterministic processing.
+    #[must_use]
+    pub fn with_frontier_append<I>(mut self, targets: I) -> Self
+    where
+        I: IntoIterator<Item = NodeKind>,
+    {
+        let routes = targets.into_iter().map(NodeRoute::from).collect();
+        self.frontier = Some(FrontierCommand::Append(routes));
+        self
+    }
+
+    /// Attach a pre-built frontier command.
+    #[must_use]
+    pub fn with_frontier_command(mut self, command: FrontierCommand) -> Self {
+        self.frontier = Some(command);
         self
     }
 }
@@ -309,7 +348,7 @@ pub enum NodeError {
     #[error("missing expected input: {what}")]
     #[diagnostic(
         code(weavegraph::node::missing_input),
-        help("Check that the previous node produced the required data.")
+        help("Check that the previous node produced the required data: {what}.")
     )]
     MissingInput { what: &'static str },
 

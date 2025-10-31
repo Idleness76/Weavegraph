@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: fmt (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: ["1.89.0", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: fmt-${{ matrix.toolchain }}
+      - name: cargo fmt --check
+        run: make fmt-check
+
+  checks:
+    name: ${{ matrix.command }} (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.91.0", "stable", "nightly"]
+        command: ["clippy", "test", "doc"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: ${{ matrix.command == 'clippy' && 'clippy' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ matrix.command }}-${{ matrix.toolchain }}
+      - name: run ${{ matrix.command }}
+        env:
+          RUSTDOCFLAGS: ${{ matrix.command == 'doc' && '-D warnings' || '' }}
+        run: |
+          case "${{ matrix.command }}" in
+            clippy)
+              cargo clippy --workspace --all-targets -- -D warnings
+              ;;
+            test)
+              cargo test --workspace
+              ;;
+            doc)
+              cargo doc --workspace --all-features --no-deps
+              ;;
+          esac
+
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: deny
+      - run: make deny
+
+  machete:
+    name: cargo machete
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: machete
+      - run: make machete

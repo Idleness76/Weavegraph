@@ -513,6 +513,7 @@ impl Node for ScrapeNode {
             messages: None,
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -641,6 +642,7 @@ impl Node for ChunkNode {
             messages: None,
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -772,6 +774,7 @@ where
             messages: None,
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -901,6 +904,7 @@ where
             }]),
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -974,6 +978,7 @@ impl Node for GenerateAnswerNode {
             }]),
             extra: None,
             errors: None,
+            frontier: None,
         })
     }
 }

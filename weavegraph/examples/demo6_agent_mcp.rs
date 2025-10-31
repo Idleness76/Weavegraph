@@ -136,14 +136,12 @@ impl Node for AgentNode {
         // --- Build agent with each tool (fold pattern for rig-core 0.21) --------------------
         let peer = service.peer().clone();
         let ollama_client = ollama::Client::new();
-        let builder = tools.into_iter().fold(
-            ollama_client
-                .agent("qwen3:4b-instruct-2507-q4_K_M") // Model name can be swapped (e.g. gemma3)
-                .preamble(SYSTEM_PROMPT)
-                .temperature(0.2),
-            |b, tool| b.rmcp_tool(tool, peer.clone()),
-        );
-        let agent = builder.build();
+        let agent = ollama_client
+            .agent("qwen3:4b-instruct-2507-q4_K_M") // Model name can be swapped (e.g. gemma3)
+            .preamble(SYSTEM_PROMPT)
+            .temperature(0.2)
+            .rmcp_tools(tools, peer)
+            .build();
 
         // --- Prepare prompt (first user message) --------------------------------------------
         let prompt = snapshot

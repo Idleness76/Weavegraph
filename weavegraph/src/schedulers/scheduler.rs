@@ -138,7 +138,7 @@ pub struct StepRunResult {
 /// ```
 #[derive(Debug, Default, Clone)]
 pub struct SchedulerState {
-    /// versions_seen[node_id][channel_name] = last version observed when the node ran
+    /// `versions_seen[node_id][channel]` stores the last version observed when the node ran.
     pub versions_seen: FxHashMap<String, FxHashMap<String, u64>>,
 }
 

@@ -154,7 +154,7 @@ impl NodeKind {
         matches!(self, Self::End)
     }
 
-    /// Returns `true` if this is a custom [`Other`](Self::Other) node.
+    /// Returns `true` if this is a custom node.
     #[must_use]
     pub fn is_custom(&self) -> bool {
         matches!(self, Self::Custom(_))

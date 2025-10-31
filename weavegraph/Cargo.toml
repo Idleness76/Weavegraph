@@ -8,7 +8,7 @@ repository = "https://github.com/Idleness76/weavegraph"
 readme = "../README.md"
 keywords = ["graph", "workflow", "concurrency", "agents", "tracing"]
 categories = ["concurrency", "data-structures", "algorithms"]
-rust-version = "1.83"
+rust-version = "1.91"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/weavegraph"
 
@@ -73,7 +73,7 @@ rand = "0.9"
 
 # LLM framework (external dependency)
 # NOTE: rig-core and rmcp are gated behind the "llm" feature (default-off) for AI/MCP users; reduces compile time for non-AI workflows.
-rig-core = { version = "0.21", features = ["rmcp"], optional = true }
+rig-core = { version = "0.23", features = ["rmcp"], optional = true }
 rmcp = { version = "0.6", features = ["client"], optional = true }
 # Database
 sqlx = { version = "0.8", features = [

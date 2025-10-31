@@ -128,6 +128,7 @@ impl Node for ContentGeneratorNode {
             messages: Some(vec![assistant_message]),
             extra: Some(extra_data),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -258,6 +259,7 @@ impl Node for ContentEnhancerNode {
             messages: Some(vec![enhanced_message]),
             extra: Some(extra_data),
             errors: None,
+            frontier: None,
         })
     }
 }
