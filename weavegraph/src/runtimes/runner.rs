@@ -842,7 +842,7 @@ impl AppRunner {
                                     step,
                                     origin = %id.encode(),
                                     target = %entries.iter().fold(String::new(),
-                                        |acc, e| format!("{} + {}", acc, e.to_node_kind().to_string())
+                                        |acc, e| format!("{} + {}", acc, e.to_node_kind())
                                     ),
                                     "Rplace frontier command has been issued once already during this step, skipping."
                                 );
