@@ -837,6 +837,17 @@ impl AppRunner {
                 for command in commands {
                     match command {
                         FrontierCommand::Replace(entries) => {
+                            if replaced {
+                                tracing::warn!(
+                                    step,
+                                    origin = %id.encode(),
+                                    target = %entries.iter().fold(String::new(),
+                                        |acc, e| format!("{} + {}", acc, e.to_node_kind().to_string())
+                                    ),
+                                    "Rplace frontier command has been issued once already during this step, skipping."
+                                );
+                                continue;
+                            }
                             routes = entries.iter().map(NodeRoute::to_node_kind).collect();
                             replaced = true;
                         }
