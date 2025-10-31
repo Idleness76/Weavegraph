@@ -114,20 +114,15 @@ pub struct SegmentMetadata {
     pub extra: BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum SegmentKind {
     JsonValue,
     JsonObject,
     JsonArray,
     HtmlBlock,
     HtmlInline,
+    #[default]
     Unknown,
-}
-
-impl Default for SegmentKind {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Errors that a semantic chunker can surface to callers.
