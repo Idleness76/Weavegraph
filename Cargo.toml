@@ -13,3 +13,6 @@ categories = ["concurrency", "data-structures", "algorithms"]
 rust-version = "1.89"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/weavegraph"
+
+[patch.crates-io]
+wg-ragsmith = { path = "wg-ragsmith" }
