@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::StateSnapshot;

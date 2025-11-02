@@ -48,8 +48,8 @@ pub mod runtime_config;
 pub mod types;
 
 pub use checkpointer::{
-    restore_session_state, Checkpoint, Checkpointer, CheckpointerError, CheckpointerType,
-    InMemoryCheckpointer,
+    Checkpoint, Checkpointer, CheckpointerError, CheckpointerType, InMemoryCheckpointer,
+    restore_session_state,
 };
 #[cfg(feature = "sqlite")]
 pub use checkpointer_sqlite::{PageInfo, SQLiteCheckpointer, StepQuery, StepQueryResult};

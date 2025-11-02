@@ -259,11 +259,11 @@ impl EventBus {
 impl Drop for EventBus {
     fn drop(&mut self) {
         self.hub.close();
-        if self.started.load(Ordering::SeqCst) {
-            if let Ok(mut sinks) = self.sinks.lock() {
-                for entry in sinks.iter_mut() {
-                    entry.abort_worker();
-                }
+        if self.started.load(Ordering::SeqCst)
+            && let Ok(mut sinks) = self.sinks.lock()
+        {
+            for entry in sinks.iter_mut() {
+                entry.abort_worker();
             }
         }
     }

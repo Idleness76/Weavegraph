@@ -1,14 +1,14 @@
 [package]
 name = "weavegraph"
 version = "0.1.0-alpha.7"
-edition = "2021"
+edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
 repository = "https://github.com/Idleness76/weavegraph"
 readme = "../README.md"
 keywords = ["graph", "workflow", "concurrency", "agents", "tracing"]
 categories = ["concurrency", "data-structures", "algorithms"]
-rust-version = "1.91"
+rust-version = "1.89"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/weavegraph"
 

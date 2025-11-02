@@ -1,12 +1,12 @@
 use crate::app::{App, BarrierOutcome};
-use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::channels::Channel;
+use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{Event, EventBus, EventStream, STREAM_END_SCOPE};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
 use crate::runtimes::{
-    restore_session_state, Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer,
+    Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer, restore_session_state,
 };
 use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
 use crate::state::VersionedState;
@@ -710,12 +710,12 @@ impl AppRunner {
                 self.sessions
                     .insert(session_id.to_string(), session_state.clone());
                 // Re-persist if autosave
-                if self.autosave {
-                    if let Some(cp) = &self.checkpointer {
-                        let _ = cp
-                            .save(Checkpoint::from_session(session_id, &session_state))
-                            .await;
-                    }
+                if self.autosave
+                    && let Some(cp) = &self.checkpointer
+                {
+                    let _ = cp
+                        .save(Checkpoint::from_session(session_id, &session_state))
+                        .await;
                 }
                 return Err(e);
             }
@@ -724,12 +724,12 @@ impl AppRunner {
         // Update the session in map & persist if configured
         self.sessions
             .insert(session_id.to_string(), session_state.clone());
-        if self.autosave {
-            if let Some(cp) = &self.checkpointer {
-                let _ = cp
-                    .save(Checkpoint::from_session(session_id, &session_state))
-                    .await;
-            }
+        if self.autosave
+            && let Some(cp) = &self.checkpointer
+        {
+            let _ = cp
+                .save(Checkpoint::from_session(session_id, &session_state))
+                .await;
         }
 
         // Check for interrupt_after

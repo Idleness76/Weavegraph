@@ -11,6 +11,6 @@ pub mod cache;
 pub mod chunk;
 pub mod resume;
 
-pub use cache::{fetch_html, DocumentCache, FetchOutcome};
-pub use chunk::{chunk_response_to_ingestion, ChunkBatch, ChunkDocumentIngestion};
+pub use cache::{DocumentCache, FetchOutcome, fetch_html};
+pub use chunk::{ChunkBatch, ChunkDocumentIngestion, chunk_response_to_ingestion};
 pub use resume::ResumeTracker;

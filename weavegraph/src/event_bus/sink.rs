@@ -24,7 +24,7 @@ impl Default for StdOutSink {
     fn default() -> Self {
         Self {
             handle: io::stdout(),
-            formatter: PlainFormatter,
+            formatter: PlainFormatter::new(),
         }
     }
 }

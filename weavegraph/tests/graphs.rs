@@ -60,11 +60,12 @@ fn test_compile() {
     let gb = GraphBuilder::new().add_edge(NodeKind::Start, NodeKind::End);
     let app = gb.compile().unwrap();
     assert_eq!(app.edges().len(), 1);
-    assert!(app
-        .edges()
-        .get(&NodeKind::Start)
-        .unwrap()
-        .contains(&NodeKind::End));
+    assert!(
+        app.edges()
+            .get(&NodeKind::Start)
+            .unwrap()
+            .contains(&NodeKind::End)
+    );
 }
 
 #[test]

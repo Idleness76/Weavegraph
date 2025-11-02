@@ -1,8 +1,8 @@
 use chrono::Utc;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::{StreamExt, pin_mut};
 use proptest::prelude::*;
 use rustc_hash::FxHashMap;
-use serde_json::{json, Number, Value};
+use serde_json::{Number, Value, json};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -264,10 +264,12 @@ async fn next_timeout_reports_timeouts_and_events() {
     let emitter = bus.get_emitter();
     let mut stream = bus.subscribe();
 
-    assert!(stream
-        .next_timeout(Duration::from_millis(10))
-        .await
-        .is_none());
+    assert!(
+        stream
+            .next_timeout(Duration::from_millis(10))
+            .await
+            .is_none()
+    );
 
     emitter
         .emit(Event::diagnostic("timeout", "delivered"))

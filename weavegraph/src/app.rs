@@ -1,8 +1,8 @@
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
-use crate::channels::errors::{ErrorEvent, ErrorScope};
 use crate::channels::Channel;
+use crate::channels::errors::{ErrorEvent, ErrorScope};
 use crate::control::FrontierCommand;
 use crate::event_bus::{ChannelSink, EventBus, EventStream};
 use crate::message::*;
@@ -907,30 +907,30 @@ impl App {
             let fallback = NodeKind::Custom("?".to_string());
             let nid = run_ids.get(i).unwrap_or(&fallback);
 
-            if let Some(ms) = &p.messages {
-                if !ms.is_empty() {
-                    tracing::debug!(node = ?nid, count = ms.len(), "Node produced messages");
-                    msgs_all.extend(ms.clone());
+            if let Some(ms) = &p.messages
+                && !ms.is_empty()
+            {
+                tracing::debug!(node = ?nid, count = ms.len(), "Node produced messages");
+                msgs_all.extend(ms.clone());
+            }
+
+            if let Some(ex) = &p.extra
+                && !ex.is_empty()
+            {
+                tracing::debug!(node = ?nid, keys = ex.len(), "Node produced extra data");
+                // Sort keys to keep the merged map deterministic across runs.
+                let mut sorted_pairs: Vec<_> = ex.iter().collect();
+                sorted_pairs.sort_by(|(left, _), (right, _)| left.cmp(right));
+                for (k, v) in sorted_pairs {
+                    extra_all.insert(k.clone(), v.clone());
                 }
             }
 
-            if let Some(ex) = &p.extra {
-                if !ex.is_empty() {
-                    tracing::debug!(node = ?nid, keys = ex.len(), "Node produced extra data");
-                    // Sort keys to keep the merged map deterministic across runs.
-                    let mut sorted_pairs: Vec<_> = ex.iter().collect();
-                    sorted_pairs.sort_by(|(left, _), (right, _)| left.cmp(right));
-                    for (k, v) in sorted_pairs {
-                        extra_all.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-
-            if let Some(errs) = &p.errors {
-                if !errs.is_empty() {
-                    tracing::debug!(node = ?nid, count = errs.len(), "Node produced errors");
-                    errors_all.extend(errs.clone());
-                }
+            if let Some(errs) = &p.errors
+                && !errs.is_empty()
+            {
+                tracing::debug!(node = ?nid, count = errs.len(), "Node produced errors");
+                errors_all.extend(errs.clone());
             }
 
             if let Some(command) = &p.frontier {

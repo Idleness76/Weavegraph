@@ -81,7 +81,7 @@ use weavegraph::{
 
 use tracing::info;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 fn init_tracing() {
     tracing_subscriber::registry()

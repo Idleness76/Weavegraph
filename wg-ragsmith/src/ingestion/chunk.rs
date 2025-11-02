@@ -2,8 +2,8 @@
 
 use url::Url;
 
-use crate::semantic_chunking::types::ChunkingOutcome;
 use crate::semantic_chunking::ChunkTelemetry;
+use crate::semantic_chunking::types::ChunkingOutcome;
 use crate::stores::sqlite::ChunkDocument;
 use crate::types::RagError;
 

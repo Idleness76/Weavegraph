@@ -3,7 +3,7 @@ use chrono::Utc;
 use rustc_hash::FxHashMap;
 use weavegraph::channels::Channel;
 use weavegraph::runtimes::checkpointer::{
-    restore_session_state, Checkpoint, Checkpointer, InMemoryCheckpointer,
+    Checkpoint, Checkpointer, InMemoryCheckpointer, restore_session_state,
 };
 use weavegraph::runtimes::checkpointer_sqlite::{SQLiteCheckpointer, StepQuery};
 use weavegraph::runtimes::runner::SessionState;

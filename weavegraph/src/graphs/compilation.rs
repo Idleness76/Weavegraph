@@ -105,18 +105,18 @@ impl super::builder::GraphBuilder {
             }
 
             // If from is Custom, it must be registered
-            if let NodeKind::Custom(_) = from {
-                if !self.nodes_ref().contains_key(from) {
-                    return Err(GraphCompileError::UnknownNode(from.clone()));
-                }
+            if let NodeKind::Custom(_) = from
+                && !self.nodes_ref().contains_key(from)
+            {
+                return Err(GraphCompileError::UnknownNode(from.clone()));
             }
 
             for to in tos {
                 // If to is Custom, it must be registered
-                if let NodeKind::Custom(_) = to {
-                    if !self.nodes_ref().contains_key(to) {
-                        return Err(GraphCompileError::UnknownNode(to.clone()));
-                    }
+                if let NodeKind::Custom(_) = to
+                    && !self.nodes_ref().contains_key(to)
+                {
+                    return Err(GraphCompileError::UnknownNode(to.clone()));
                 }
             }
         }

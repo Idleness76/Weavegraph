@@ -36,7 +36,7 @@ use rig::prelude::*;
 use rig::providers::ollama;
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 
-use weavegraph::channels::{pretty_print, ErrorEvent, ErrorScope, LadderError};
+use weavegraph::channels::{ErrorEvent, ErrorScope, LadderError, pretty_print};
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -47,7 +47,7 @@ use weavegraph::types::NodeKind;
 use miette::Result;
 use tracing::info;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// System prompt guiding the agent's behavior.
 /// - Keep responses concise and technically accurate
@@ -270,7 +270,7 @@ impl Node for AgentNode {
                 ctx.emit("agent", format!("MCP child already exited: {status}"))?;
             }
             Ok(None) => {
-                use tokio::time::{sleep, Duration};
+                use tokio::time::{Duration, sleep};
                 sleep(Duration::from_millis(200)).await;
                 match child.try_wait() {
                     Ok(Some(status)) => {
