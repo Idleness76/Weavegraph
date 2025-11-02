@@ -5,7 +5,7 @@ use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
 use super::emitter::EventEmitter;
-use super::diagnostics::{DiagnosticsStream, SinkDiagnostic};
+use super::diagnostics::{DiagnosticsStream, HealthState, SinkDiagnostic, SinkHealth};
 use super::hub::{EventHub, EventHubMetrics, EventStream};
 use super::sink::{EventSink, StdOutSink};
 
@@ -159,6 +159,8 @@ pub struct EventBus {
     generation: Arc<AtomicU64>,
     /// Diagnostics broadcast channel for sink errors.
     diagnostics_tx: broadcast::Sender<SinkDiagnostic>,
+    /// In-memory health tracking per sink name.
+    health: Arc<Mutex<std::collections::HashMap<String, HealthState>>>,
 }
 
 impl Default for EventBus {
@@ -189,6 +191,7 @@ impl EventBus {
             started: AtomicBool::new(false),
             generation: Arc::new(AtomicU64::new(0)),
             diagnostics_tx,
+            health: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -228,6 +231,20 @@ impl EventBus {
     /// isolated from the main event flow to avoid feedback loops.
     pub fn diagnostics(&self) -> DiagnosticsStream {
         DiagnosticsStream::new(self.diagnostics_tx.subscribe())
+    }
+
+    /// Return a snapshot of per-sink health counters and last error details.
+    pub fn sink_health(&self) -> Vec<SinkHealth> {
+        let health = self.health.lock().unwrap();
+        health
+            .iter()
+            .map(|(sink, state)| SinkHealth {
+                sink: sink.clone(),
+                error_count: state.error_count,
+                last_error: state.last_error.clone(),
+                last_error_at: state.last_error_at,
+            })
+            .collect()
     }
 
     /// Spawn workers for every registered sink. Safe to call multiple times.
