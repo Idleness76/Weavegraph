@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 #[cfg(feature = "semantic-chunking-segtok")]
-use segtok::segmenter::{split_single, SegmentConfig};
+use segtok::segmenter::{SegmentConfig, split_single};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use weavegraph::event_bus::EventBus;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};

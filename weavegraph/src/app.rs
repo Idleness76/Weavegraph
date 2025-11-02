@@ -1,8 +1,8 @@
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
-use crate::channels::errors::{ErrorEvent, ErrorScope};
 use crate::channels::Channel;
+use crate::channels::errors::{ErrorEvent, ErrorScope};
 use crate::control::FrontierCommand;
 use crate::event_bus::{ChannelSink, EventBus, EventStream};
 use crate::message::*;

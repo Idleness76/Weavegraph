@@ -10,7 +10,7 @@ use tokio::fs;
 use tracing_subscriber::FmtSubscriber;
 use url::Url;
 use wg_ragsmith::ingestion::{
-    chunk_response_to_ingestion, fetch_html, DocumentCache, ResumeTracker,
+    DocumentCache, ResumeTracker, chunk_response_to_ingestion, fetch_html,
 };
 use wg_ragsmith::semantic_chunking::embeddings::MockEmbeddingProvider;
 use wg_ragsmith::semantic_chunking::service::{

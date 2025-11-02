@@ -3,10 +3,10 @@ use std::{convert::Infallible, sync::Arc, time::Duration};
 use async_stream::stream;
 use async_trait::async_trait;
 use axum::{
+    Router,
     extract::State,
     response::sse::{Event as SseEvent, Sse},
     routing::get,
-    Router,
 };
 use bytes::Bytes;
 use futures_util::StreamExt;

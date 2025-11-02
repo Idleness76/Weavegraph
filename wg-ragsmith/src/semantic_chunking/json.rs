@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 use tracing::Instrument;
 
+use super::SemanticChunker;
 use super::assembly::{
     average_embedding, compute_stats, json_top_level_component, link_neighbors, plan_ranges,
     structural_distance,
@@ -17,7 +18,6 @@ use super::types::{
     CandidateSegment, ChunkMetadata, ChunkingError, ChunkingOutcome, SegmentKind, SegmentMetadata,
     SemanticChunk,
 };
-use super::SemanticChunker;
 
 const SEGMENT_TARGET_TOKENS: usize = 160;
 

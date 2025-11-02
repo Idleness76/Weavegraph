@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use scraper::{node::Node, ElementRef, Html, Selector};
+use scraper::{ElementRef, Html, Selector, node::Node};
 
 use crate::semantic_chunking::config::HtmlPreprocessConfig;
 

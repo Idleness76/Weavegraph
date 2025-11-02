@@ -1,12 +1,12 @@
 use crate::app::{App, BarrierOutcome};
-use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::channels::Channel;
+use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{Event, EventBus, EventStream, STREAM_END_SCOPE};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
 use crate::runtimes::{
-    restore_session_state, Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer,
+    Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer, restore_session_state,
 };
 use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
 use crate::state::VersionedState;

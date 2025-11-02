@@ -5,9 +5,10 @@ use async_trait::async_trait;
 use serde_json::json;
 use tracing::Instrument;
 
-use grouper::{group_blocks, HtmlBlock};
+use grouper::{HtmlBlock, group_blocks};
 use preprocess::sanitize_html;
 
+use crate::semantic_chunking::SemanticChunker;
 use crate::semantic_chunking::assembly::{
     average_embedding, compute_stats, html_top_level_component, link_neighbors, plan_ranges,
     structural_distance,
@@ -22,7 +23,6 @@ use crate::semantic_chunking::types::{
     CandidateSegment, ChunkMetadata, ChunkingError, ChunkingOutcome, ChunkingStats, ChunkingTrace,
     SegmentKind, SegmentMetadata, SemanticChunk,
 };
-use crate::semantic_chunking::SemanticChunker;
 
 /// Semantic chunker for HTML documents.
 pub struct HtmlSemanticChunker {

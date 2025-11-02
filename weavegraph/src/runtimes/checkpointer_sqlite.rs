@@ -54,7 +54,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use miette::Diagnostic;
 use serde_json::Value;
-use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
+use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use thiserror::Error;
 use tracing::instrument;
 

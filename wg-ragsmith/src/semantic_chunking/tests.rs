@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use super::SemanticChunker;
+use super::SentenceSplitter;
 use super::config::{ChunkingConfig, HtmlPreprocessConfig, JsonPreprocessConfig};
 use super::embeddings::{EmbeddingProvider, MockEmbeddingProvider, SharedEmbeddingProvider};
 use super::html::HtmlSemanticChunker;
 use super::json::JsonSemanticChunker;
 use super::types::ChunkingOutcome;
-use super::SemanticChunker;
-use super::SentenceSplitter;
 
 use serde_json::Value;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -139,10 +139,12 @@ async fn json_chunker_handles_metrics_fixture() {
 
     let outcome = chunker.chunk(payload, &cfg).await.unwrap();
     assert!(!outcome.chunks.is_empty());
-    assert!(outcome
-        .chunks
-        .iter()
-        .any(|chunk| chunk.content.contains("accuracy")));
+    assert!(
+        outcome
+            .chunks
+            .iter()
+            .any(|chunk| chunk.content.contains("accuracy"))
+    );
 }
 
 #[tokio::test]
@@ -155,10 +157,12 @@ async fn html_chunker_handles_table_fixture() {
         .await
         .unwrap();
     assert!(!outcome.chunks.is_empty());
-    assert!(outcome
-        .chunks
-        .iter()
-        .any(|chunk| chunk.content.contains("Bucket")));
+    assert!(
+        outcome
+            .chunks
+            .iter()
+            .any(|chunk| chunk.content.contains("Bucket"))
+    );
 }
 
 #[cfg(feature = "semantic-chunking-segtok")]
@@ -269,10 +273,12 @@ async fn json_chunker_falls_back_to_lexical() {
     let outcome = chunker.chunk(payload, &cfg).await.unwrap();
     assert!(!outcome.chunks.is_empty());
     let trace = outcome.trace.expect("trace expected");
-    assert!(trace
-        .events
-        .iter()
-        .any(|event| event.label == "lexical_fallback"));
+    assert!(
+        trace
+            .events
+            .iter()
+            .any(|event| event.label == "lexical_fallback")
+    );
 }
 
 #[tokio::test]
@@ -294,8 +300,10 @@ async fn html_chunker_falls_back_to_lexical() {
         .unwrap();
     assert!(!outcome.chunks.is_empty());
     let trace = outcome.trace.expect("trace expected");
-    assert!(trace
-        .events
-        .iter()
-        .any(|event| event.label == "lexical_fallback"));
+    assert!(
+        trace
+            .events
+            .iter()
+            .any(|event| event.label == "lexical_fallback")
+    );
 }

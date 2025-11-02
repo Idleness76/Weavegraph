@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate proptest;
 
-use proptest::prelude::{any, prop, Just, Strategy};
+use proptest::prelude::{Just, Strategy, any, prop};
 use proptest::prop_oneof;
 use rustc_hash::FxHashMap;
 use serde_json::Value;

@@ -27,10 +27,10 @@ use serde_json::json;
 use std::sync::Arc;
 use tracing::{info, instrument};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use weavegraph::channels::errors::{pretty_print, ErrorEvent, ErrorScope, LadderError};
 use weavegraph::channels::Channel;
+use weavegraph::channels::errors::{ErrorEvent, ErrorScope, LadderError, pretty_print};
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};

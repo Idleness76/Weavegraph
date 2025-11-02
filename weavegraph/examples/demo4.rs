@@ -45,10 +45,10 @@ use serde_json::json;
 use tracing::{info, instrument};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use weavegraph::channels::{
-    errors::{pretty_print, ErrorEvent, ErrorScope, LadderError},
     Channel,
+    errors::{ErrorEvent, ErrorScope, LadderError, pretty_print},
 };
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;

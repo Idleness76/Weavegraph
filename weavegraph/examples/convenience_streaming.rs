@@ -44,7 +44,7 @@ use weavegraph::{
 use miette::{IntoDiagnostic, Result};
 use tracing::info;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// A node that simulates work with progress updates
 #[derive(Debug, Clone)]

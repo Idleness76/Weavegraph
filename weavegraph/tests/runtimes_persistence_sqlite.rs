@@ -1,8 +1,8 @@
 #[cfg(feature = "sqlite")]
 use chrono::Utc;
 use rustc_hash::FxHashMap;
-use weavegraph::channels::errors::{ErrorEvent, LadderError};
 use weavegraph::channels::Channel;
+use weavegraph::channels::errors::{ErrorEvent, LadderError};
 use weavegraph::runtimes::{Checkpoint, Checkpointer, SQLiteCheckpointer, StepQuery};
 use weavegraph::types::NodeKind;
 

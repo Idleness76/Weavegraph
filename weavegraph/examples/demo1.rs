@@ -23,7 +23,7 @@ use serde_json::json;
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;

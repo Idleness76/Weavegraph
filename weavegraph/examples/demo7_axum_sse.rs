@@ -20,10 +20,10 @@
 
 use async_trait::async_trait;
 use axum::{
+    Router,
     extract::State,
     response::sse::{Event as SseEvent, Sse},
     routing::get,
-    Router,
 };
 use futures_util::StreamExt;
 use rustc_hash::FxHashMap;
@@ -31,7 +31,7 @@ use serde_json::json;
 use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::Level;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 use weavegraph::{
     event_bus::STREAM_END_SCOPE,

@@ -35,7 +35,7 @@ use weavegraph::utils::collections::new_extra_map;
 use miette::Result;
 use tracing::info;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// A node that simulates external API calls with potential failures and retry logic.
 ///

@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
 use serde_json::json;
-use weavegraph::channels::errors::{pretty_print, pretty_print_with_mode, ErrorEvent, LadderError};
+use weavegraph::channels::errors::{ErrorEvent, LadderError, pretty_print, pretty_print_with_mode};
 use weavegraph::telemetry::FormatterMode;
 
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Example demonstrating error event formatting with color mode control.
 ///
@@ -82,7 +82,10 @@ fn main() {
 
     // Auto-detect TTY capability (default behavior)
     let out = pretty_print(&events);
-    println!("=== Errors pretty showcase (auto-detect colors) ===\n{}", out);
+    println!(
+        "=== Errors pretty showcase (auto-detect colors) ===\n{}",
+        out
+    );
 
     // Example: Force plain output (no colors) - useful for log files
     let plain_out = pretty_print_with_mode(&events, FormatterMode::Plain);

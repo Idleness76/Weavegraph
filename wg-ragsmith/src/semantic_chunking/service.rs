@@ -2,11 +2,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rig::embeddings::{embedding::EmbeddingModelDyn, EmbeddingModel};
+use rig::embeddings::{EmbeddingModel, embedding::EmbeddingModelDyn};
 use serde_json::Value;
 use tokio::fs;
 use tracing::{field, info_span};
 
+use super::SemanticChunker;
 use super::cache::{CacheHandle, CacheMetrics};
 use super::config::{
     BreakpointStrategy, ChunkingConfig, HtmlPreprocessConfig, JsonPreprocessConfig,
@@ -16,7 +17,6 @@ use super::embeddings::{NullEmbeddingProvider, RigEmbeddingProvider, SharedEmbed
 use super::html::HtmlSemanticChunker;
 use super::json::JsonSemanticChunker;
 use super::types::{ChunkingError, ChunkingOutcome};
-use super::SemanticChunker;
 
 pub struct SemanticChunkingService {
     defaults: SemanticChunkingModuleConfig,
@@ -430,11 +430,13 @@ mod tests {
         assert!(!response.outcome.chunks.is_empty());
         assert!(response.telemetry.fallback_used);
         assert_eq!(response.telemetry.embedder, "lexical-fallback");
-        assert!(response
-            .outcome
-            .chunks
-            .iter()
-            .all(|chunk| chunk.embedding.is_none()));
+        assert!(
+            response
+                .outcome
+                .chunks
+                .iter()
+                .all(|chunk| chunk.embedding.is_none())
+        );
     }
 
     #[tokio::test]
@@ -454,11 +456,13 @@ mod tests {
 
         let response = service.chunk_document(request).await.unwrap();
         assert!(!response.telemetry.fallback_used);
-        assert!(response
-            .outcome
-            .chunks
-            .iter()
-            .any(|chunk| chunk.embedding.is_some()));
+        assert!(
+            response
+                .outcome
+                .chunks
+                .iter()
+                .any(|chunk| chunk.embedding.is_some())
+        );
     }
 
     #[tokio::test]
