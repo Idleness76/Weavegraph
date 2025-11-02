@@ -1,7 +1,7 @@
 #[cfg(feature = "sqlite")]
 use chrono::Utc;
 use rustc_hash::FxHashMap;
-use weavegraph::channels::errors::{ErrorEvent, ErrorScope, LadderError};
+use weavegraph::channels::errors::{ErrorEvent, LadderError};
 use weavegraph::channels::Channel;
 use weavegraph::runtimes::{Checkpoint, Checkpointer, SQLiteCheckpointer, StepQuery};
 use weavegraph::types::NodeKind;
@@ -150,13 +150,11 @@ async fn test_error_persistence_roundtrip() {
         .await
         .expect("connect");
     let mut state = state_with_user("err");
-    let err = ErrorEvent {
-        when: Utc::now(),
-        scope: ErrorScope::App,
-        error: LadderError::msg("boom"),
-        tags: vec!["t".into()],
-        context: serde_json::json!({"a":1}),
-    };
+
+    let err = ErrorEvent::app(LadderError::msg("boom"))
+        .with_tag("t")
+        .with_context(serde_json::json!({"a":1}));
+
     state.errors.get_mut().push(err.clone());
     let checkpoint = Checkpoint {
         session_id: "err_sess".into(),

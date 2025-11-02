@@ -1,6 +1,6 @@
 use chrono::Utc;
 use serde_json::json;
-use weavegraph::channels::errors::{ErrorEvent, ErrorScope, LadderError};
+use weavegraph::channels::errors::{ErrorEvent, LadderError};
 use weavegraph::event_bus::Event;
 use weavegraph::telemetry::{
     PlainFormatter, TelemetryFormatter, CONTEXT_COLOR, LINE_COLOR, RESET_COLOR,
@@ -24,23 +24,18 @@ fn render_event_includes_colors_and_context() {
 fn render_errors_formats_scope_lines_and_details() {
     let fmt = PlainFormatter;
     let now = Utc::now();
-    let e1 = ErrorEvent {
-        when: now,
-        scope: ErrorScope::Runner {
-            session: "sess".into(),
-            step: 3,
-        },
-        error: LadderError::msg("boom").with_cause(LadderError::msg("inner")),
-        tags: vec!["t1".into()],
-        context: json!({"k":1}),
-    };
-    let e2 = ErrorEvent {
-        when: now,
-        scope: ErrorScope::App,
-        error: LadderError::msg("oops"),
-        tags: vec![],
-        context: serde_json::Value::Null,
-    };
+
+    let mut e1 = ErrorEvent::runner(
+        "sess",
+        3,
+        LadderError::msg("boom").with_cause(LadderError::msg("inner")),
+    )
+    .with_tag("t1")
+    .with_context(json!({"k":1}));
+    e1.when = now;
+
+    let mut e2 = ErrorEvent::app(LadderError::msg("oops"));
+    e2.when = now;
 
     let renders = fmt.render_errors(&[e1.clone(), e2.clone()]);
     assert_eq!(renders.len(), 2);

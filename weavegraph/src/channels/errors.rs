@@ -19,6 +19,129 @@ pub struct ErrorEvent {
     pub context: serde_json::Value,
 }
 
+impl ErrorEvent {
+    /// Create a node-scoped error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    ///
+    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Something failed"));
+    /// ```
+    pub fn node<S: Into<String>>(kind: S, step: u64, error: LadderError) -> Self {
+        Self {
+            when: Utc::now(),
+            scope: ErrorScope::Node {
+                kind: kind.into(),
+                step,
+            },
+            error,
+            tags: Vec::new(),
+            context: serde_json::Value::Null,
+        }
+    }
+
+    /// Create a scheduler-scoped error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    ///
+    /// let err = ErrorEvent::scheduler(5, LadderError::msg("Scheduling conflict"));
+    /// ```
+    pub fn scheduler(step: u64, error: LadderError) -> Self {
+        Self {
+            when: Utc::now(),
+            scope: ErrorScope::Scheduler { step },
+            error,
+            tags: Vec::new(),
+            context: serde_json::Value::Null,
+        }
+    }
+
+    /// Create a runner-scoped error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    ///
+    /// let err = ErrorEvent::runner("session_123", 10, LadderError::msg("Runtime error"));
+    /// ```
+    pub fn runner<S: Into<String>>(session: S, step: u64, error: LadderError) -> Self {
+        Self {
+            when: Utc::now(),
+            scope: ErrorScope::Runner {
+                session: session.into(),
+                step,
+            },
+            error,
+            tags: Vec::new(),
+            context: serde_json::Value::Null,
+        }
+    }
+
+    /// Create an app-scoped error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    ///
+    /// let err = ErrorEvent::app(LadderError::msg("Application startup failed"));
+    /// ```
+    pub fn app(error: LadderError) -> Self {
+        Self {
+            when: Utc::now(),
+            scope: ErrorScope::App,
+            error,
+            tags: Vec::new(),
+            context: serde_json::Value::Null,
+        }
+    }
+
+    /// Add multiple tags to this error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    ///
+    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Invalid input"))
+    ///     .with_tags(vec!["validation".to_string(), "critical".to_string()]);
+    /// ```
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Add a single tag to this error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    ///
+    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Invalid input"))
+    ///     .with_tag("validation");
+    /// ```
+    pub fn with_tag<S: Into<String>>(mut self, tag: S) -> Self {
+        self.tags.push(tag.into());
+        self
+    }
+
+    /// Add context metadata to this error event.
+    ///
+    /// # Example
+    /// ```
+    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use serde_json::json;
+    ///
+    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Invalid input"))
+    ///     .with_context(json!({"field": "username", "value": ""}));
+    /// ```
+    pub fn with_context(mut self, context: serde_json::Value) -> Self {
+        self.context = context;
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum ErrorScope {

@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use serde_json::json;
-use weavegraph::channels::errors::{pretty_print, ErrorEvent, ErrorScope, LadderError};
+use weavegraph::channels::errors::{pretty_print, ErrorEvent, LadderError};
 
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -24,42 +24,50 @@ fn init_tracing() {
 fn main() {
     init_tracing();
 
-    // Sample events across scopes with a nested cause chain and context/tags
+    // Sample events across scopes using constructors
     let when0 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
     let when1 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 1, 0).unwrap();
     let when2 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 2, 0).unwrap();
 
     let events = vec![
-        ErrorEvent {
-            when: when0,
-            scope: ErrorScope::App,
-            error: LadderError::msg("application init failure")
-                .with_details(json!({"component":"bootstrap"})),
-            tags: vec!["startup".into(), "fatal".into()],
-            context: json!({"hint":"check configuration"}),
+        // App-scoped error with builder pattern
+        {
+            let mut err = ErrorEvent::app(
+                LadderError::msg("application init failure")
+                    .with_details(json!({"component":"bootstrap"})),
+            )
+            .with_tag("startup")
+            .with_tag("fatal")
+            .with_context(json!({"hint":"check configuration"}));
+            err.when = when0; // Override timestamp for consistency
+            err
         },
-        ErrorEvent {
-            when: when1,
-            scope: ErrorScope::Node {
-                kind: "Other:Parser".into(),
-                step: 12,
-            },
-            error: LadderError::msg("parse error: unexpected token").with_cause(
-                LadderError::msg("line 3, col 15").with_cause(LadderError::msg("file corrupted")),
-            ),
-            tags: vec!["retryable".into()],
-            context: json!({"file":"/tmp/input.json"}),
+        // Node-scoped error with nested causes
+        {
+            let mut err = ErrorEvent::node(
+                "Other:Parser",
+                12,
+                LadderError::msg("parse error: unexpected token").with_cause(
+                    LadderError::msg("line 3, col 15")
+                        .with_cause(LadderError::msg("file corrupted")),
+                ),
+            )
+            .with_tag("retryable")
+            .with_context(json!({"file":"/tmp/input.json"}));
+            err.when = when1;
+            err
         },
-        ErrorEvent {
-            when: when2,
-            scope: ErrorScope::Runner {
-                session: "sess-42".into(),
-                step: 99,
-            },
-            error: LadderError::msg("I/O failure")
-                .with_cause(LadderError::msg("connection reset by peer")),
-            tags: vec![],
-            context: json!({"remote":"10.0.0.2:443"}),
+        // Runner-scoped error
+        {
+            let mut err = ErrorEvent::runner(
+                "sess-42",
+                99,
+                LadderError::msg("I/O failure")
+                    .with_cause(LadderError::msg("connection reset by peer")),
+            )
+            .with_context(json!({"remote":"10.0.0.2:443"}));
+            err.when = when2;
+            err
         },
     ];
 

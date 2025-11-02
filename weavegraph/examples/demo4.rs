@@ -194,14 +194,11 @@ impl Node for StreamingGeneratorNode {
                 }
 
                 Err(err) => {
-                    // Create detailed error event for streaming failure
-                    let error_event = ErrorEvent {
-                        when: chrono::Utc::now(),
-                        scope: ErrorScope::Node {
-                            kind: "StreamingGenerator".to_string(),
-                            step: ctx.step,
-                        },
-                        error: LadderError {
+                    // Create detailed error event for streaming failure using constructors
+                    let error_event = ErrorEvent::node(
+                        "StreamingGenerator",
+                        ctx.step,
+                        LadderError {
                             message: format!("Streaming error at chunk {}: {}", chunk_count, err),
                             cause: Some(Box::new(LadderError {
                                 message: err.to_string(),
@@ -221,13 +218,14 @@ impl Node for StreamingGeneratorNode {
                                 }
                             }),
                         },
-                        tags: vec!["streaming_error".to_string(), "llm_api_error".to_string()],
-                        context: json!({
-                            "node_type": "StreamingGenerator",
-                            "model": "gemini-2.5-flash",
-                            "operation": "stream_prompt"
-                        }),
-                    };
+                    )
+                    .with_tag("streaming_error")
+                    .with_tag("llm_api_error")
+                    .with_context(json!({
+                        "node_type": "StreamingGenerator",
+                        "model": "gemini-2.5-flash",
+                        "operation": "stream_prompt"
+                    }));
 
                     errors.push(error_event);
                     ctx.emit("streaming_error", format!("Streaming error: {}", err))?;
