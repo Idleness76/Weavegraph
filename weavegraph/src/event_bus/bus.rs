@@ -1,10 +1,11 @@
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
 use super::emitter::EventEmitter;
+use super::diagnostics::{DiagnosticsStream, SinkDiagnostic};
 use super::hub::{EventHub, EventHubMetrics, EventStream};
 use super::sink::{EventSink, StdOutSink};
 
@@ -156,6 +157,8 @@ pub struct EventBus {
     started: AtomicBool,
     /// Generation counter tracking listener restarts so stale workers exit.
     generation: Arc<AtomicU64>,
+    /// Diagnostics broadcast channel for sink errors.
+    diagnostics_tx: broadcast::Sender<SinkDiagnostic>,
 }
 
 impl Default for EventBus {
@@ -179,11 +182,13 @@ impl EventBus {
     pub(crate) fn with_capacity(sinks: Vec<Box<dyn EventSink>>, buffer_capacity: usize) -> Self {
         let hub = EventHub::new(buffer_capacity);
         let entries = sinks.into_iter().map(SinkEntry::new).collect();
+        let (diagnostics_tx, _) = broadcast::channel(buffer_capacity.max(1));
         Self {
             sinks: Arc::new(Mutex::new(entries)),
             hub,
             started: AtomicBool::new(false),
             generation: Arc::new(AtomicU64::new(0)),
+            diagnostics_tx,
         }
     }
 
@@ -214,6 +219,15 @@ impl EventBus {
     pub fn subscribe(&self) -> EventStream {
         self.listen_for_events();
         self.hub.subscribe()
+    }
+
+    /// Access a broadcast stream of sink diagnostics.
+    ///
+    /// The returned stream mirrors the `EventStream` consumption model but carries
+    /// `SinkDiagnostic` entries emitted when sinks report errors. This stream is
+    /// isolated from the main event flow to avoid feedback loops.
+    pub fn diagnostics(&self) -> DiagnosticsStream {
+        DiagnosticsStream::new(self.diagnostics_tx.subscribe())
     }
 
     /// Spawn workers for every registered sink. Safe to call multiple times.
