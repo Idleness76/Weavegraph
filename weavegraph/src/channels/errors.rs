@@ -5,6 +5,61 @@ use crate::telemetry::{PlainFormatter, TelemetryFormatter};
 
 // Avoid depending on serde for NodeKind by using encoded string form for kind.
 
+/// Represents an error event with scope, error details, tags, and context.
+///
+/// # JSON Serialization Format
+///
+/// `ErrorEvent` serializes to JSON with the following structure:
+///
+/// ```json
+/// {
+///   "when": "2025-11-02T10:30:00Z",
+///   "scope": {
+///     "scope": "node",
+///     "kind": "Parser",
+///     "step": 1
+///   },
+///   "error": {
+///     "message": "Failed to parse input",
+///     "cause": {
+///       "message": "Invalid JSON syntax",
+///       "cause": null,
+///       "details": {"line": 3, "column": 15}
+///     },
+///     "details": {"input_length": 1024}
+///   },
+///   "tags": ["validation", "retryable"],
+///   "context": {
+///     "file": "/tmp/input.json",
+///     "user_id": 12345
+///   }
+/// }
+/// ```
+///
+/// The `scope` field uses a tagged union format with a discriminator field named `"scope"`.
+/// Supported scope variants are:
+/// - `"node"`: Requires `kind` (string) and `step` (u64)
+/// - `"scheduler"`: Requires `step` (u64)
+/// - `"runner"`: Requires `session` (string) and `step` (u64)
+/// - `"app"`: No additional fields
+///
+/// See `docs/schemas/error_event.json` for the complete JSON Schema specification.
+///
+/// # Examples
+///
+/// Using constructors and builders:
+///
+/// ```
+/// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+/// use serde_json::json;
+///
+/// let event = ErrorEvent::node("Parser", 1, LadderError::msg("Parse error"))
+///     .with_tag("validation")
+///     .with_context(json!({"line": 42}));
+///
+/// // Serialize to JSON
+/// let json_str = serde_json::to_string(&event).unwrap();
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ErrorEvent {
     #[serde(default = "chrono::Utc::now")]

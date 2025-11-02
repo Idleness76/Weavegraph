@@ -1,0 +1,196 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ErrorEvent",
+    "description": "Represents an error event in the Weavegraph system with scope, error details, tags, and context.",
+    "type": "object",
+    "required": [
+        "when",
+        "scope",
+        "error",
+        "tags",
+        "context"
+    ],
+    "properties": {
+        "when": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the error occurred",
+            "example": "2025-11-02T10:30:00Z"
+        },
+        "scope": {
+            "description": "The scope/context where the error occurred",
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "scope",
+                        "kind",
+                        "step"
+                    ],
+                    "properties": {
+                        "scope": {
+                            "type": "string",
+                            "const": "node"
+                        },
+                        "kind": {
+                            "type": "string",
+                            "description": "Node identifier (e.g., 'Parser', 'Custom:Validator')"
+                        },
+                        "step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Execution step number"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "scope",
+                        "step"
+                    ],
+                    "properties": {
+                        "scope": {
+                            "type": "string",
+                            "const": "scheduler"
+                        },
+                        "step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Execution step number"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "scope",
+                        "session",
+                        "step"
+                    ],
+                    "properties": {
+                        "scope": {
+                            "type": "string",
+                            "const": "runner"
+                        },
+                        "session": {
+                            "type": "string",
+                            "description": "Session identifier"
+                        },
+                        "step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Execution step number"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "scope"
+                    ],
+                    "properties": {
+                        "scope": {
+                            "type": "string",
+                            "const": "app"
+                        }
+                    }
+                }
+            ]
+        },
+        "error": {
+            "$ref": "#/definitions/LadderError"
+        },
+        "tags": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Optional tags for categorizing/filtering errors",
+            "default": []
+        },
+        "context": {
+            "description": "Optional JSON context/metadata about the error",
+            "default": null
+        }
+    },
+    "definitions": {
+        "LadderError": {
+            "type": "object",
+            "required": [
+                "message"
+            ],
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Primary error message"
+                },
+                "cause": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/definitions/LadderError"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Optional nested cause error (recursive structure)",
+                    "default": null
+                },
+                "details": {
+                    "description": "Optional structured details about the error",
+                    "default": null
+                }
+            }
+        }
+    },
+    "examples": [
+        {
+            "when": "2025-11-02T10:30:00Z",
+            "scope": {
+                "scope": "node",
+                "kind": "Parser",
+                "step": 1
+            },
+            "error": {
+                "message": "Failed to parse input",
+                "cause": {
+                    "message": "Invalid JSON syntax",
+                    "cause": null,
+                    "details": {
+                        "line": 3,
+                        "column": 15
+                    }
+                },
+                "details": {
+                    "input_length": 1024
+                }
+            },
+            "tags": [
+                "validation",
+                "retryable"
+            ],
+            "context": {
+                "file": "/tmp/input.json",
+                "user_id": 12345
+            }
+        },
+        {
+            "when": "2025-11-02T11:00:00Z",
+            "scope": {
+                "scope": "app"
+            },
+            "error": {
+                "message": "Application startup failed",
+                "cause": null,
+                "details": null
+            },
+            "tags": [
+                "fatal"
+            ],
+            "context": {
+                "config_file": "/etc/app.conf"
+            }
+        }
+    ]
+}
