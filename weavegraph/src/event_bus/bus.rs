@@ -1,7 +1,7 @@
+use parking_lot::Mutex as ParkingMutex;
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use parking_lot::Mutex as ParkingMutex;
 use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
@@ -186,13 +186,7 @@ impl EventBus {
     }
 
     pub(crate) fn with_capacity(sinks: Vec<Box<dyn EventSink>>, buffer_capacity: usize) -> Self {
-        Self::with_capacity_and_diag(
-            sinks,
-            buffer_capacity,
-            buffer_capacity,
-            true,
-            false,
-        )
+        Self::with_capacity_and_diag(sinks, buffer_capacity, buffer_capacity, true, false)
     }
 
     pub(crate) fn with_capacity_and_diag(
@@ -353,7 +347,14 @@ struct SinkEntry {
 
 impl SinkEntry {
     fn new(sink: Box<dyn EventSink>) -> Self {
-        let name = sink.name().into_owned();
+        let candidate = sink.name().into_owned();
+        let default_marker: &str = std::any::type_name::<dyn EventSink>();
+        // Prefer implementor override; otherwise fall back to the dynamic concrete type name.
+        let name = if candidate == default_marker {
+            std::any::type_name_of_val(&*sink).to_string()
+        } else {
+            candidate
+        };
         Self {
             sink: Arc::new(Mutex::new(sink)),
             name,
@@ -380,10 +381,10 @@ impl SinkEntry {
         let sink_name = self.name.clone();
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let mut stream = hub.subscribe();
-    let de_enabled = diagnostics_enabled;
-    let de_emit = diagnostics_emit_to_events;
-    let hub_clone = Arc::clone(&hub);
-    let handle = task::spawn(async move {
+        let de_enabled = diagnostics_enabled;
+        let de_emit = diagnostics_emit_to_events;
+        let hub_clone = Arc::clone(&hub);
+        let handle = task::spawn(async move {
             fn record_sink_error(
                 health: &Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
                 diagnostics_tx: &broadcast::Sender<SinkDiagnostic>,
