@@ -1,6 +1,7 @@
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use parking_lot::Mutex as ParkingMutex;
 use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
@@ -8,6 +9,7 @@ use super::diagnostics::{DiagnosticsStream, HealthState, SinkDiagnostic, SinkHea
 use super::emitter::EventEmitter;
 use super::hub::{EventHub, EventHubMetrics, EventStream};
 use super::sink::{EventSink, StdOutSink};
+use chrono::Utc;
 
 /// Central event broadcasting system for workflow execution events.
 ///
@@ -160,7 +162,7 @@ pub struct EventBus {
     /// Diagnostics broadcast channel for sink errors.
     diagnostics_tx: broadcast::Sender<SinkDiagnostic>,
     /// In-memory health tracking per sink name.
-    health: Arc<Mutex<std::collections::HashMap<String, HealthState>>>,
+    health: Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
 }
 
 impl Default for EventBus {
@@ -191,7 +193,7 @@ impl EventBus {
             started: AtomicBool::new(false),
             generation: Arc::new(AtomicU64::new(0)),
             diagnostics_tx,
-            health: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            health: Arc::new(ParkingMutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -205,7 +207,13 @@ impl EventBus {
         let mut entry = SinkEntry::new(sink);
         if self.started.load(Ordering::SeqCst) {
             let generation = self.generation.load(Ordering::SeqCst);
-            entry.spawn_worker(self.hub.clone(), Arc::clone(&self.generation), generation);
+            entry.spawn_worker(
+                self.hub.clone(),
+                Arc::clone(&self.generation),
+                generation,
+                self.diagnostics_tx.clone(),
+                Arc::clone(&self.health),
+            );
         }
         sinks_guard.push(entry);
     }
@@ -235,7 +243,7 @@ impl EventBus {
 
     /// Return a snapshot of per-sink health counters and last error details.
     pub fn sink_health(&self) -> Vec<SinkHealth> {
-        let health = self.health.lock().unwrap();
+        let health = self.health.lock();
         health
             .iter()
             .map(|(sink, state)| SinkHealth {
@@ -255,7 +263,13 @@ impl EventBus {
         let mut sinks = self.sinks.lock().unwrap();
         let generation = self.generation.load(Ordering::SeqCst);
         for entry in sinks.iter_mut() {
-            entry.spawn_worker(self.hub.clone(), Arc::clone(&self.generation), generation);
+            entry.spawn_worker(
+                self.hub.clone(),
+                Arc::clone(&self.generation),
+                generation,
+                self.diagnostics_tx.clone(),
+                Arc::clone(&self.health),
+            );
         }
     }
 
@@ -322,6 +336,8 @@ impl SinkEntry {
         hub: Arc<EventHub>,
         generation_state: Arc<AtomicU64>,
         active_generation: u64,
+        diagnostics_tx: broadcast::Sender<SinkDiagnostic>,
+    health: Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
     ) {
         if self.worker.is_some() {
             return;
@@ -329,9 +345,30 @@ impl SinkEntry {
         // Each worker holds an `Arc` to the sink so consumers can add/remove sinks without
         // racing the async tasks we spawn here.
         let sink = Arc::clone(&self.sink);
+        let sink_name = self.name.clone();
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let mut stream = hub.subscribe();
         let handle = task::spawn(async move {
+            fn record_sink_error(
+                health: &Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
+                diagnostics_tx: &broadcast::Sender<SinkDiagnostic>,
+                sink_name: &str,
+                err_msg: &str,
+            ) {
+                let mut map = health.lock();
+                let entry = map.entry(sink_name.to_string()).or_default();
+                entry.error_count = entry.error_count.saturating_add(1);
+                entry.last_error = Some(err_msg.to_string());
+                entry.last_error_at = Some(Utc::now());
+                let occurrence = entry.error_count;
+                drop(map);
+                let _ = diagnostics_tx.send(SinkDiagnostic {
+                    sink: sink_name.to_string(),
+                    error: err_msg.to_string(),
+                    when: Utc::now(),
+                    occurrence,
+                });
+            }
             loop {
                 // Bail out early if the bus has been stopped/restarted since this worker spawned.
                 if generation_state.load(Ordering::SeqCst) != active_generation {
@@ -342,6 +379,9 @@ impl SinkEntry {
                     event = stream.recv() => match event {
                         Ok(event) => {
                             let sink = Arc::clone(&sink);
+                            let sink_name = sink_name.clone();
+                            let diagnostics_tx = diagnostics_tx.clone();
+                            let health = Arc::clone(&health);
                             // Dispatch potentially blocking sink logic onto the dedicated
                             // blocking pool so we never park the async runtime thread.
                             let dispatch = task::spawn_blocking(move || -> io::Result<()> {
@@ -352,17 +392,26 @@ impl SinkEntry {
                             });
                             match dispatch.await {
                                 Ok(Ok(())) => {}
-                                Ok(Err(err)) => tracing::error!(
-                                    target: "weavegraph::event_bus",
-                                    error = %err,
-                                    "event sink reported an error while handling event"
-                                ),
-                                Err(err) => {
+                                Ok(Err(err)) => {
+                                    let err_msg = err.to_string();
                                     tracing::error!(
                                         target: "weavegraph::event_bus",
-                                        error = %err,
+                                        error = %err_msg,
+                                        sink = %sink_name,
+                                        "event sink reported an error while handling event"
+                                    );
+                                    record_sink_error(&health, &diagnostics_tx, &sink_name, &err_msg);
+                                }
+                                Err(err) => {
+                                    let err_msg = err.to_string();
+                                    tracing::error!(
+                                        target: "weavegraph::event_bus",
+                                        error = %err_msg,
+                                        sink = %sink_name,
                                         "event sink worker task failed to join"
                                     );
+                                    // Treat join failures as sink errors for health/diagnostics
+                                    record_sink_error(&health, &diagnostics_tx, &sink_name, &err_msg);
                                 }
                             }
                         }
