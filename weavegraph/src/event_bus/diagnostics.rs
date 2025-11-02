@@ -19,6 +19,25 @@ pub struct SinkDiagnostic {
     pub occurrence: u64,
 }
 
+/// Public snapshot type representing per-sink health.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SinkHealth {
+    pub sink: String,
+    pub error_count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error_at: Option<DateTime<Utc>>,
+}
+
+/// Internal accumulator for health tracking.
+#[derive(Debug, Default, Clone)]
+pub struct HealthState {
+    pub error_count: u64,
+    pub last_error: Option<String>,
+    pub last_error_at: Option<DateTime<Utc>>,
+}
+
 /// Stream wrapper for sink diagnostics, mirroring the EventStream API surface.
 #[derive(Debug)]
 pub struct DiagnosticsStream {
