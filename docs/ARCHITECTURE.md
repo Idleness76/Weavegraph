@@ -126,6 +126,24 @@ Key practices:
 
 ---
 
+### Backpressure and Drop Policy
+
+The event bus uses a bounded broadcast channel (default capacity: 1024 events per subscriber).
+When a subscriber falls behind faster producers, the following semantics apply:
+
+- Slow subscribers receive a lag notice and skip older events (no blocking of producers)
+- Missed events are counted and exposed via `EventBus::metrics()`
+- A WARN log entry is emitted with the number of dropped events and the running total
+- Streams continue from the most recent position for graceful degradation under load
+
+To adjust capacity or sinks, prefer the public runtime config entry point:
+
+- `RuntimeConfig::default().with_event_bus(EventBusConfig::new(capacity, sinks))`
+
+See the streaming quickstart for practical guidance and code samples:
+
+- `weavegraph/examples/STREAMING_QUICKSTART.md` (section: “Tuning Buffer Capacity”)
+
 ## `wg-ragsmith` Crate
 
 `wg-ragsmith` contains the ingestion and vector-store tooling used by RAG pipelines. It can be
