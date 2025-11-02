@@ -362,6 +362,7 @@ impl SinkEntry {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_worker(
         &mut self,
         hub: Arc<EventHub>,

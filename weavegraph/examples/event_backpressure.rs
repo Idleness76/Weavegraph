@@ -29,11 +29,8 @@ async fn main() {
 
     // Drain for a short period and then exit. This prevents the example from hanging.
     // `next_timeout` retries on lag and returns None on timeout or channel close.
-    loop {
-        match stream.next_timeout(Duration::from_millis(50)).await {
-            Some(event) => println!("Received: {}", event.message()),
-            None => break,
-        }
+    while let Some(event) = stream.next_timeout(Duration::from_millis(50)).await {
+        println!("Received: {}", event.message());
     }
 
     let metrics = bus.metrics();

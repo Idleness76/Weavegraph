@@ -9,7 +9,7 @@ struct FailingSink;
 
 impl EventSink for FailingSink {
     fn handle(&mut self, _event: &weavegraph::event_bus::Event) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "oops"))
+        Err(io::Error::other("oops"))
     }
 }
 
@@ -18,7 +18,7 @@ struct NamedFailingSink;
 
 impl EventSink for NamedFailingSink {
     fn handle(&mut self, _event: &weavegraph::event_bus::Event) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Other, "boom"))
+        Err(io::Error::other("boom"))
     }
 
     fn name(&self) -> Cow<'static, str> {
@@ -147,11 +147,10 @@ async fn emit_to_events_toggle_behavior() {
         if let Some(ev) = events_off
             .next_timeout(std::time::Duration::from_millis(50))
             .await
+            && matches!(ev, Event::Diagnostic(_))
         {
-            if matches!(ev, Event::Diagnostic(_)) {
-                saw_diag = true;
-                break;
-            }
+            saw_diag = true;
+            break;
         }
     }
     assert!(
@@ -180,11 +179,10 @@ async fn emit_to_events_toggle_behavior() {
         if let Some(ev) = events_on
             .next_timeout(std::time::Duration::from_millis(100))
             .await
+            && matches!(ev, Event::Diagnostic(_))
         {
-            if matches!(ev, Event::Diagnostic(_)) {
-                diag_count += 1;
-                break;
-            }
+            diag_count += 1;
+            break;
         }
     }
     assert_eq!(
