@@ -30,10 +30,10 @@ async fn main() -> Result<(), RagError> {
 
     let cache_dir = env::var("RUST_BOOK_CACHE").unwrap_or_else(|_| "./rust_book_cache".to_string());
     let cache_dir = PathBuf::from(cache_dir);
-    if let Some(parent) = cache_dir.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).await?;
-        }
+    if let Some(parent) = cache_dir.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).await?;
     }
     fs::create_dir_all(&cache_dir).await?;
     let cache = DocumentCache::new(cache_dir.clone());
@@ -45,10 +45,10 @@ async fn main() -> Result<(), RagError> {
     let db_path =
         env::var("RUST_BOOK_DB").unwrap_or_else(|_| "./rust_book_chunks.sqlite".to_string());
     let db_path = PathBuf::from(db_path);
-    if let Some(parent) = db_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).await?;
-        }
+    if let Some(parent) = db_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).await?;
     }
 
     let limit = env::var("RUST_BOOK_LIMIT")
@@ -95,12 +95,12 @@ async fn main() -> Result<(), RagError> {
     let mut telemetry = Vec::new();
 
     for url in toc_urls {
-        if let Some(tracker) = &resume_tracker {
-            if tracker.contains(&url).await {
-                pages_skipped += 1;
-                println!("⏭︎ Skipping {} (already recorded)", url);
-                continue;
-            }
+        if let Some(tracker) = &resume_tracker
+            && tracker.contains(&url).await
+        {
+            pages_skipped += 1;
+            println!("⏭︎ Skipping {} (already recorded)", url);
+            continue;
         }
 
         println!("→ Fetching {}", url);

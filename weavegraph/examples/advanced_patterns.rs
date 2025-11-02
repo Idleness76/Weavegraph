@@ -575,11 +575,11 @@ async fn main() -> Result<()> {
 
     // Show transformations specifically
     info!("\n🔄 Transformations Applied:");
-    if let Some(log) = state.extra.get("transformation_log") {
-        if let Some(log_array) = log.as_array() {
-            for (i, entry) in log_array.iter().enumerate() {
-                info!("  {}: {}", i + 1, entry);
-            }
+    if let Some(log) = state.extra.get("transformation_log")
+        && let Some(log_array) = log.as_array()
+    {
+        for (i, entry) in log_array.iter().enumerate() {
+            info!("  {}: {}", i + 1, entry);
         }
     }
 

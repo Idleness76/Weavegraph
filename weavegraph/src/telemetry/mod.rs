@@ -26,9 +26,10 @@ pub const RESET_COLOR: &str = "\x1b[0m";
 /// // Force plain output for logging
 /// let mode = FormatterMode::Plain;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FormatterMode {
     /// Auto-detect TTY capability (checks `stderr.is_terminal()`)
+    #[default]
     Auto,
     /// Always include ANSI color codes
     Colored,
@@ -60,11 +61,7 @@ impl FormatterMode {
     }
 }
 
-impl Default for FormatterMode {
-    fn default() -> Self {
-        FormatterMode::Auto
-    }
-}
+// Default is derived; Auto is the default variant.
 
 /// Rendered output for a telemetry item that can be consumed by sinks.
 #[derive(Clone, Debug, Default)]

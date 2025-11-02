@@ -13,7 +13,6 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 /// - `FormatterMode::Auto`: Auto-detect (default behavior)
 /// - `FormatterMode::Colored`: Force colors on
 /// - `FormatterMode::Plain`: Force colors off (for logs/files)
-
 fn init_tracing() {
     tracing_subscriber::registry()
         .with(

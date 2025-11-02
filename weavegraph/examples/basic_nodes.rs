@@ -160,15 +160,15 @@ impl Node for AggregatorNode {
         let mut total_steps = 0u64;
 
         for (key, value) in &snapshot.extra {
-            if key == "processor" {
-                if let Some(processor_name) = value.as_str() {
-                    processors.push(processor_name.to_string());
-                }
+            if key == "processor"
+                && let Some(processor_name) = value.as_str()
+            {
+                processors.push(processor_name.to_string());
             }
-            if key == "step" {
-                if let Some(step) = value.as_u64() {
-                    total_steps += step;
-                }
+            if key == "step"
+                && let Some(step) = value.as_u64()
+            {
+                total_steps += step;
             }
         }
 

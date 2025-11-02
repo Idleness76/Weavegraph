@@ -61,10 +61,10 @@ impl ResumeTracker {
         let urls: Vec<String> = guard.iter().cloned().collect();
         drop(guard);
 
-        if let Some(parent) = self.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).await?;
-            }
+        if let Some(parent) = self.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).await?;
         }
         let serialized =
             serde_json::to_string(&urls).map_err(|err| RagError::Io(err.to_string()))?;

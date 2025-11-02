@@ -89,12 +89,12 @@ impl JsonSemanticChunker {
     }
 
     fn enforce_depth(&self, value: &Value, depth: usize) -> Result<(), ChunkingError> {
-        if let Some(max_depth) = self.preprocess.max_depth {
-            if depth > max_depth {
-                return Err(ChunkingError::InvalidInput {
-                    reason: format!("JSON payload exceeds max depth of {}", max_depth),
-                });
-            }
+        if let Some(max_depth) = self.preprocess.max_depth
+            && depth > max_depth
+        {
+            return Err(ChunkingError::InvalidInput {
+                reason: format!("JSON payload exceeds max depth of {}", max_depth),
+            });
         }
 
         match value {

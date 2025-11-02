@@ -46,26 +46,25 @@ pub fn plan_ranges(
     let mut adjusted: Vec<(usize, usize)> = Vec::new();
     for range in ranges {
         let tokens = range_tokens(segments, range);
-        if tokens < cfg.min_tokens {
-            if let Some(last) = adjusted.last_mut() {
-                last.1 = range.1;
-                continue;
-            }
+        if tokens < cfg.min_tokens
+            && let Some(last) = adjusted.last_mut()
+        {
+            last.1 = range.1;
+            continue;
         }
         adjusted.push(range);
     }
 
     let adjusted_len = adjusted.len();
-    if adjusted_len > 1 {
-        if let Some(last_range) = adjusted.last().cloned() {
-            if range_tokens(segments, last_range) < cfg.min_tokens {
-                let prev_index = adjusted_len - 2;
-                if let Some(prev) = adjusted.get_mut(prev_index) {
-                    prev.1 = last_range.1;
-                }
-                adjusted.pop();
-            }
+    if adjusted_len > 1
+        && let Some(last_range) = adjusted.last().cloned()
+        && range_tokens(segments, last_range) < cfg.min_tokens
+    {
+        let prev_index = adjusted_len - 2;
+        if let Some(prev) = adjusted.get_mut(prev_index) {
+            prev.1 = last_range.1;
         }
+        adjusted.pop();
     }
 
     let mut bounded: Vec<(usize, usize)> = Vec::new();
