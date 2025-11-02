@@ -1,9 +1,18 @@
 use chrono::{TimeZone, Utc};
 use serde_json::json;
-use weavegraph::channels::errors::{pretty_print, ErrorEvent, LadderError};
+use weavegraph::channels::errors::{pretty_print, pretty_print_with_mode, ErrorEvent, LadderError};
+use weavegraph::telemetry::FormatterMode;
 
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+/// Example demonstrating error event formatting with color mode control.
+///
+/// By default, `pretty_print()` auto-detects TTY capability and enables colors
+/// when stderr is a terminal. You can override this behavior using `pretty_print_with_mode()`:
+/// - `FormatterMode::Auto`: Auto-detect (default behavior)
+/// - `FormatterMode::Colored`: Force colors on
+/// - `FormatterMode::Plain`: Force colors off (for logs/files)
 
 fn init_tracing() {
     tracing_subscriber::registry()
@@ -71,6 +80,11 @@ fn main() {
         },
     ];
 
+    // Auto-detect TTY capability (default behavior)
     let out = pretty_print(&events);
-    println!("=== Errors pretty showcase ===\n{}", out);
+    println!("=== Errors pretty showcase (auto-detect colors) ===\n{}", out);
+
+    // Example: Force plain output (no colors) - useful for log files
+    let plain_out = pretty_print_with_mode(&events, FormatterMode::Plain);
+    println!("\n=== Plain output (no colors) ===\n{}", plain_out);
 }

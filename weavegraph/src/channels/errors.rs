@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::telemetry::{PlainFormatter, TelemetryFormatter};
+use crate::telemetry::{FormatterMode, PlainFormatter, TelemetryFormatter};
 
 // Avoid depending on serde for NodeKind by using encoded string form for kind.
 
@@ -266,8 +266,32 @@ impl LadderError {
     }
 }
 
-pub fn pretty_print(events: &[ErrorEvent]) -> String {
-    let formatter = PlainFormatter;
+/// Format error events with explicit color mode control.
+///
+/// This function allows you to control whether ANSI color codes are included in the output:
+/// - [`FormatterMode::Auto`]: Auto-detects TTY capability (checks stderr)
+/// - [`FormatterMode::Colored`]: Always includes color codes
+/// - [`FormatterMode::Plain`]: Never includes color codes
+///
+/// # Examples
+///
+/// ```
+/// use weavegraph::channels::errors::{ErrorEvent, LadderError, pretty_print_with_mode};
+/// use weavegraph::telemetry::FormatterMode;
+///
+/// let events = vec![
+///     ErrorEvent::node("parser", 1, LadderError::msg("Parse failed"))
+/// ];
+///
+/// // Force plain output (no colors) for log files
+/// let plain = pretty_print_with_mode(&events, FormatterMode::Plain);
+/// assert!(!plain.contains("\x1b[")); // No ANSI codes
+///
+/// // Force colored output
+/// let colored = pretty_print_with_mode(&events, FormatterMode::Colored);
+/// ```
+pub fn pretty_print_with_mode(events: &[ErrorEvent], mode: FormatterMode) -> String {
+    let formatter = PlainFormatter::with_mode(mode);
     let renders = formatter.render_errors(events);
     let mut out = String::new();
     for (idx, render) in renders.into_iter().enumerate() {
@@ -279,4 +303,25 @@ pub fn pretty_print(events: &[ErrorEvent]) -> String {
         }
     }
     out
+}
+
+/// Format error events as human-readable text with auto-detected color support.
+///
+/// Colors are automatically enabled when stderr is a TTY and disabled otherwise.
+/// For explicit control over color output, use [`pretty_print_with_mode`].
+///
+/// # Examples
+///
+/// ```
+/// use weavegraph::channels::errors::{ErrorEvent, LadderError, pretty_print};
+///
+/// let events = vec![
+///     ErrorEvent::node("parser", 1, LadderError::msg("Parse failed"))
+/// ];
+///
+/// let output = pretty_print(&events);
+/// // Colors automatically detected based on stderr TTY status
+/// ```
+pub fn pretty_print(events: &[ErrorEvent]) -> String {
+    pretty_print_with_mode(events, FormatterMode::Auto)
 }

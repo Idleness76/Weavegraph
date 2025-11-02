@@ -622,3 +622,57 @@ fn optional_cli_pretty_demo() {
     println!("\n=== Errors pretty showcase ===\n{}", out);
     assert!(out.contains("display"));
 }
+
+#[test]
+fn pretty_print_with_mode_colored_includes_ansi_codes() {
+    use weavegraph::telemetry::FormatterMode;
+    
+    let event = ErrorEvent::node("parser", 1, LadderError::msg("Parse failed"))
+        .with_tag("validation");
+    let events = vec![event];
+
+    let output = pretty_print_with_mode(&events, FormatterMode::Colored);
+    
+    // Should contain ANSI escape codes
+    assert!(output.contains('\x1b'), "Colored mode should include ANSI escape codes");
+    assert!(output.contains("Parse failed"), "Should include error message");
+    assert!(output.contains("validation"), "Should include tags");
+}
+
+#[test]
+fn pretty_print_with_mode_plain_excludes_ansi_codes() {
+    use weavegraph::telemetry::FormatterMode;
+    
+    let nested_error = LadderError::msg("Top level error")
+        .with_cause(LadderError::msg("Nested cause"));
+    let event = ErrorEvent::scheduler(5, nested_error)
+        .with_tag("critical")
+        .with_context(json!({"attempt": 3}));
+    let events = vec![event];
+
+    let output = pretty_print_with_mode(&events, FormatterMode::Plain);
+    
+    // Should NOT contain any ANSI escape codes
+    assert!(!output.contains('\x1b'), "Plain mode should not include ANSI escape codes");
+    
+    // Should still contain all content
+    assert!(output.contains("Top level error"), "Should include root error");
+    assert!(output.contains("Nested cause"), "Should include nested cause");
+    assert!(output.contains("critical"), "Should include tags");
+    assert!(output.contains("attempt"), "Should include context");
+}
+
+#[test]
+fn pretty_print_uses_auto_mode_by_default() {
+    use weavegraph::telemetry::FormatterMode;
+    
+    let event = ErrorEvent::app(LadderError::msg("Test error"));
+    let events = vec![event.clone()];
+
+    let auto_output = pretty_print(&events);
+    let explicit_auto_output = pretty_print_with_mode(&events, FormatterMode::Auto);
+    
+    // Both should produce identical output
+    assert_eq!(auto_output, explicit_auto_output, 
+               "pretty_print should be equivalent to pretty_print_with_mode(Auto)");
+}
