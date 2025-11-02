@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
-use super::emitter::EventEmitter;
 use super::diagnostics::{DiagnosticsStream, HealthState, SinkDiagnostic, SinkHealth};
+use super::emitter::EventEmitter;
 use super::hub::{EventHub, EventHubMetrics, EventStream};
 use super::sink::{EventSink, StdOutSink};
 
@@ -302,13 +302,17 @@ impl Drop for EventBus {
 
 struct SinkEntry {
     sink: Arc<Mutex<Box<dyn EventSink>>>,
+    /// Resolved once at registration to avoid recomputing on error paths.
+    name: String,
     worker: Option<SinkWorker>,
 }
 
 impl SinkEntry {
     fn new(sink: Box<dyn EventSink>) -> Self {
+        let name = sink.name().into_owned();
         Self {
             sink: Arc::new(Mutex::new(sink)),
+            name,
             worker: None,
         }
     }
