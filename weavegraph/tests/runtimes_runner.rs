@@ -5,7 +5,7 @@ use weavegraph::graphs::{EdgePredicate, GraphBuilder};
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{
-    AppRunner, CheckpointerType, PausedReason, SessionInit, StepOptions, StepResult,
+    AppRunner, CheckpointerType, PausedReason, RuntimeConfig, SessionInit, StepOptions, StepResult,
 };
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
@@ -138,10 +138,12 @@ async fn test_run_step_basic() {
     if let Ok(StepResult::Completed(report)) = result {
         assert_eq!(report.step, 1);
         assert_eq!(report.ran_nodes.len(), 1);
-        assert!(report
-            .barrier_outcome
-            .updated_channels
-            .contains(&"messages"));
+        assert!(
+            report
+                .barrier_outcome
+                .updated_channels
+                .contains(&"messages")
+        );
     } else {
         panic!("Expected completed step, got: {:?}", result);
     }
@@ -247,9 +249,11 @@ async fn test_frontier_command_replace_routes_nodes() {
 
     match second_step {
         StepResult::Completed(report) => {
-            assert!(report
-                .ran_nodes
-                .contains(&NodeKind::Custom("worker".into())));
+            assert!(
+                report
+                    .ran_nodes
+                    .contains(&NodeKind::Custom("worker".into()))
+            );
         }
         other => panic!("expected completed step, got {other:?}"),
     }
@@ -315,14 +319,22 @@ async fn test_interrupt_after() {
 
 #[tokio::test]
 async fn test_resume_from_checkpoint() {
-    let app = make_test_app();
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("test_resume.db");
 
-    std::env::set_var(
-        "WEAVEGRAPH_SQLITE_URL",
-        format!("sqlite://{}", db_path.display()),
-    );
+    // Build the app with a runtime config that points SQLite to our temp path,
+    // avoiding any process-wide environment mutation.
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("test".into()), TestNode { name: "test" })
+        .add_edge(NodeKind::Start, NodeKind::Custom("test".into()))
+        .add_edge(NodeKind::Custom("test".into()), NodeKind::End)
+        .with_runtime_config(RuntimeConfig::new(
+            None,
+            Some(CheckpointerType::SQLite),
+            Some(db_path.display().to_string()),
+        ))
+        .compile()
+        .unwrap();
 
     let mut runner1 = AppRunner::new(app.clone(), CheckpointerType::SQLite).await;
     let initial_state = state_with_user("hello from checkpoint test");
@@ -368,7 +380,7 @@ async fn test_resume_from_checkpoint() {
         session_after_step1.state.messages.len()
     );
 
-    std::env::remove_var("WEAVEGRAPH_SQLITE_URL");
+    // No environment cleanup necessary; the DB URL was provided via runtime config.
 }
 
 #[tokio::test]
@@ -470,13 +482,17 @@ async fn test_conditional_edge_with_invalid_targets() {
         .unwrap();
     if let StepResult::Completed(report) = step {
         assert_eq!(report.next_frontier.len(), 2);
-        assert!(report
-            .next_frontier
-            .contains(&NodeKind::Custom("Valid".into())));
+        assert!(
+            report
+                .next_frontier
+                .contains(&NodeKind::Custom("Valid".into()))
+        );
         assert!(report.next_frontier.contains(&NodeKind::End));
-        assert!(!report
-            .next_frontier
-            .contains(&NodeKind::Custom("Invalid".into())));
+        assert!(
+            !report
+                .next_frontier
+                .contains(&NodeKind::Custom("Invalid".into()))
+        );
     } else {
         panic!("Expected completed step");
     }
