@@ -11,9 +11,25 @@ env:
 
 jobs:
   fmt:
-    name: fmt (${{ matrix.toolchain }})
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: fmt
+      - name: cargo fmt --check
+        run: make fmt-check
+
+  clippy:
+    name: clippy (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         toolchain: ["1.89.0", "stable"]
     steps:
@@ -21,45 +37,46 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          components: rustfmt
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: fmt-${{ matrix.toolchain }}
-      - name: cargo fmt --check
-        run: make fmt-check
+          prefix-key: clippy-${{ matrix.toolchain }}
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
-  checks:
-    name: ${{ matrix.command }} (${{ matrix.toolchain }})
+  test:
+    name: test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        toolchain: ["1.91.0", "stable", "nightly"]
-        command: ["clippy", "test", "doc"]
+        toolchain: ["1.89.0", "stable"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          components: ${{ matrix.command == 'clippy' && 'clippy' || '' }}
       - uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: ${{ matrix.command }}-${{ matrix.toolchain }}
-      - name: run ${{ matrix.command }}
+          prefix-key: test-${{ matrix.toolchain }}
+      - name: cargo test
+        run: cargo test --workspace
+
+  doc:
+    name: doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: doc
+      - name: cargo doc
         env:
-          RUSTDOCFLAGS: ${{ matrix.command == 'doc' && '-D warnings' || '' }}
-        run: |
-          case "${{ matrix.command }}" in
-            clippy)
-              cargo clippy --workspace --all-targets -- -D warnings
-              ;;
-            test)
-              cargo test --workspace
-              ;;
-            doc)
-              cargo doc --workspace --all-features --no-deps
-              ;;
-          esac
+          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
+        run: cargo doc --workspace --all-features --no-deps
 
   deny:
     name: cargo deny
