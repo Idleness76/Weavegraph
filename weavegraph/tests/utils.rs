@@ -34,8 +34,8 @@ fn test_json_ext_deep_merge_and_path() {
 
 #[test]
 fn test_id_generator_basics() {
-    let gen = IdGenerator::new();
-    let run = gen.generate_run_id();
+    let id_gen = IdGenerator::new();
+    let run = id_gen.generate_run_id();
     assert!(run.starts_with("run-"));
 
     let config = IdConfig {
