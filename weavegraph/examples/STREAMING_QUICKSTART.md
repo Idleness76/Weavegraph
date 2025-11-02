@@ -331,3 +331,210 @@ Sse::new(stream)  // Events captured from the start
 tokio::spawn(async move { /* already running */ });
 let (tx, rx) = flume::unbounded();  // Too late!
 ```
+
+---
+
+## Sink Diagnostics: Monitoring Failures
+
+Weavegraph provides **opt-in diagnostics** for monitoring event sink health without disrupting your main event stream. This is useful for production observability and debugging sink-specific issues.
+
+### Quick Start: No Changes Needed
+
+Existing code works unchanged—diagnostics are isolated and optional:
+
+```rust
+// ✓ Constructing and using EventBus exactly as before
+let bus = EventBus::with_sinks(vec![Box::new(StdOutSink::default())]);
+app_runner.run_until_complete(&session).await?;
+
+// ✓ No changes needed for EventStream consumers
+let mut events = bus.subscribe();
+while let Ok(event) = events.recv().await { /* ... */ }
+
+// ✓ No changes needed for sinks like StdOutSink, MemorySink, or ChannelSink
+```
+
+### Opt-In: Subscribe to Diagnostics
+
+To monitor sink failures, subscribe to the diagnostics stream:
+
+```rust
+use weavegraph::event_bus::EventBus;
+
+let bus = EventBus::with_sinks(vec![
+    Box::new(StdOutSink::default()),
+    Box::new(ChannelSink::new(tx)),
+]);
+
+// Subscribe to diagnostics (doesn't affect main event stream)
+let mut diags = bus.diagnostics();
+
+tokio::spawn(async move {
+    while let Ok(diagnostic) = diags.recv().await {
+        eprintln!(
+            "[{}] Sink '{}' error #{}: {}",
+            diagnostic.when.format("%H:%M:%S"),
+            diagnostic.sink,
+            diagnostic.occurrence,
+            diagnostic.error
+        );
+    }
+});
+
+// Main event stream continues independently
+let mut events = bus.subscribe();
+```
+
+**DiagnosticsStream API** mirrors `EventStream`:
+- `recv()` → blocking receive
+- `try_recv()` → non-blocking poll (returns `Empty`, `Closed`, or `Ok(diagnostic)`)
+- `into_async_stream()` → convert to `futures::Stream`
+- `next_timeout(duration)` → receive with timeout
+
+### Health Snapshots
+
+Query aggregated sink health at any time without subscribing:
+
+```rust
+// Get current health for all sinks
+let health = bus.sink_health();
+
+for entry in health {
+    println!(
+        "Sink '{}': {} errors, last: {:?}",
+        entry.sink,
+        entry.error_count,
+        entry.last_error.as_deref().unwrap_or("none")
+    );
+}
+```
+
+**Use cases:**
+- Health check endpoints in web servers
+- Periodic alerting without continuous monitoring
+- Post-mortem analysis after workflow completion
+
+### Configuration Options
+
+Control diagnostics behavior via `EventBusConfig`:
+
+```rust
+use weavegraph::runtimes::{RuntimeConfig, EventBusConfig, DiagnosticsConfig};
+
+// Disable diagnostics entirely (saves memory)
+let config = RuntimeConfig::default()
+    .with_event_bus(
+        EventBusConfig::with_stdout_only()
+            .with_diagnostics(DiagnosticsConfig {
+                enabled: false,
+                buffer_capacity: None,
+                emit_to_events: false,
+            })
+    );
+
+// Enable diagnostics with custom buffer
+let config = RuntimeConfig::default()
+    .with_event_bus(
+        EventBusConfig::with_stdout_only()
+            .with_diagnostics(DiagnosticsConfig {
+                enabled: true,
+                buffer_capacity: Some(512),  // Default: same as event bus capacity
+                emit_to_events: false,
+            })
+    );
+
+// Emit diagnostics to BOTH the diagnostics stream AND main event stream
+// ⚠️ Caution: Only use when sinks cannot create feedback loops
+let config = RuntimeConfig::default()
+    .with_event_bus(
+        EventBusConfig::with_stdout_only()
+            .with_diagnostics(DiagnosticsConfig {
+                enabled: true,
+                buffer_capacity: None,
+                emit_to_events: true,  // Also emit Event::Diagnostic to main stream
+            })
+    );
+```
+
+**When to use `emit_to_events: true`:**
+- You have a single monitoring sink that won't fail on diagnostic events
+- You want diagnostics visible in existing event consumers (logs, metrics, etc.)
+- You understand the risk of cascading failures (e.g., a sink that fails on all events will emit diagnostics that trigger more failures)
+
+**Default behavior (`emit_to_events: false`):**
+- Diagnostics are isolated to the dedicated diagnostics stream
+- Main event stream is unaffected by sink failures
+- Safer for most production use cases
+
+### Custom Sink Naming
+
+Override the default sink name for clearer diagnostics:
+
+```rust
+use std::borrow::Cow;
+use weavegraph::event_bus::EventSink;
+
+struct DatabaseSink { /* ... */ }
+
+impl EventSink for DatabaseSink {
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("postgres_events_sink")
+    }
+
+    fn handle(&mut self, event: &Event) -> std::io::Result<()> {
+        // ... write to database
+        Ok(())
+    }
+}
+
+// Diagnostics will show "postgres_events_sink" instead of generic type name
+let bus = EventBus::with_sink(DatabaseSink { /* ... */ });
+let health = bus.sink_health();
+assert_eq!(health[0].sink, "postgres_events_sink");
+```
+
+### Example: Health Monitoring in Axum
+
+```rust
+use axum::{Json, routing::get, Router};
+use serde_json::json;
+use std::sync::Arc;
+
+async fn health_check(bus: Arc<EventBus>) -> Json<serde_json::Value> {
+    let health = bus.sink_health();
+    let any_errors = health.iter().any(|h| h.error_count > 0);
+
+    Json(json!({
+        "status": if any_errors { "degraded" } else { "healthy" },
+        "sinks": health.iter().map(|h| json!({
+            "name": h.sink,
+            "errors": h.error_count,
+            "last_error": h.last_error,
+            "last_error_at": h.last_error_at,
+        })).collect::<Vec<_>>()
+    }))
+}
+
+let app = Router::new()
+    .route("/health", get(health_check))
+    .with_state(Arc::new(event_bus));
+```
+
+### Troubleshooting
+
+**Q: Diagnostics stream returns `Closed` immediately**
+
+A: Diagnostics may be disabled in config. Check `EventBusConfig::diagnostics.enabled`.
+
+**Q: I'm not seeing diagnostics for sink failures I know are happening**
+
+A: Ensure you're subscribing *before* the workflow starts, or check if the diagnostics buffer is lagging (broadcast receivers drop messages when full).
+
+**Q: Health snapshot shows zero errors but I see tracing logs**
+
+A: Diagnostics tracking is disabled. Set `diagnostics.enabled: true` in config.
+
+**Q: Can I get diagnostics for a specific sink only?**
+
+A: Filter by `diagnostic.sink` name after receiving. The stream contains all sink diagnostics.
+
