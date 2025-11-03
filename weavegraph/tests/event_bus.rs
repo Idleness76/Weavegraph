@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use weavegraph::channels::Channel;
 use weavegraph::event_bus::{
-    ChannelSink, Event, EventBus, EventEmitter, LLMStreamingEvent, MemorySink, NodeEvent,
-    STREAM_END_SCOPE,
+    ChannelSink, Event, EventBus, EventEmitter, EventSink, JsonLinesSink, LLMStreamingEvent,
+    MemorySink, NodeEvent, STREAM_END_SCOPE,
 };
 use weavegraph::node::NodeContext;
 
@@ -678,4 +678,293 @@ proptest! {
         let decoded: Event = serde_json::from_str(&json).expect("deserialize");
         prop_assert_eq!(decoded, event);
     }
+}
+
+// ============================================================================
+// JSON Serialization Tests
+// ============================================================================
+
+// Helper for shared writer in tests
+struct SharedWriter(Arc<Mutex<std::io::Cursor<Vec<u8>>>>);
+
+impl std::io::Write for SharedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().unwrap().flush()
+    }
+}
+
+#[test]
+fn test_node_event_to_json_value() {
+    let event = Event::node_message_with_meta("router", 5, "routing", "Processing request");
+    let json = event.to_json_value();
+
+    assert_eq!(json["type"], "node");
+    assert_eq!(json["scope"], "routing");
+    assert_eq!(json["message"], "Processing request");
+    assert_eq!(json["metadata"]["node_id"], "router");
+    assert_eq!(json["metadata"]["step"], 5);
+    assert!(json["timestamp"].is_string());
+}
+
+#[test]
+fn test_node_event_partial_metadata() {
+    // Node without node_id or step
+    let event = Event::node_message("test_scope", "test message");
+    let json = event.to_json_value();
+
+    assert_eq!(json["type"], "node");
+    assert_eq!(json["scope"], "test_scope");
+    assert_eq!(json["message"], "test message");
+    assert!(json["metadata"].is_object());
+    assert!(json["metadata"]["node_id"].is_null());
+    assert!(json["metadata"]["step"].is_null());
+}
+
+#[test]
+fn test_diagnostic_event_to_json_value() {
+    let event = Event::diagnostic("error_scope", "Something went wrong");
+    let json = event.to_json_value();
+
+    assert_eq!(json["type"], "diagnostic");
+    assert_eq!(json["scope"], "error_scope");
+    assert_eq!(json["message"], "Something went wrong");
+    assert!(json["timestamp"].is_string());
+    // Diagnostic events have minimal metadata
+    assert!(json["metadata"].is_object());
+    let metadata = json["metadata"].as_object().unwrap();
+    assert!(metadata.is_empty());
+}
+
+#[test]
+fn test_llm_event_to_json_value() {
+    let mut metadata = FxHashMap::default();
+    metadata.insert("content_type".to_string(), json!("reasoning"));
+    metadata.insert("token_count".to_string(), json!(42));
+
+    let timestamp = Utc::now();
+    let llm_event = LLMStreamingEvent::new(
+        Some("session-123".to_string()),
+        Some("node-abc".to_string()),
+        Some("stream-xyz".to_string()),
+        "Thinking step by step...".to_string(),
+        false,
+        None,
+        metadata,
+        timestamp,
+    );
+    let event = Event::LLM(llm_event);
+    let json = event.to_json_value();
+
+    assert_eq!(json["type"], "llm");
+    assert_eq!(json["message"], "Thinking step by step...");
+    assert_eq!(json["metadata"]["session_id"], "session-123");
+    assert_eq!(json["metadata"]["node_id"], "node-abc");
+    assert_eq!(json["metadata"]["stream_id"], "stream-xyz");
+    assert_eq!(json["metadata"]["is_final"], false);
+    assert_eq!(json["metadata"]["content_type"], "reasoning");
+    assert_eq!(json["metadata"]["token_count"], 42);
+    assert_eq!(json["timestamp"], timestamp.to_rfc3339());
+}
+
+#[test]
+fn test_llm_event_final_chunk() {
+    let llm_event = LLMStreamingEvent::new(
+        None,
+        None,
+        Some("stream-999".to_string()),
+        "Final chunk".to_string(),
+        true,
+        None,
+        FxHashMap::default(),
+        Utc::now(),
+    );
+    let event = Event::LLM(llm_event);
+    let json = event.to_json_value();
+
+    assert_eq!(json["type"], "llm");
+    assert_eq!(json["metadata"]["is_final"], true);
+    assert_eq!(json["metadata"]["stream_id"], "stream-999");
+    assert!(json["metadata"]["session_id"].is_null());
+    assert!(json["metadata"]["node_id"].is_null());
+}
+
+#[test]
+fn test_to_json_string_compact() {
+    let event = Event::diagnostic("test", "message");
+    let json_str = event.to_json_string().unwrap();
+
+    // Compact format has no extra whitespace
+    assert!(json_str.contains("\"type\":\"diagnostic\""));
+    assert!(json_str.contains("\"scope\":\"test\""));
+    assert!(json_str.contains("\"message\":\"message\""));
+    assert!(!json_str.contains("  ")); // No indentation
+}
+
+#[test]
+fn test_to_json_pretty_formatted() {
+    let event = Event::node_message("test", "hello");
+    let json_str = event.to_json_pretty().unwrap();
+
+    // Pretty format has indentation
+    assert!(json_str.contains("  \"type\": \"node\""));
+    assert!(json_str.contains("  \"scope\": \"test\""));
+    assert!(json_str.contains("  \"message\": \"hello\""));
+}
+
+#[test]
+fn test_json_roundtrip_via_to_json_string() {
+    let original = Event::node_message_with_meta("node1", 10, "scope1", "msg1");
+    let json_str = original.to_json_string().unwrap();
+    let parsed: Value = serde_json::from_str(&json_str).unwrap();
+
+    assert_eq!(parsed["type"], "node");
+    assert_eq!(parsed["metadata"]["node_id"], "node1");
+    assert_eq!(parsed["metadata"]["step"], 10);
+}
+
+#[tokio::test]
+async fn test_jsonlines_sink_stdout() {
+    use std::io::Cursor;
+
+    // Create in-memory buffer to capture output
+    let buffer = Arc::new(Mutex::new(Cursor::new(Vec::new())));
+    let buffer_clone = buffer.clone();
+
+    let mut sink = JsonLinesSink::new(Box::new(SharedWriter(buffer)));
+
+    let event1 = Event::diagnostic("test1", "first message");
+    let event2 = Event::node_message("test2", "second message");
+
+    sink.handle(&event1).unwrap();
+    sink.handle(&event2).unwrap();
+
+    // Extract buffer contents
+    let locked = buffer_clone.lock().unwrap();
+    let output = String::from_utf8(locked.get_ref().clone()).unwrap();
+    let lines: Vec<&str> = output.lines().collect();
+
+    assert_eq!(lines.len(), 2);
+
+    // Parse first line
+    let json1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(json1["type"], "diagnostic");
+    assert_eq!(json1["scope"], "test1");
+    assert_eq!(json1["message"], "first message");
+
+    // Parse second line
+    let json2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(json2["type"], "node");
+    assert_eq!(json2["scope"], "test2");
+    assert_eq!(json2["message"], "second message");
+}
+
+#[tokio::test]
+async fn test_jsonlines_sink_pretty_print() {
+    use std::io::Cursor;
+
+    let buffer = Arc::new(Mutex::new(Cursor::new(Vec::new())));
+    let buffer_clone = buffer.clone();
+
+    let mut sink = JsonLinesSink::with_pretty_print(Box::new(SharedWriter(buffer)));
+
+    let event = Event::diagnostic("pretty_test", "formatted output");
+    sink.handle(&event).unwrap();
+
+    let locked = buffer_clone.lock().unwrap();
+    let output = String::from_utf8(locked.get_ref().clone()).unwrap();
+
+    // Pretty printed JSON should have indentation
+    assert!(output.contains("  \"type\": \"diagnostic\""));
+    assert!(output.contains("  \"scope\": \"pretty_test\""));
+}
+
+#[tokio::test]
+async fn test_jsonlines_sink_file_output() {
+    use std::fs;
+
+    let temp_file = tempfile::NamedTempFile::new().unwrap();
+    let path = temp_file.path().to_path_buf();
+
+    {
+        let mut sink = JsonLinesSink::to_file(&path).unwrap();
+
+        let event1 = Event::node_message_with_meta("file_node", 1, "file_scope", "first");
+        let event2 = Event::diagnostic("file_scope", "second");
+        let event3 = Event::node_message("file_scope", "third");
+
+        sink.handle(&event1).unwrap();
+        sink.handle(&event2).unwrap();
+        sink.handle(&event3).unwrap();
+    } // sink dropped, file flushed
+
+    // Read file contents
+    let contents = fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+
+    assert_eq!(lines.len(), 3);
+
+    let json1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(json1["metadata"]["node_id"], "file_node");
+    assert_eq!(json1["metadata"]["step"], 1);
+
+    let json2: Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(json2["type"], "diagnostic");
+
+    let json3: Value = serde_json::from_str(lines[2]).unwrap();
+    assert_eq!(json3["message"], "third");
+}
+
+#[tokio::test]
+async fn test_jsonlines_sink_flush_behavior() {
+    use std::io::Cursor;
+
+    let buffer = Arc::new(Mutex::new(Cursor::new(Vec::new())));
+    let buffer_clone = buffer.clone();
+
+    let mut sink = JsonLinesSink::new(Box::new(SharedWriter(buffer)));
+
+    let event = Event::diagnostic("flush_test", "should be flushed immediately");
+    sink.handle(&event).unwrap();
+
+    // After single handle() call, buffer should already contain the event
+    // because EventSink::handle flushes after each event
+    let locked = buffer_clone.lock().unwrap();
+    let output = String::from_utf8(locked.get_ref().clone()).unwrap();
+
+    assert!(output.contains("\"message\":\"should be flushed immediately\""));
+}
+
+#[tokio::test]
+async fn test_jsonlines_sink_with_eventbus() {
+    let buffer = Arc::new(Mutex::new(std::io::Cursor::new(Vec::new())));
+    let buffer_clone = buffer.clone();
+
+    // Create sink with shared buffer
+    let sink = JsonLinesSink::new(Box::new(SharedWriter(buffer)));
+    let bus = EventBus::with_sink(sink);
+    bus.listen_for_events();
+
+    let emitter = bus.get_emitter();
+    emitter
+        .emit(Event::node_message("integration", "message1"))
+        .unwrap();
+    emitter
+        .emit(Event::diagnostic("integration", "message2"))
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    bus.stop_listener().await;
+
+    // Extract and verify output
+    let locked = buffer_clone.lock().unwrap();
+    let output = String::from_utf8(locked.get_ref().clone()).unwrap();
+    let lines: Vec<&str> = output.lines().collect();
+
+    assert_eq!(lines.len(), 2);
+    let json1: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(json1["message"], "message1");
 }
