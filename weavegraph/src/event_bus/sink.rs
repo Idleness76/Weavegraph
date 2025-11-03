@@ -1,4 +1,5 @@
 use flume;
+use std::any::type_name;
 use std::io::{self, Result as IoResult, Stdout, Write};
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +13,14 @@ pub trait EventSink: Sync + Send {
     /// Implementations are allowed to perform blocking I/O; the event bus will
     /// hand the call off to `spawn_blocking` to keep the async runtime responsive.
     fn handle(&mut self, event: &Event) -> IoResult<()>;
+
+    /// A stable, human-friendly identifier for this sink instance.
+    ///
+    /// Defaults to the concrete type name; implementors may override to provide
+    /// shorter names or include configuration context.
+    fn name(&self) -> String {
+        type_name::<Self>().to_string()
+    }
 }
 
 /// Stdout sink with optional formatting.

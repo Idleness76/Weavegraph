@@ -440,6 +440,32 @@ let events = sink.snapshot();
 assert_eq!(events.len(), 5);
 ```
 
+#### Sink Diagnostics
+
+Monitor event sink health and failures without disrupting the main event stream:
+
+```rust
+use weavegraph::event_bus::EventBus;
+
+let bus = EventBus::with_sinks(vec![/* your sinks */]);
+
+// Subscribe to sink diagnostics (optional)
+let mut diags = bus.diagnostics();
+tokio::spawn(async move {
+    while let Ok(diagnostic) = diags.recv().await {
+        eprintln!("Sink '{}' error: {}", diagnostic.sink, diagnostic.error);
+    }
+});
+
+// Query health snapshot at any time
+let health = bus.sink_health();
+for entry in health {
+    println!("{}: {} errors", entry.sink, entry.error_count);
+}
+```
+
+**No changes needed** for existing code—diagnostics are opt-in. See [`STREAMING_QUICKSTART.md`](weavegraph/examples/STREAMING_QUICKSTART.md#sink-diagnostics-monitoring-failures) for configuration options and advanced patterns.
+
 ### Error Diagnostics
 
 Beautiful error reporting with context and suggestions:

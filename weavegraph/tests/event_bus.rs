@@ -324,6 +324,86 @@ async fn event_stream_closes_when_bus_dropped() {
 }
 
 #[tokio::test]
+async fn stop_listener_drains_multiple_sinks() {
+    use std::time::Duration;
+
+    let sink1 = MemorySink::new();
+    let sink2 = MemorySink::new();
+    let snapshot1 = sink1.clone();
+    let snapshot2 = sink2.clone();
+
+    let bus = EventBus::with_sinks(vec![Box::new(sink1), Box::new(sink2)]);
+    bus.listen_for_events();
+
+    let emitter = bus.get_emitter();
+    for i in 0..10 {
+        emitter
+            .emit(Event::diagnostic("test", format!("msg {i}")))
+            .unwrap();
+    }
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    bus.stop_listener().await;
+
+    // Both sinks should have received all events
+    assert_eq!(snapshot1.snapshot().len(), 10);
+    assert_eq!(snapshot2.snapshot().len(), 10);
+}
+
+#[tokio::test]
+async fn stop_listener_during_emission() {
+    use std::sync::Arc;
+    use tokio::task;
+
+    let bus = Arc::new(EventBus::with_sink(MemorySink::new()));
+    bus.listen_for_events();
+
+    let emitter = bus.get_emitter();
+    let emit_task = task::spawn(async move {
+        for i in 0..1000u32 {
+            let _ = emitter.emit(Event::diagnostic("stress", format!("{i}")));
+            task::yield_now().await;
+        }
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    // Should not panic and should shut down cleanly
+    bus.stop_listener().await;
+    // Clean up emission task if still running
+    emit_task.abort();
+}
+
+#[tokio::test]
+async fn restart_after_stop() {
+    use std::time::Duration;
+
+    let sink = MemorySink::new();
+    let snapshot = sink.clone();
+    let bus = EventBus::with_sink(sink);
+
+    // First cycle
+    bus.listen_for_events();
+    bus.get_emitter()
+        .emit(Event::diagnostic("cycle1", "msg1"))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    bus.stop_listener().await;
+
+    // Second cycle
+    bus.listen_for_events();
+    bus.get_emitter()
+        .emit(Event::diagnostic("cycle2", "msg2"))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    bus.stop_listener().await;
+
+    let events = snapshot.snapshot();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].message(), "msg1");
+    assert_eq!(events[1].message(), "msg2");
+}
+
+#[tokio::test]
 async fn invoke_streaming_emits_terminal_event() {
     use async_trait::async_trait;
     use futures_util::StreamExt;
