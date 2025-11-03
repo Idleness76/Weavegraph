@@ -1,10 +1,17 @@
 use crate::channels::errors::ErrorEvent;
 use crate::event_bus::Event;
 use std::io::IsTerminal;
+use std::sync::OnceLock;
 
 pub const CONTEXT_COLOR: &str = "\x1b[32m"; // green
 pub const LINE_COLOR: &str = "\x1b[35m"; // magenta / dark pink
 pub const RESET_COLOR: &str = "\x1b[0m";
+
+static IS_STDERR_TERMINAL: OnceLock<bool> = OnceLock::new();
+
+fn get_is_stderr_terminal() -> bool {
+    *IS_STDERR_TERMINAL.get_or_init(|| std::io::stderr().is_terminal())
+}
 
 /// Formatter color mode for telemetry output.
 ///
@@ -42,7 +49,7 @@ impl FormatterMode {
     ///
     /// Returns `FormatterMode::Colored` if stderr is a terminal, otherwise `FormatterMode::Plain`.
     pub fn auto_detect() -> Self {
-        if std::io::stderr().is_terminal() {
+        if get_is_stderr_terminal() {
             FormatterMode::Colored
         } else {
             FormatterMode::Plain
@@ -54,7 +61,7 @@ impl FormatterMode {
     /// For `Auto` mode, performs TTY detection on each call.
     pub fn is_colored(&self) -> bool {
         match self {
-            FormatterMode::Auto => std::io::stderr().is_terminal(),
+            FormatterMode::Auto => get_is_stderr_terminal(),
             FormatterMode::Colored => true,
             FormatterMode::Plain => false,
         }
