@@ -44,7 +44,7 @@ is organised around a handful of core modules:
 | `schedulers` | Dependency-aware scheduler that fans out runnable nodes and enforces bounded concurrency. |
 | `node` | `Node` trait, `NodeContext`, `NodePartial`, and error types used by application code. |
 | `state`, `channels`, `reducers` | Versioned state model split across message/extra/error channels with deterministic merge reducers. |
-| `event_bus` | Broadcast-based event hub with sinks (stdout, memory, channel) and streaming helpers for web servers or CLIs. |
+| `event_bus` | Broadcast-based event hub with sinks (stdout, memory, channel, JSON Lines) and streaming helpers for web servers or CLIs. Events support JSON serialization for log aggregation. |
 | `telemetry`, `utils` | Tracing helpers, deterministic RNG, clocks, ID generators, and collection utilities. |
 
 ### Authoring Nodes & State

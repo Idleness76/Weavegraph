@@ -1,0 +1,149 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://github.com/Idleness76/weavegraph/schemas/event.json",
+    "title": "Weavegraph Event",
+    "description": "Normalized JSON schema for Weavegraph event system. All events follow this consistent structure regardless of variant type.",
+    "type": "object",
+    "required": [
+        "type",
+        "scope",
+        "message",
+        "timestamp",
+        "metadata"
+    ],
+    "properties": {
+        "type": {
+            "type": "string",
+            "enum": [
+                "node",
+                "diagnostic",
+                "llm"
+            ],
+            "description": "Event variant type"
+        },
+        "scope": {
+            "type": "string",
+            "description": "Event scope label for categorization and filtering"
+        },
+        "message": {
+            "type": "string",
+            "description": "Primary message content of the event"
+        },
+        "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp (RFC 3339 format)"
+        },
+        "metadata": {
+            "type": "object",
+            "description": "Variant-specific metadata fields",
+            "additionalProperties": true
+        }
+    },
+    "oneOf": [
+        {
+            "description": "Node event - represents workflow node execution",
+            "properties": {
+                "type": {
+                    "const": "node"
+                },
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "node_id": {
+                            "type": "string",
+                            "description": "Unique identifier for the node"
+                        },
+                        "step": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Execution step number"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            }
+        },
+        {
+            "description": "Diagnostic event - system messages and health checks",
+            "properties": {
+                "type": {
+                    "const": "diagnostic"
+                },
+                "metadata": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false,
+                    "description": "Diagnostic events have empty metadata"
+                }
+            }
+        },
+        {
+            "description": "LLM streaming event - language model token streaming",
+            "properties": {
+                "type": {
+                    "const": "llm"
+                },
+                "metadata": {
+                    "type": "object",
+                    "required": [
+                        "is_final"
+                    ],
+                    "properties": {
+                        "session_id": {
+                            "type": "string",
+                            "description": "Session identifier for correlation"
+                        },
+                        "node_id": {
+                            "type": "string",
+                            "description": "Node that generated the LLM event"
+                        },
+                        "stream_id": {
+                            "type": "string",
+                            "description": "Stream identifier for this token sequence"
+                        },
+                        "is_final": {
+                            "type": "boolean",
+                            "description": "Whether this is the final chunk in the stream"
+                        }
+                    },
+                    "additionalProperties": true,
+                    "description": "LLM events may include custom metadata fields (model, temperature, etc.)"
+                }
+            }
+        }
+    ],
+    "examples": [
+        {
+            "type": "node",
+            "scope": "routing",
+            "message": "Processing request",
+            "timestamp": "2025-11-03T21:27:44.570521192+00:00",
+            "metadata": {
+                "node_id": "router",
+                "step": 5
+            }
+        },
+        {
+            "type": "diagnostic",
+            "scope": "system",
+            "message": "Service ready",
+            "timestamp": "2025-11-03T21:27:44.570486117+00:00",
+            "metadata": {}
+        },
+        {
+            "type": "llm",
+            "scope": "chunk",
+            "message": "Hello, world!",
+            "timestamp": "2025-11-03T21:27:44.570358839+00:00",
+            "metadata": {
+                "session_id": "session-123",
+                "node_id": "node-abc",
+                "stream_id": "stream-xyz",
+                "is_final": false,
+                "model": "gpt-4",
+                "temperature": 0.7
+            }
+        }
+    ]
+}
