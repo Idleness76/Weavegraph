@@ -267,7 +267,17 @@ RUST_LOG=error,weavegraph=debug cargo run --example advanced_patterns
 
 ### Event Streaming ⭐
 
-Weavegraph provides multiple patterns for streaming workflow events:
+Weavegraph provides multiple patterns for streaming workflow events with JSON serialization support.
+
+#### Event Sinks
+
+Built-in sinks for different use cases:
+- **`StdOutSink`** - Human-readable console output
+- **`MemorySink`** - In-memory capture for testing
+- **`ChannelSink`** - Async streaming to channels
+- **`JsonLinesSink`** - Machine-readable JSON Lines format for log aggregation
+
+Events can be serialized to JSON using `event.to_json_value()`, `event.to_json_string()`, or `event.to_json_pretty()`.
 
 #### Simple Pattern (CLI Tools & Scripts)
 
