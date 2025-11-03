@@ -209,6 +209,7 @@ impl VersionedState {
     ///
     /// ```rust
     /// use weavegraph::state::VersionedState;
+    /// use weavegraph::message::Message;
     ///
     /// let messages = vec![Message {
     ///    role: "user".into(),

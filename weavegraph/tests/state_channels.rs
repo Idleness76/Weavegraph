@@ -61,7 +61,7 @@ fn test_new_with_messages_snapshot_is_deep_copy() {
 
     assert_eq!(snapshot.messages[0].content, "original");
     assert_eq!(snapshot.messages[1].content, "response");
-    assert!(snapshot.extra.get("k").is_none());
+    assert!(!snapshot.extra.contains_key("k"));
 }
 
 #[test]
