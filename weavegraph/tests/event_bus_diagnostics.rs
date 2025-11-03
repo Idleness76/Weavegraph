@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::io;
 
 use weavegraph::event_bus::{Event, EventBus, EventSink};
@@ -21,8 +20,8 @@ impl EventSink for NamedFailingSink {
         Err(io::Error::other("boom"))
     }
 
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("custom.named")
+    fn name(&self) -> String {
+        "custom.named".to_string()
     }
 }
 

@@ -347,7 +347,7 @@ struct SinkEntry {
 
 impl SinkEntry {
     fn new(sink: Box<dyn EventSink>) -> Self {
-        let candidate = sink.name().into_owned();
+        let candidate = sink.name();
         let default_marker: &str = std::any::type_name::<dyn EventSink>();
         // Prefer implementor override; otherwise fall back to the dynamic concrete type name.
         let name = if candidate == default_marker {

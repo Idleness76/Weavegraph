@@ -1,6 +1,5 @@
 use flume;
 use std::any::type_name;
-use std::borrow::Cow;
 use std::io::{self, Result as IoResult, Stdout, Write};
 use std::sync::{Arc, Mutex};
 
@@ -19,8 +18,8 @@ pub trait EventSink: Sync + Send {
     ///
     /// Defaults to the concrete type name; implementors may override to provide
     /// shorter names or include configuration context.
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed(type_name::<Self>())
+    fn name(&self) -> String {
+        type_name::<Self>().to_string()
     }
 }
 
