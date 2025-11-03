@@ -163,24 +163,28 @@ pub struct DiagnosticsConfig {
 }
 
 impl DiagnosticsConfig {
+    fn normalize_capacity(capacity: usize) -> usize {
+        capacity.max(1)
+    }
+
     pub fn default_with_capacity(event_bus_capacity: usize) -> Self {
         Self {
             enabled: true,
-            buffer_capacity: Some(event_bus_capacity.max(1)),
+            buffer_capacity: Some(Self::normalize_capacity(event_bus_capacity)),
             emit_to_events: false,
         }
     }
 
     pub fn with_default_capacity(mut self, event_bus_capacity: usize) -> Self {
         if self.buffer_capacity.is_none() {
-            self.buffer_capacity = Some(event_bus_capacity.max(1));
+            self.buffer_capacity = Some(Self::normalize_capacity(event_bus_capacity));
         }
         self
     }
 
     pub fn effective_capacity(&self, event_bus_capacity: usize) -> usize {
         self.buffer_capacity
-            .unwrap_or_else(|| event_bus_capacity.max(1))
+            .unwrap_or_else(|| Self::normalize_capacity(event_bus_capacity))
     }
 }
 
