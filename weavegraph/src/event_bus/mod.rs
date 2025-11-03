@@ -15,4 +15,4 @@ pub use diagnostics::{DiagnosticsStream, SinkDiagnostic};
 pub use emitter::{EmitterError, EventEmitter};
 pub use event::{Event, LLMStreamingEvent, NodeEvent, STREAM_END_SCOPE};
 pub use hub::{BlockingEventIter, EventHub, EventHubMetrics, EventStream, HubEmitter};
-pub use sink::{ChannelSink, EventSink, MemorySink, StdOutSink};
+pub use sink::{ChannelSink, EventSink, JsonLinesSink, MemorySink, StdOutSink};
