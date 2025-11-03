@@ -114,11 +114,6 @@ async fn stream_workflow(
         let mut stream = event_stream.into_async_stream();
         while let Some(event) = stream.next().await {
             let scope = event.scope_label().map(|s| s.to_string());
-            let event_type = match &event {
-                weavegraph::event_bus::Event::Node(_) => "node",
-                weavegraph::event_bus::Event::Diagnostic(_) => "diagnostic",
-                weavegraph::event_bus::Event::LLM(_) => "llm",
-            };
             if let weavegraph::event_bus::Event::LLM(llm) = &event {
                 tracing::debug!(
                     stream = %llm.stream_id().unwrap_or("default"),
@@ -126,12 +121,7 @@ async fn stream_workflow(
                     "forwarding LLM token"
                 );
             }
-            let payload = json!({
-                "type": event_type,
-                "scope": event.scope_label(),
-                "message": event.message(),
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-            });
+            let payload = event.to_json_value();
             let event = SseEvent::default()
                 .json_data(payload)
                 .expect("serialise SSE payload");
