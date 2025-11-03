@@ -102,7 +102,7 @@ pub struct VersionedState {
 ///
 /// - `messages`: Cloned message data at snapshot time
 /// - `messages_version`: Version of messages channel when snapshot was taken
-/// - `extra`: Cloned extra data at snapshot time  
+/// - `extra`: Cloned extra data at snapshot time
 /// - `extra_version`: Version of extra channel when snapshot was taken
 /// - `errors`: Cloned error events at snapshot time
 /// - `errors_version`: Version of errors channel when snapshot was taken
@@ -183,6 +183,50 @@ impl VersionedState {
             role: "user".into(),
             content: user_text.into(),
         }];
+        Self {
+            messages: MessagesChannel::new(messages, 1),
+            extra: ExtrasChannel::default(),
+            errors: ErrorsChannel::default(),
+        }
+    }
+
+    /// Creates a new versioned state initialized with a vector of messages.
+    ///
+    /// This constructor is useful for starting a workflow with an existing chat history.
+    ///
+    /// # Parameters
+    ///
+    /// - `messages`: The initial messages content
+    ///
+    /// # Returns
+    ///
+    /// A new `VersionedState` with:
+    /// - Multiple messages in the messages channel
+    /// - Empty extra and error channels
+    /// - All channels initialized to version 1
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use weavegraph::state::VersionedState;
+    ///
+    /// let messages = vec![Message {
+    ///    role: "user".into(),
+    ///    content: "Explain error handling in Rust".into(),
+    /// },
+    /// Message {
+    ///    role: "assistant".into(),
+    ///    content: "Just wait until the machine uprising, you damn dirty ape".into(),
+    /// }
+    /// ];
+    /// let state = VersionedState::new_with_messages(messages);
+    /// let snapshot = state.snapshot();
+    ///
+    /// assert_eq!(snapshot.messages.len(), 2);
+    /// assert_eq!(snapshot.messages_version, 1);
+    /// assert!(snapshot.extra.is_empty());
+    /// ```
+    pub fn new_with_messages(messages: Vec<Message>) -> Self {
         Self {
             messages: MessagesChannel::new(messages, 1),
             extra: ExtrasChannel::default(),
