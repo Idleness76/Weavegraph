@@ -844,7 +844,7 @@ impl AppRunner {
                                     target = %entries.iter().fold(String::new(),
                                         |acc, e| format!("{} + {}", acc, e.to_node_kind())
                                     ),
-                                    "Rplace frontier command has been issued once already during this step, skipping."
+                                    "Replace frontier command has been issued once already during this step, skipping."
                                 );
                                 continue;
                             }

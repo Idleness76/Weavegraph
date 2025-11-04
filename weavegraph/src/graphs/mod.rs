@@ -85,4 +85,5 @@ mod edges;
 
 // Public re-exports for backward compatibility
 pub use builder::GraphBuilder;
+pub use compilation::GraphCompileError;
 pub use edges::{ConditionalEdge, EdgePredicate};
