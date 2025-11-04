@@ -18,23 +18,27 @@ use std::sync::Arc;
 ///
 /// ```
 /// use weavegraph::graphs::EdgePredicate;
+/// use weavegraph::types::NodeKind;
 /// use std::sync::Arc;
 ///
-/// // Route based on message count
+/// // Route based on message count, using NodeKind helpers for targets
 /// let route_by_messages: EdgePredicate = Arc::new(|snapshot| {
 ///     if snapshot.messages.len() > 5 {
-///         vec!["many_messages".to_string()]
+///         vec![NodeKind::Custom("many_messages".into()).as_target()]
 ///     } else {
-///         vec!["few_messages".to_string()]
+///         vec![NodeKind::Custom("few_messages".into()).as_target()]
 ///     }
 /// });
 ///
-/// // Route based on extra data - fan out to multiple nodes
+/// // Route based on extra data - fan out to multiple nodes and optionally End
 /// let route_by_error: EdgePredicate = Arc::new(|snapshot| {
 ///     if snapshot.extra.get("error").is_some() {
-///         vec!["error_handler".to_string(), "logger".to_string()]
+///         vec![
+///             NodeKind::Custom("error_handler".into()).as_target(),
+///             NodeKind::Custom("logger".into()).as_target(),
+///         ]
 ///     } else {
-///         vec!["normal_flow".to_string()]
+///         vec![NodeKind::end_target()]
 ///     }
 /// });
 /// ```
@@ -62,9 +66,9 @@ pub type EdgePredicate =
 ///
 /// let predicate: EdgePredicate = Arc::new(|snapshot| {
 ///     if snapshot.messages.len() > 5 {
-///         vec!["many_messages".to_string()]
+///         vec![NodeKind::Custom("many_messages".into()).as_target()]
 ///     } else {
-///         vec!["few_messages".to_string()]
+///         vec![NodeKind::Custom("few_messages".into()).as_target()]
 ///     }
 /// });
 /// let edge = ConditionalEdge::new(NodeKind::Start, predicate);
@@ -95,8 +99,8 @@ impl ConditionalEdge {
     /// use weavegraph::types::NodeKind;
     /// use std::sync::Arc;
     ///
-    /// let predicate: EdgePredicate = Arc::new(|snapshot| {
-    ///     vec!["target_node".to_string()]
+    /// let predicate: EdgePredicate = Arc::new(|_snapshot| {
+    ///     vec![NodeKind::Custom("target_node".into()).as_target()]
     /// });
     ///
     /// let edge = ConditionalEdge::new(NodeKind::Custom("source".into()), predicate.clone());
