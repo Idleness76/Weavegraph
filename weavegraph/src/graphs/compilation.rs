@@ -189,10 +189,10 @@ impl super::builder::GraphBuilder {
 
         // Try DFS from each unvisited node
         for node in colors.clone().keys() {
-            if colors.get(node).copied().unwrap_or(Color::White) == Color::White {
-                if let Some(cycle) = dfs(node, &mut colors, &mut path, self.edges_ref()) {
-                    return Some(cycle);
-                }
+            if colors.get(node).copied().unwrap_or(Color::White) == Color::White
+                && let Some(cycle) = dfs(node, &mut colors, &mut path, self.edges_ref())
+            {
+                return Some(cycle);
             }
         }
 
@@ -232,7 +232,7 @@ impl super::builder::GraphBuilder {
             .cloned()
             .collect();
 
-        unreachable.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        unreachable.sort_by_key(|a| a.to_string());
         unreachable
     }
 
@@ -249,7 +249,7 @@ impl super::builder::GraphBuilder {
             for to in tos {
                 reverse_edges
                     .entry(to.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(from.clone());
             }
         }
@@ -280,7 +280,7 @@ impl super::builder::GraphBuilder {
             .cloned()
             .collect();
 
-        no_path.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        no_path.sort_by_key(|a| a.to_string());
         no_path
     }
 
