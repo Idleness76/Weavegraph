@@ -38,6 +38,11 @@ async fn test_conditional_edge_routing() {
         .add_node(NodeKind::Custom("Y".into()), TestNode { name: "yes path" })
         .add_node(NodeKind::Custom("N".into()), TestNode { name: "no path" })
         .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
+        .add_edge(NodeKind::Custom("Root".into()), NodeKind::End)
+        .add_edge(NodeKind::Start, NodeKind::Custom("Y".into()))
+        .add_edge(NodeKind::Start, NodeKind::Custom("N".into()))
+        .add_edge(NodeKind::Custom("Y".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("N".into()), NodeKind::End)
         .add_conditional_edge(NodeKind::Custom("Root".into()), pred.clone());
     let app = gb.compile().unwrap();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
@@ -206,6 +211,10 @@ async fn test_frontier_command_replace_routes_nodes() {
         .add_node(NodeKind::Custom("controller".into()), ReplaceController)
         .add_node(NodeKind::Custom("worker".into()), WorkerNode)
         .add_edge(NodeKind::Start, NodeKind::Custom("controller".into()))
+        .add_edge(
+            NodeKind::Custom("controller".into()),
+            NodeKind::Custom("worker".into()),
+        )
         .add_edge(NodeKind::Custom("worker".into()), NodeKind::End)
         .compile()
         .unwrap();
@@ -403,6 +412,10 @@ async fn test_multi_target_conditional_edge() {
             TestNode { name: "single" },
         )
         .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("B".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("C".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("Single".into()), NodeKind::End)
         .add_conditional_edge(NodeKind::Custom("Root".into()), multi_pred);
 
     let app = gb.compile().unwrap();
@@ -464,6 +477,11 @@ async fn test_conditional_edge_with_invalid_targets() {
     let gb = GraphBuilder::new()
         .add_node(NodeKind::Custom("Root".into()), TestNode { name: "root" })
         .add_node(NodeKind::Custom("Valid".into()), TestNode { name: "valid" })
+        .add_edge(
+            NodeKind::Custom("Root".into()),
+            NodeKind::Custom("Valid".into()),
+        )
+        .add_edge(NodeKind::Custom("Valid".into()), NodeKind::End)
         .add_edge(NodeKind::Start, NodeKind::Custom("Root".into()))
         .add_conditional_edge(NodeKind::Custom("Root".into()), mixed_pred);
 
@@ -503,6 +521,7 @@ async fn test_error_event_appended_on_failure() {
     let mut gb = GraphBuilder::new();
     gb = gb.add_node(NodeKind::Custom("X".into()), FailingNode::default());
     gb = gb.add_edge(NodeKind::Start, NodeKind::Custom("X".into()));
+    gb = gb.add_edge(NodeKind::Custom("X".into()), NodeKind::End);
 
     let app = gb.compile().unwrap();
     let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
