@@ -37,10 +37,10 @@ weavegraph = "0.1"
 
 ```rust
 use weavegraph::{
-    graph::GraphBuilder,
-    message::Message,
-    node::{Node, NodeContext, NodePartial},
-    state::VersionedState,
+  graphs::GraphBuilder,
+  message::Message,
+  node::{Node, NodeContext, NodePartial},
+  state::VersionedState,
 };
 use async_trait::async_trait;
 
@@ -66,11 +66,11 @@ impl Node for GreetingNode {
 async fn main() -> miette::Result<()> {
     // Build a simple graph with a virtual Start -> greet -> End topology.
     use weavegraph::types::NodeKind;
-    let app = GraphBuilder::new()
+  let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("greet".into()), GreetingNode)
         .add_edge(NodeKind::Start, NodeKind::Custom("greet".into()))
         .add_edge(NodeKind::Custom("greet".into()), NodeKind::End)
-        .compile();
+    .compile()?;
 
     // Create initial state and run
     let state = VersionedState::new_with_user_message("Hello, system!");
@@ -82,6 +82,29 @@ async fn main() -> miette::Result<()> {
     }
 
     Ok(())
+}
+```
+
+### Handling GraphCompileError
+
+When compiling a graph, structural validation may fail (cycles, unreachable nodes, duplicate edges, etc.).
+Propagate errors with `?`, or match on specific variants for custom handling:
+
+```rust
+use weavegraph::graphs::{GraphBuilder, GraphCompileError};
+use weavegraph::types::NodeKind;
+
+fn build_app() -> Result<weavegraph::app::App, miette::Report> {
+  match GraphBuilder::new()
+    .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+    .compile()
+  {
+    Ok(app) => Ok(app),
+    Err(GraphCompileError::MissingEntry) => Err(miette::miette!("graph has no Start entry")),
+    Err(GraphCompileError::UnknownNode(nk)) => Err(miette::miette!("unknown node referenced: {nk}")),
+    Err(e) => Err(miette::miette!("graph validation failed: {e}")),
+  }
 }
 ```
 
@@ -177,9 +200,9 @@ use weavegraph::types::NodeKind;
 
 let route: EdgePredicate = Arc::new(|snap| {
   if snap.extra.contains_key("needs_escalation") {
-    vec!["escalate".to_string()]
+    vec![NodeKind::Custom("escalate".into()).as_target()]
   } else {
-    vec!["respond".to_string()]
+    vec![NodeKind::Custom("respond".into()).as_target()]
   }
 });
 
@@ -191,7 +214,7 @@ let app = GraphBuilder::new()
   .add_conditional_edge(NodeKind::Custom("analyze".into()), route)
   .add_edge(NodeKind::Custom("respond".into()), NodeKind::End)
   .add_edge(NodeKind::Custom("escalate".into()), NodeKind::End)
-  .compile();
+  .compile()?;
 ```
 
 Troubleshooting:

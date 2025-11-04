@@ -1,7 +1,7 @@
 //! Graph compilation logic and validation.
 //!
 //! This module contains the logic for compiling a GraphBuilder into an
-//! executable App, including future validation and error handling.
+//! executable App, including structural validation and actionable errors.
 
 use crate::app::App;
 use crate::types::NodeKind;
@@ -58,21 +58,17 @@ impl super::builder::GraphBuilder {
     /// Compiles the graph into an executable application.
     ///
     /// Validates the graph configuration and converts it into an [`App`] that
-    /// can execute workflows. This method performs several validation checks:
-    ///
-    /// - Future: cycle detection, reachability analysis
-    /// - Future: validation that at least one edge originates from Start
+    /// can execute workflows. This method performs validation checks to prevent
+    /// common topology issues (missing entry, cycles, unknown nodes, duplicates).
     ///
     /// # Returns
     ///
     /// - `Ok(App)`: Successfully compiled application ready for execution
-    ///
-    /// # Errors
-    ///
-    /// Currently none. (Reserved for future structural validation errors.)
+    /// - `Err(GraphCompileError)`: Structural validation failed; inspect the variant
     ///
     /// # Examples
     ///
+    /// Basic pattern with error propagation:
     /// ```
     /// use weavegraph::graphs::GraphBuilder;
     /// use weavegraph::types::NodeKind;
@@ -89,9 +85,31 @@ impl super::builder::GraphBuilder {
     ///     .add_node(NodeKind::Custom("process".into()), MyNode)
     ///     .add_edge(NodeKind::Start, NodeKind::Custom("process".into()))
     ///     .add_edge(NodeKind::Custom("process".into()), NodeKind::End)
+    ///     .compile()?;
+    /// # Ok::<_, weavegraph::graphs::GraphCompileError>(())
+    /// ```
+    ///
+    /// Explicit handling with pattern matching:
+    /// ```
+    /// use weavegraph::graphs::{GraphBuilder, GraphCompileError};
+    /// use weavegraph::types::NodeKind;
+    ///
+    /// let result = GraphBuilder::new()
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
     ///     .compile();
     ///
-    /// // App is ready for execution
+    /// match result {
+    ///     Ok(_app) => {}
+    ///     Err(GraphCompileError::MissingEntry) => {
+    ///         eprintln!("graph has no entry edge from Start");
+    ///     }
+    ///     Err(GraphCompileError::UnknownNode(nk)) => {
+    ///         eprintln!("unknown node referenced: {nk}");
+    ///     }
+    ///     Err(e) => {
+    ///         eprintln!("graph validation failed: {e}");
+    ///     }
+    /// }
     /// ```
     pub fn compile(self) -> Result<App, GraphCompileError> {
         // Validate without consuming self
