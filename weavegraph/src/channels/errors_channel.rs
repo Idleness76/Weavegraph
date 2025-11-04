@@ -1,5 +1,5 @@
-use super::errors::ErrorEvent;
 use super::Channel;
+use super::errors::ErrorEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

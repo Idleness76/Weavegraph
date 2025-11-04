@@ -1,0 +1,121 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://github.com/Idleness76/weavegraph/schemas/llm_event.json",
+    "title": "Weavegraph LLM Streaming Event",
+    "description": "Focused schema for LLM streaming events. Use this for consumers that only process language model token streams.",
+    "type": "object",
+    "required": [
+        "type",
+        "scope",
+        "message",
+        "timestamp",
+        "metadata"
+    ],
+    "properties": {
+        "type": {
+            "type": "string",
+            "const": "llm",
+            "description": "Event type is always 'llm' for this schema"
+        },
+        "scope": {
+            "type": "string",
+            "enum": [
+                "stream",
+                "chunk",
+                "__weavegraph_stream_end__",
+                "error"
+            ],
+            "description": "LLM event scope indicating stream phase"
+        },
+        "message": {
+            "type": "string",
+            "description": "Token chunk content or error message"
+        },
+        "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when the chunk was generated"
+        },
+        "metadata": {
+            "type": "object",
+            "required": [
+                "is_final"
+            ],
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session identifier for correlation across multiple streams"
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "Workflow node that generated this LLM event"
+                },
+                "stream_id": {
+                    "type": "string",
+                    "description": "Unique identifier for this token stream"
+                },
+                "is_final": {
+                    "type": "boolean",
+                    "description": "True if this is the last chunk in the stream"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "LLM model identifier (e.g., 'gpt-4', 'claude-3')"
+                },
+                "temperature": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 2,
+                    "description": "Sampling temperature for generation"
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "Type of content being streamed (e.g., 'reasoning', 'answer', 'tool_use')"
+                }
+            },
+            "additionalProperties": true,
+            "description": "Custom metadata fields can be included for model-specific parameters"
+        }
+    },
+    "examples": [
+        {
+            "type": "llm",
+            "scope": "chunk",
+            "message": "Hello",
+            "timestamp": "2025-11-03T21:27:44.570358839+00:00",
+            "metadata": {
+                "session_id": "session-123",
+                "node_id": "assistant-node",
+                "stream_id": "stream-xyz",
+                "is_final": false,
+                "model": "gpt-4",
+                "temperature": 0.7
+            }
+        },
+        {
+            "type": "llm",
+            "scope": "__weavegraph_stream_end__",
+            "message": "",
+            "timestamp": "2025-11-03T21:27:45.123456789+00:00",
+            "metadata": {
+                "session_id": "session-123",
+                "node_id": "assistant-node",
+                "stream_id": "stream-xyz",
+                "is_final": true
+            }
+        },
+        {
+            "type": "llm",
+            "scope": "error",
+            "message": "Rate limit exceeded",
+            "timestamp": "2025-11-03T21:27:45.987654321+00:00",
+            "metadata": {
+                "session_id": "session-123",
+                "node_id": "assistant-node",
+                "stream_id": "stream-xyz",
+                "is_final": true,
+                "severity": "error"
+            }
+        }
+    ]
+}

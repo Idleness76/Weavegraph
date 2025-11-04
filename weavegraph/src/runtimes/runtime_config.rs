@@ -71,6 +71,7 @@ pub enum SinkConfig {
 pub struct EventBusConfig {
     pub buffer_capacity: usize,
     pub sinks: Vec<SinkConfig>,
+    diagnostics: DiagnosticsConfig,
 }
 
 impl EventBusConfig {
@@ -85,6 +86,7 @@ impl EventBusConfig {
                 buffer_capacity
             },
             sinks,
+            diagnostics: DiagnosticsConfig::default_with_capacity(buffer_capacity),
         }
     }
 
@@ -116,6 +118,12 @@ impl EventBusConfig {
     }
 
     #[must_use]
+    pub fn with_diagnostics(mut self, diagnostics: DiagnosticsConfig) -> Self {
+        self.diagnostics = diagnostics.with_default_capacity(self.buffer_capacity);
+        self
+    }
+
+    #[must_use]
     pub fn build_event_bus(&self) -> EventBus {
         let mut sinks: Vec<Box<dyn EventSink>> = if self.sinks.is_empty() {
             vec![Box::new(StdOutSink::default())]
@@ -131,12 +139,61 @@ impl EventBusConfig {
         if sinks.is_empty() {
             sinks.push(Box::new(StdOutSink::default()));
         }
-        EventBus::with_capacity(sinks, self.buffer_capacity())
+        EventBus::with_capacity_and_diag(
+            sinks,
+            self.buffer_capacity(),
+            self.diagnostics.effective_capacity(self.buffer_capacity()),
+            self.diagnostics.enabled,
+            self.diagnostics.emit_to_events,
+        )
     }
 }
 
 impl Default for EventBusConfig {
     fn default() -> Self {
         Self::with_stdout_only()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiagnosticsConfig {
+    pub enabled: bool,
+    pub buffer_capacity: Option<usize>,
+    pub emit_to_events: bool,
+}
+
+impl DiagnosticsConfig {
+    fn normalize_capacity(capacity: usize) -> usize {
+        capacity.max(1)
+    }
+
+    pub fn default_with_capacity(event_bus_capacity: usize) -> Self {
+        Self {
+            enabled: true,
+            buffer_capacity: Some(Self::normalize_capacity(event_bus_capacity)),
+            emit_to_events: false,
+        }
+    }
+
+    pub fn with_default_capacity(mut self, event_bus_capacity: usize) -> Self {
+        if self.buffer_capacity.is_none() {
+            self.buffer_capacity = Some(Self::normalize_capacity(event_bus_capacity));
+        }
+        self
+    }
+
+    pub fn effective_capacity(&self, event_bus_capacity: usize) -> usize {
+        self.buffer_capacity
+            .unwrap_or_else(|| Self::normalize_capacity(event_bus_capacity))
+    }
+}
+
+impl Default for DiagnosticsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            buffer_capacity: None,
+            emit_to_events: false,
+        }
     }
 }

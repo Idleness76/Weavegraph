@@ -1,5 +1,6 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use weavegraph::channels::Channel;
+use weavegraph::message::Message;
 use weavegraph::state::VersionedState;
 
 #[test]
@@ -17,6 +18,22 @@ fn test_new_with_user_message_initializes_fields() {
 }
 
 #[test]
+fn test_new_with_messages_initializes_fields() {
+    let messages = vec![Message::user("hello"), Message::assistant("hi there")];
+    let state = VersionedState::new_with_messages(messages.clone());
+    let snapshot = state.snapshot();
+
+    assert_eq!(snapshot.messages.len(), 2);
+    assert_eq!(snapshot.messages[0], messages[0]);
+    assert_eq!(snapshot.messages[1], messages[1]);
+    assert_eq!(snapshot.messages_version, 1);
+    assert!(snapshot.extra.is_empty());
+    assert_eq!(snapshot.extra_version, 1);
+    assert!(snapshot.errors.is_empty());
+    assert_eq!(snapshot.errors_version, 1);
+}
+
+#[test]
 fn test_snapshot_is_deep_copy() {
     let mut s = VersionedState::new_with_user_message("x");
     let snap = s.snapshot();
@@ -26,6 +43,25 @@ fn test_snapshot_is_deep_copy() {
         .insert("k".into(), Value::String("v".into()));
     assert_eq!(snap.messages[0].content, "x");
     assert!(!snap.extra.contains_key("k"));
+}
+
+#[test]
+fn test_new_with_messages_snapshot_is_deep_copy() {
+    let mut state = VersionedState::new_with_messages(vec![
+        Message::user("original"),
+        Message::assistant("response"),
+    ]);
+    let snapshot = state.snapshot();
+
+    state.messages.get_mut()[0].content = "changed".into();
+    state
+        .extra
+        .get_mut()
+        .insert("k".into(), Value::String("v".into()));
+
+    assert_eq!(snapshot.messages[0].content, "original");
+    assert_eq!(snapshot.messages[1].content, "response");
+    assert!(!snapshot.extra.contains_key("k"));
 }
 
 #[test]

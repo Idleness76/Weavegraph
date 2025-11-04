@@ -38,8 +38,8 @@ use std::sync::Arc;
 use tracing::{info, instrument};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use weavegraph::channels::{errors::pretty_print, Channel};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use weavegraph::channels::{Channel, errors::pretty_print};
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -128,6 +128,7 @@ impl Node for ContentGeneratorNode {
             messages: Some(vec![assistant_message]),
             extra: Some(extra_data),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -258,6 +259,7 @@ impl Node for ContentEnhancerNode {
             messages: Some(vec![enhanced_message]),
             extra: Some(extra_data),
             errors: None,
+            frontier: None,
         })
     }
 }

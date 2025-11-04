@@ -130,7 +130,7 @@ pub enum PersistenceError {
     #[error("JSON serialization/deserialization failed: {source}")]
     #[diagnostic(
         code(weavegraph::persistence::serde),
-        help("Ensure the JSON structure matches Persisted* types.")
+        help("Ensure the JSON structure matches Persisted* types; serde error: {source}.")
     )]
     Serde {
         #[source]

@@ -44,7 +44,7 @@ use weavegraph::{
 use miette::{IntoDiagnostic, Result};
 use tracing::info;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// A node that simulates work with progress updates
 #[derive(Debug, Clone)]
@@ -170,11 +170,8 @@ async fn main() -> Result<()> {
     let channel_collector = tokio::spawn(async move {
         let mut events = Vec::new();
         let timeout = tokio::time::Duration::from_millis(100);
-        loop {
-            match tokio::time::timeout(timeout, rx.recv_async()).await {
-                Ok(Ok(event)) => events.push(event),
-                Ok(Err(_)) | Err(_) => break,
-            }
+        while let Ok(Ok(event)) = tokio::time::timeout(timeout, rx.recv_async()).await {
+            events.push(event);
         }
         events
     });

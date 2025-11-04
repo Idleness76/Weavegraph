@@ -2,6 +2,8 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 use crate::channels::Channel;
+use crate::channels::errors::{ErrorEvent, ErrorScope};
+use crate::control::FrontierCommand;
 use crate::event_bus::{ChannelSink, EventBus, EventStream};
 use crate::message::*;
 use crate::node::*;
@@ -90,6 +92,21 @@ type AppEventStreamResult<T> = Result<T, AppEventStreamError>;
 /// scope [`STREAM_END_SCOPE`](crate::event_bus::STREAM_END_SCOPE) before closing.
 pub struct InvocationHandle {
     join_handle: Option<JoinHandle<Result<VersionedState, RunnerError>>>,
+}
+
+/// Result of applying node partials at a barrier.
+///
+/// The outcome aggregates channel and error information in a deterministic
+/// order so downstream consumers (runner, checkpointers, tests) observe stable
+/// behaviour across executions.
+#[derive(Debug, Clone, Default)]
+pub struct BarrierOutcome {
+    /// Channel identifiers that were updated during the barrier.
+    pub updated_channels: Vec<&'static str>,
+    /// Aggregated error events emitted by nodes in the superstep.
+    pub errors: Vec<ErrorEvent>,
+    /// Frontier manipulation commands emitted during the barrier.
+    pub frontier_commands: Vec<(NodeKind, FrontierCommand)>,
 }
 
 impl AppEventStream {
@@ -314,11 +331,58 @@ impl App {
         AppEventStream::new(event_bus, event_stream)
     }
 
+    fn resolve_checkpointer(&self, override_config: Option<CheckpointerType>) -> CheckpointerType {
+        override_config
+            .or_else(|| self.runtime_config.checkpointer.clone())
+            .unwrap_or(CheckpointerType::InMemory)
+    }
+
+    /// Internal helper that centralises runner setup for the public `invoke*` helpers.
+    ///
+    /// - `R` represents any auxiliary handle the caller wants to extract alongside the run
+    ///   result (for example, a `flume::Receiver<Event>` when wiring a channel).
+    /// - `F` is a closure that is invoked exactly once to construct the `EventBus`
+    ///   together with that auxiliary handle. Using `FnOnce` lets the closure move
+    ///   ownership of channels or sink vectors.
+    ///
+    /// The helper resolves the effective checkpointer configuration, spins up an
+    /// `AppRunner`, executes the session, and returns both the workflow result and the
+    /// caller-provided handle so wrappers can keep their surface area small and
+    /// consistent.
+    async fn invoke_with_bus_builder<R, F>(
+        &self,
+        initial_state: VersionedState,
+        autosave: bool,
+        checkpointer_override: Option<CheckpointerType>,
+        build_event_bus: F,
+    ) -> (Result<VersionedState, RunnerError>, R)
+    where
+        F: FnOnce() -> (EventBus, R),
+    {
+        let (event_bus, output) = build_event_bus();
+        let checkpointer_type = self.resolve_checkpointer(checkpointer_override);
+
+        let runner = AppRunner::with_options_and_bus(
+            self.clone(),
+            checkpointer_type,
+            autosave,
+            event_bus,
+            true,
+        )
+        .await;
+
+        let session_id = self.next_session_id();
+        let result = Self::run_session(runner, session_id, initial_state).await;
+
+        (result, output)
+    }
+
     /// Invoke the workflow asynchronously while streaming events to the caller.
     ///
     /// Returns a join handle for the workflow outcome and an [`EventStream`] that yields
     /// every event emitted during execution. The stream closes after emitting a
     /// diagnostic with scope [`STREAM_END_SCOPE`](crate::event_bus::STREAM_END_SCOPE).
+    /// Any sinks configured on the runtime event bus continue to receive events.
     ///
     /// # Cancellation
     ///
@@ -372,11 +436,7 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> (InvocationHandle, EventStream) {
-        let checkpointer_type = self
-            .runtime_config
-            .checkpointer
-            .clone()
-            .unwrap_or(CheckpointerType::InMemory);
+        let checkpointer_type = self.resolve_checkpointer(None);
 
         let event_handle = self.event_stream();
         let (event_bus, event_stream) = event_handle
@@ -401,15 +461,20 @@ impl App {
     /// Execute the entire workflow until completion or no nodes remain.
     ///
     /// This is the primary entry point for simple workflow execution. It creates an
-    /// `AppRunner` with a **default EventBus** (stdout sink only), manages session state,
-    /// and coordinates execution through to completion.
+    /// `AppRunner` with the runtime-configured event bus (stdout sink by default),
+    /// manages session state, and coordinates execution through to completion.
     ///
     /// # Event Handling
     ///
-    /// This method uses the **default EventBus** which only outputs events to stdout.
-    /// For custom event handling (e.g., streaming events to web clients, logging to files,
-    /// or sending to monitoring systems), you need to use `AppRunner` directly with a
-    /// custom EventBus.
+    /// This method uses the **EventBus defined on the `RuntimeConfig`**. Out of the box
+    /// that means a stdout sink only, but you can customise the configuration when
+    /// building the app.
+    ///
+    /// For streaming-first scenarios consider [`invoke_streaming`](Self::invoke_streaming),
+    /// [`invoke_with_channel`](Self::invoke_with_channel), or
+    /// [`invoke_with_sinks`](Self::invoke_with_sinks). Drop down to
+    /// [`AppRunner::with_options_and_bus`](crate::runtimes::runner::AppRunner::with_options_and_bus)
+    /// when you need per-request isolation or bespoke runner lifecycle management.
     ///
     /// See [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus)
     /// for streaming events to custom sinks.
@@ -482,7 +547,7 @@ impl App {
     /// ```
     ///
     /// # Workflow Lifecycle
-    /// 1. Creates an `AppRunner` with the configured checkpointer and default EventBus
+    /// 1. Creates an `AppRunner` with the configured checkpointer and event bus
     /// 2. Initializes or resumes a session
     /// 3. Executes supersteps until End nodes or empty frontier
     /// 4. Returns the final accumulated state
@@ -491,8 +556,14 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> Result<VersionedState, RunnerError> {
-        let (handle, _events) = self.invoke_streaming(initial_state).await;
-        handle.join().await
+        self.invoke_with_bus_builder(
+            initial_state,
+            true,
+            self.runtime_config.checkpointer.clone(),
+            || (self.runtime_config.event_bus.build_event_bus(), ()),
+        )
+        .await
+        .0
     }
 
     /// Execute workflow with event streaming to a channel.
@@ -512,6 +583,9 @@ impl App {
     /// - Web servers with per-request streaming (use `AppRunner::with_options_and_bus()`)
     /// - Need multiple EventSinks beyond ChannelSink (use `invoke_with_sinks()`)
     /// - Need fine-grained control over EventBus lifecycle
+    ///
+    /// The runtime-configured sinks remain active; this helper simply appends a channel
+    /// sink so you can consume events alongside any existing logging destinations.
     ///
     /// # Returns
     ///
@@ -593,13 +667,14 @@ impl App {
     ///
     /// This method internally:
     /// 1. Creates a `flume::unbounded()` channel
-    /// 2. Builds an EventBus with `ChannelSink` (no stdout by default)
+    /// 2. Builds an EventBus from the runtime configuration and appends a `ChannelSink`
     /// 3. Uses `AppRunner::with_options_and_bus()` with the custom EventBus
     /// 4. Returns both the execution result and receiver
     ///
     /// # See Also
     ///
     /// - [`invoke_with_sinks()`](Self::invoke_with_sinks) - For multiple EventSinks
+    /// - [`invoke_streaming()`](Self::invoke_streaming) - Async `EventStream` helper
     /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - For web servers
     /// - [`invoke()`](Self::invoke) - Simple execution without streaming
     #[instrument(skip(self, initial_state))]
@@ -610,36 +685,18 @@ impl App {
         Result<VersionedState, RunnerError>,
         flume::Receiver<crate::event_bus::Event>,
     ) {
-        // Create channel for events
-        let (tx, rx) = flume::unbounded();
-
-        // Build configured event bus and add channel sink for streaming
-        let event_handle = self.event_stream();
-        event_handle.event_bus().add_sink(ChannelSink::new(tx));
-        let event_bus = event_handle.into_event_bus();
-
-        // Determine checkpointer type
-        let checkpointer_type = self
-            .runtime_config
-            .checkpointer
-            .clone()
-            .unwrap_or(CheckpointerType::InMemory);
-
-        // Create runner with custom EventBus
-        let runner = AppRunner::with_options_and_bus(
-            self.clone(),
-            checkpointer_type,
-            false, // autosave
-            event_bus,
-            true, // start listener
+        self.invoke_with_bus_builder(
+            initial_state,
+            false,
+            self.runtime_config.checkpointer.clone(),
+            || {
+                let (tx, rx) = flume::unbounded();
+                let event_bus = self.runtime_config.event_bus.build_event_bus();
+                event_bus.add_sink(ChannelSink::new(tx));
+                (event_bus, rx)
+            },
         )
-        .await;
-
-        // Get session ID
-        let session_id = self.next_session_id();
-        let result = Self::run_session(runner, session_id, initial_state).await;
-
-        (result, rx)
+        .await
     }
 
     /// Execute workflow with custom EventSinks for advanced streaming patterns.
@@ -660,6 +717,9 @@ impl App {
     /// - Web servers with per-request streaming (use `AppRunner::with_options_and_bus()`)
     /// - Need to create EventBus instances per HTTP request
     /// - Require fine-grained control over runner lifecycle
+    ///
+    /// Sinks configured on the `RuntimeConfig` remain active; the provided collection is
+    /// appended so you can layer additional destinations without rebuilding the app.
     ///
     /// # Parameters
     ///
@@ -729,40 +789,28 @@ impl App {
     /// # See Also
     ///
     /// - [`invoke_with_channel()`](Self::invoke_with_channel) - Simpler channel-only variant
+    /// - [`invoke_streaming()`](Self::invoke_streaming) - Async `EventStream` without channels
     /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - Full control
     #[instrument(skip(self, initial_state, sinks), err)]
     pub async fn invoke_with_sinks(
         &self,
         initial_state: VersionedState,
-        mut sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
+        sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
     ) -> Result<VersionedState, RunnerError> {
-        // Create EventBus from configuration and append provided sinks
-        let event_handle = self.event_stream();
-        for sink in sinks.drain(..) {
-            event_handle.event_bus().add_boxed_sink(sink);
-        }
-        let event_bus = event_handle.into_event_bus();
-
-        // Determine checkpointer type
-        let checkpointer_type = self
-            .runtime_config
-            .checkpointer
-            .clone()
-            .unwrap_or(CheckpointerType::InMemory);
-
-        // Create runner with custom EventBus
-        let runner = AppRunner::with_options_and_bus(
-            self.clone(),
-            checkpointer_type,
-            false, // autosave
-            event_bus,
-            true, // start listener
+        self.invoke_with_bus_builder(
+            initial_state,
+            false,
+            self.runtime_config.checkpointer.clone(),
+            move || {
+                let event_bus = self.runtime_config.event_bus.build_event_bus();
+                for sink in sinks {
+                    event_bus.add_boxed_sink(sink);
+                }
+                (event_bus, ())
+            },
         )
-        .await;
-
-        // Get session ID
-        let session_id = self.next_session_id();
-        Self::run_session(runner, session_id, initial_state).await
+        .await
+        .0
     }
 
     /// Generate the session identifier for the next invocation.
@@ -803,7 +851,10 @@ impl App {
     ///
     /// This method coordinates the barrier synchronization phase of workflow
     /// execution, where all node outputs from a superstep are collected,
-    /// merged, and applied to the global state via registered reducers.
+    /// merged, and applied to the global state via registered reducers. The
+    /// returned [`BarrierOutcome`] captures channel updates, aggregated errors,
+    /// and frontier commands in a stable order so downstream consumers can rely
+    /// on deterministic behaviour.
     ///
     /// # Parameters
     /// * `state` - Mutable reference to the current versioned state
@@ -833,9 +884,10 @@ impl App {
     ///     messages: Some(vec![Message::assistant("test")]),
     ///     ..Default::default()
     /// }];
-    /// let updated_channels = app.apply_barrier(state, &[NodeKind::Custom("process".into())], partials).await
+    /// let outcome = app.apply_barrier(state, &[NodeKind::Custom("process".into())], partials).await
     ///     .map_err(|e| format!("Error: {}", e))?;
-    /// println!("Updated channels: {:?}", updated_channels);
+    /// println!("Updated channels: {:?}", outcome.updated_channels);
+    /// println!("Errors emitted: {}", outcome.errors.len());
     /// # Ok(())
     /// # }
     /// ```
@@ -845,38 +897,71 @@ impl App {
         state: &mut VersionedState,
         run_ids: &[NodeKind],
         node_partials: Vec<NodePartial>,
-    ) -> Result<Vec<&'static str>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<BarrierOutcome, Box<dyn std::error::Error + Send + Sync>> {
         let mut msgs_all: Vec<Message> = Vec::new();
         let mut extra_all = new_extra_map();
-        let mut errors_all: Vec<crate::channels::errors::ErrorEvent> = Vec::new();
+        let mut errors_all: Vec<ErrorEvent> = Vec::new();
+        let mut frontier_commands: Vec<(NodeKind, FrontierCommand)> = Vec::new();
 
         for (i, p) in node_partials.iter().enumerate() {
             let fallback = NodeKind::Custom("?".to_string());
             let nid = run_ids.get(i).unwrap_or(&fallback);
 
-            if let Some(ms) = &p.messages {
-                if !ms.is_empty() {
-                    tracing::debug!(node = ?nid, count = ms.len(), "Node produced messages");
-                    msgs_all.extend(ms.clone());
+            if let Some(ms) = &p.messages
+                && !ms.is_empty()
+            {
+                tracing::debug!(node = ?nid, count = ms.len(), "Node produced messages");
+                msgs_all.extend(ms.clone());
+            }
+
+            if let Some(ex) = &p.extra
+                && !ex.is_empty()
+            {
+                tracing::debug!(node = ?nid, keys = ex.len(), "Node produced extra data");
+                // Sort keys to keep the merged map deterministic across runs.
+                let mut sorted_pairs: Vec<_> = ex.iter().collect();
+                sorted_pairs.sort_by(|(left, _), (right, _)| left.cmp(right));
+                for (k, v) in sorted_pairs {
+                    extra_all.insert(k.clone(), v.clone());
                 }
             }
 
-            if let Some(ex) = &p.extra {
-                if !ex.is_empty() {
-                    tracing::debug!(node = ?nid, keys = ex.len(), "Node produced extra data");
-                    for (k, v) in ex {
-                        extra_all.insert(k.clone(), v.clone());
-                    }
-                }
+            if let Some(errs) = &p.errors
+                && !errs.is_empty()
+            {
+                tracing::debug!(node = ?nid, count = errs.len(), "Node produced errors");
+                errors_all.extend(errs.clone());
             }
 
-            if let Some(errs) = &p.errors {
-                if !errs.is_empty() {
-                    tracing::debug!(node = ?nid, count = errs.len(), "Node produced errors");
-                    errors_all.extend(errs.clone());
-                }
+            if let Some(command) = &p.frontier {
+                frontier_commands.push((nid.clone(), command.clone()));
             }
         }
+
+        fn scope_sort_key(scope: &ErrorScope) -> (u8, &str, u64) {
+            match scope {
+                ErrorScope::Node { kind, step } => (0, kind.as_str(), *step),
+                ErrorScope::Scheduler { step } => (1, "", *step),
+                ErrorScope::Runner { session, step } => (2, session.as_str(), *step),
+                ErrorScope::App => (3, "", 0),
+            }
+        }
+
+        // Sort aggregated errors so downstream consumers observe a stable order.
+        errors_all.sort_by(|a, b| {
+            let key_a = scope_sort_key(&a.scope);
+            let key_b = scope_sort_key(&b.scope);
+            key_a
+                .cmp(&key_b)
+                .then_with(|| a.when.cmp(&b.when))
+                .then_with(|| a.error.message.cmp(&b.error.message))
+        });
+
+        let errors_for_state = if errors_all.is_empty() {
+            None
+        } else {
+            Some(errors_all.clone())
+        };
 
         let merged_updates = NodePartial {
             messages: if msgs_all.is_empty() {
@@ -889,11 +974,8 @@ impl App {
             } else {
                 Some(extra_all)
             },
-            errors: if errors_all.is_empty() {
-                None
-            } else {
-                Some(errors_all)
-            },
+            errors: errors_for_state,
+            frontier: None,
         };
 
         // Record before-states for version bump decisions
@@ -915,11 +997,13 @@ impl App {
                 .messages
                 .set_version(msgs_before_ver.saturating_add(1));
             tracing::info!(
-                "Messages channel updated: {} -> {} messages, version {} -> {}",
-                msgs_before_len,
-                state.messages.len(),
-                msgs_before_ver,
-                state.messages.version()
+                target: "weavegraph::app",
+                channel = "messages",
+                before_count = msgs_before_len,
+                after_count = state.messages.len(),
+                before_version = msgs_before_ver,
+                after_version = state.messages.version(),
+                "channel updated"
             );
             updated.push("messages");
         }
@@ -929,15 +1013,21 @@ impl App {
         if extra_changed {
             state.extra.set_version(extra_before_ver.saturating_add(1));
             tracing::info!(
-                "Extra channel updated: {} -> {} keys, version {} -> {}",
-                extra_before.len(),
-                extra_after.len(),
-                extra_before_ver,
-                state.extra.version()
+                target: "weavegraph::app",
+                channel = "extra",
+                before_count = extra_before.len(),
+                after_count = extra_after.len(),
+                before_version = extra_before_ver,
+                after_version = state.extra.version(),
+                "channel updated"
             );
             updated.push("extra");
         }
 
-        Ok(updated)
+        Ok(BarrierOutcome {
+            updated_channels: updated,
+            errors: errors_all,
+            frontier_commands,
+        })
     }
 }

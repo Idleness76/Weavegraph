@@ -3,13 +3,16 @@ members = ["weavegraph", "wg-ragsmith"]
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 
 repository = "https://github.com/Idleness76/weavegraph"
 readme = "../README.md"
 keywords = ["graph", "workflow", "concurrency", "agents", "tracing"]
 categories = ["concurrency", "data-structures", "algorithms"]
-rust-version = "1.83"
+rust-version = "1.89"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/weavegraph"
+
+[patch.crates-io]
+wg-ragsmith = { path = "wg-ragsmith" }

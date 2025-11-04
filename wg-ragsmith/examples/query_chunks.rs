@@ -1,7 +1,7 @@
 use once_cell::sync::OnceCell;
 use std::mem::transmute;
 use std::os::raw::c_char;
-use tokio_rusqlite::{ffi, Connection, Result};
+use tokio_rusqlite::{Connection, Result, ffi};
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -13,6 +13,15 @@
 
 Weavegraph is a modern Rust framework for building complex, stateful workflows using graph-based execution. It's designed for AI agents, data processing pipelines, and any application requiring sophisticated state management with concurrent node execution.
 
+---
+
+> **⚠️ EARLY BETA WARNING**  
+> This framework is in active development (v0.1.x). APIs are evolving rapidly, and **breaking changes will happen** between minor versions.  
+> The core architecture is solid, but expect rough edges, API churn, and occasional surprises. Pin exact versions if stability matters.  
+> Use in production at your own risk—or better yet, help us shape the future by reporting issues and suggesting improvements.
+
+---
+
 ## ✨ Key Features
 
 - **🔄 Concurrent Graph Execution**: Bounded-concurrency scheduler with dependency resolution and versioned barrier synchronization
@@ -37,10 +46,10 @@ weavegraph = "0.1"
 
 ```rust
 use weavegraph::{
-    graph::GraphBuilder,
-    message::Message,
-    node::{Node, NodeContext, NodePartial},
-    state::VersionedState,
+  graphs::GraphBuilder,
+  message::Message,
+  node::{Node, NodeContext, NodePartial},
+  state::VersionedState,
 };
 use async_trait::async_trait;
 
@@ -66,11 +75,11 @@ impl Node for GreetingNode {
 async fn main() -> miette::Result<()> {
     // Build a simple graph with a virtual Start -> greet -> End topology.
     use weavegraph::types::NodeKind;
-    let app = GraphBuilder::new()
+  let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("greet".into()), GreetingNode)
         .add_edge(NodeKind::Start, NodeKind::Custom("greet".into()))
         .add_edge(NodeKind::Custom("greet".into()), NodeKind::End)
-        .compile();
+    .compile()?;
 
     // Create initial state and run
     let state = VersionedState::new_with_user_message("Hello, system!");
@@ -82,6 +91,29 @@ async fn main() -> miette::Result<()> {
     }
 
     Ok(())
+}
+```
+
+### Handling GraphCompileError
+
+When compiling a graph, structural validation may fail (cycles, unreachable nodes, duplicate edges, etc.).
+Propagate errors with `?`, or match on specific variants for custom handling:
+
+```rust
+use weavegraph::graphs::{GraphBuilder, GraphCompileError};
+use weavegraph::types::NodeKind;
+
+fn build_app() -> Result<weavegraph::app::App, miette::Report> {
+  match GraphBuilder::new()
+    .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+    .compile()
+  {
+    Ok(app) => Ok(app),
+    Err(GraphCompileError::MissingEntry) => Err(miette::miette!("graph has no Start entry")),
+    Err(GraphCompileError::UnknownNode(nk)) => Err(miette::miette!("unknown node referenced: {nk}")),
+    Err(e) => Err(miette::miette!("graph validation failed: {e}")),
+  }
 }
 ```
 
@@ -177,9 +209,9 @@ use weavegraph::types::NodeKind;
 
 let route: EdgePredicate = Arc::new(|snap| {
   if snap.extra.contains_key("needs_escalation") {
-    vec!["escalate".to_string()]
+    vec![NodeKind::Custom("escalate".into()).as_target()]
   } else {
-    vec!["respond".to_string()]
+    vec![NodeKind::Custom("respond".into()).as_target()]
   }
 });
 
@@ -191,7 +223,7 @@ let app = GraphBuilder::new()
   .add_conditional_edge(NodeKind::Custom("analyze".into()), route)
   .add_edge(NodeKind::Custom("respond".into()), NodeKind::End)
   .add_edge(NodeKind::Custom("escalate".into()), NodeKind::End)
-  .compile();
+  .compile()?;
 ```
 
 Troubleshooting:
@@ -267,7 +299,17 @@ RUST_LOG=error,weavegraph=debug cargo run --example advanced_patterns
 
 ### Event Streaming ⭐
 
-Weavegraph provides multiple patterns for streaming workflow events:
+Weavegraph provides multiple patterns for streaming workflow events with JSON serialization support.
+
+#### Event Sinks
+
+Built-in sinks for different use cases:
+- **`StdOutSink`** - Human-readable console output
+- **`MemorySink`** - In-memory capture for testing
+- **`ChannelSink`** - Async streaming to channels
+- **`JsonLinesSink`** - Machine-readable JSON Lines format for log aggregation
+
+Events can be serialized to JSON using `event.to_json_value()`, `event.to_json_string()`, or `event.to_json_pretty()`.
 
 #### Simple Pattern (CLI Tools & Scripts)
 
@@ -439,6 +481,32 @@ let runner = AppRunner::with_bus(graph, event_bus);
 let events = sink.snapshot();
 assert_eq!(events.len(), 5);
 ```
+
+#### Sink Diagnostics
+
+Monitor event sink health and failures without disrupting the main event stream:
+
+```rust
+use weavegraph::event_bus::EventBus;
+
+let bus = EventBus::with_sinks(vec![/* your sinks */]);
+
+// Subscribe to sink diagnostics (optional)
+let mut diags = bus.diagnostics();
+tokio::spawn(async move {
+    while let Ok(diagnostic) = diags.recv().await {
+        eprintln!("Sink '{}' error: {}", diagnostic.sink, diagnostic.error);
+    }
+});
+
+// Query health snapshot at any time
+let health = bus.sink_health();
+for entry in health {
+    println!("{}: {} errors", entry.sink, entry.error_count);
+}
+```
+
+**No changes needed** for existing code—diagnostics are opt-in. See [`STREAMING_QUICKSTART.md`](weavegraph/examples/STREAMING_QUICKSTART.md#sink-diagnostics-monitoring-failures) for configuration options and advanced patterns.
 
 ### Error Diagnostics
 
@@ -628,7 +696,7 @@ cg --> viz
 
 Weavegraph originated as a capstone project for a Rust online course, developed by contributors with Python backgrounds and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to Rust while leveraging its performance, safety, and concurrency advantages.
 
-While rooted in educational exploration, Weavegraph has evolved into a production-ready framework with continued active development well beyond the classroom setting.
+While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.1.x), it's still maturing—use with awareness of ongoing API evolution.
 
 ## 🤝 Contributing
 

@@ -6,13 +6,13 @@ Thank you for your interest in contributing to Weavegraph! This project welcomes
 
 Weavegraph began as a capstone project for a Rust online course, developed by contributors with backgrounds in Python and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to the Rust ecosystem with modern concurrency, type safety, and performance benefits.
 
-While the project started in an educational context, **it has grown beyond the classroom** and continues active development as a production-ready framework. We're committed to maintaining and expanding Weavegraph well beyond the course completion.
+While the project started in an educational context, **it has grown beyond the classroom** and continues active development well beyond course completion. As an early beta framework (v0.1.x), we're actively evolving APIs and architecture based on real-world usage and community feedback.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Rust 1.83 or later
+- Rust 1.91 or later
 - Basic familiarity with async Rust and the `tokio` runtime
 - Understanding of graph-based workflows is helpful but not required
 
@@ -34,10 +34,10 @@ While the project started in an educational context, **it has grown beyond the c
    ```bash
    # Start with basic patterns
    cargo run --example basic_nodes
-   
+
    # Explore advanced features
    cargo run --example advanced_patterns
-   
+
    # See error handling in action
    cargo run --example errors_pretty
    ```

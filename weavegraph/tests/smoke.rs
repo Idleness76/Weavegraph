@@ -21,7 +21,7 @@ fn run_example(example_name: &str) {
     let result = Command::new("cargo")
         .args(["run", "--example", example_name])
         .output()
-        .expect(&format!("Failed to run example: {}", example_name));
+        .unwrap_or_else(|_| panic!("Failed to run example: {}", example_name));
 
     assert!(
         result.status.success(),

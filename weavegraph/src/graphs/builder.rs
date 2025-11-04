@@ -24,13 +24,13 @@ type GraphParts = (
 ///
 /// `GraphBuilder` provides a builder pattern for constructing workflow graphs
 /// by adding nodes, edges, and configuration before compiling to an executable
-/// [`App`]. The builder ensures type safety and provides clear error messages
+/// [`App`](crate::app::App). The builder ensures type safety and provides clear error messages
 /// for common configuration mistakes.
 ///
 /// # Required Configuration
 ///
 /// Every graph must have:
-/// - At least one executable node added via [`add_node`](Self::add_node)
+/// - At least one executable node added via [`GraphBuilder::add_node`](Self::add_node)
 /// - Edges connecting from `NodeKind::Start` to define entry points
 /// - Edges connecting to `NodeKind::End` to define exit points
 ///
@@ -136,7 +136,7 @@ impl GraphBuilder {
     ///
     /// Conditional edges enable dynamic routing based on the current state.
     /// When execution reaches the `from` node, the `predicate` function is
-    /// evaluated with the current [`StateSnapshot`] and returns the target
+    /// evaluated with the current [`StateSnapshot`](crate::state::StateSnapshot) and returns the target
     /// node names for routing.
     ///
     /// # Parameters

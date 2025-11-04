@@ -3,14 +3,14 @@ use std::os::raw::c_char;
 use std::path::Path;
 
 use once_cell::sync::OnceCell;
-use rig::embeddings::{Embedding, EmbeddingModel};
 use rig::OneOrMany;
+use rig::embeddings::{Embedding, EmbeddingModel};
 use rig_sqlite::{
     Column, ColumnValue, SqliteVectorIndex, SqliteVectorStore, SqliteVectorStoreTable,
 };
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
-use tokio_rusqlite::{ffi, Connection};
+use tokio_rusqlite::{Connection, ffi};
 
 use crate::types::RagError;
 

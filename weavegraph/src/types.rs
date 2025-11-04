@@ -154,10 +154,50 @@ impl NodeKind {
         matches!(self, Self::End)
     }
 
-    /// Returns `true` if this is a custom [`Other`](Self::Other) node.
+    /// Returns `true` if this is a custom node.
     #[must_use]
     pub fn is_custom(&self) -> bool {
         matches!(self, Self::Custom(_))
+    }
+
+    /// Convert this NodeKind into a predicate target string.
+    ///
+    /// This is a convenience for building conditional edge predicates
+    /// without relying on raw string literals.
+    ///
+    /// Examples
+    /// ```rust
+    /// # use weavegraph::types::NodeKind;
+    /// let nk = NodeKind::Custom("route".into());
+    /// assert_eq!(nk.as_target(), "route");
+    /// ```
+    #[must_use]
+    pub fn as_target(&self) -> String {
+        self.to_string()
+    }
+
+    /// Convenience: return the canonical target string for the Start endpoint.
+    ///
+    /// Examples
+    /// ```rust
+    /// # use weavegraph::types::NodeKind;
+    /// assert_eq!(NodeKind::start_target(), "Start");
+    /// ```
+    #[must_use]
+    pub fn start_target() -> String {
+        "Start".to_string()
+    }
+
+    /// Convenience: return the canonical target string for the End endpoint.
+    ///
+    /// Examples
+    /// ```rust
+    /// # use weavegraph::types::NodeKind;
+    /// assert_eq!(NodeKind::end_target(), "End");
+    /// ```
+    #[must_use]
+    pub fn end_target() -> String {
+        "End".to_string()
     }
 }
 

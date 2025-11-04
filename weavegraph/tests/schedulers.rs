@@ -4,7 +4,7 @@ use weavegraph::event_bus::EventBus;
 use weavegraph::schedulers::scheduler::{Scheduler, SchedulerState, StepRunResult};
 use weavegraph::types::NodeKind;
 mod common;
-use common::{create_test_snapshot, make_delayed_registry, make_test_registry, FailingNode};
+use common::{FailingNode, create_test_snapshot, make_delayed_registry, make_test_registry};
 
 #[tokio::test]
 async fn test_superstep_propagates_node_error() {

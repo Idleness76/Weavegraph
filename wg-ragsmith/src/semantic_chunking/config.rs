@@ -90,18 +90,19 @@ impl Default for BreakpointStrategy {
 }
 
 /// Available embedding backends. Concrete clients are wired elsewhere.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub enum EmbeddingBackend {
+    #[default]
     Mock,
-    OpenAI { model: String },
-    Cohere { model: String },
-    LocalModel { identifier: String },
-}
-
-impl Default for EmbeddingBackend {
-    fn default() -> Self {
-        Self::Mock
-    }
+    OpenAI {
+        model: String,
+    },
+    Cohere {
+        model: String,
+    },
+    LocalModel {
+        identifier: String,
+    },
 }
 
 /// HTML-specific preprocessing knobs to strip boilerplate before scoring.

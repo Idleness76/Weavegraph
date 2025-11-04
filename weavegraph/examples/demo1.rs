@@ -23,7 +23,7 @@ use serde_json::json;
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
@@ -295,13 +295,20 @@ async fn demo() -> Result<()> {
         NodeKind::Custom("VirtualB".into()),
     ];
 
-    let updated_channels = app
+    let barrier_outcome = app
         .apply_barrier(&mut barrier_state, &run_ids, vec![partial_a, partial_b])
         .await
         .map_err(|e| miette::miette!("Barrier operation failed: {e}"))?;
 
     info!("   ✓ Barrier applied successfully");
-    info!("   ✓ Updated channels: {:?}", updated_channels);
+    info!(
+        "   ✓ Updated channels: {:?}",
+        barrier_outcome.updated_channels
+    );
+    info!(
+        "   ✓ Errors recorded at barrier: {}",
+        barrier_outcome.errors.len()
+    );
 
     let barrier_snapshot = barrier_state.snapshot();
     info!(
@@ -319,7 +326,7 @@ async fn demo() -> Result<()> {
 
     let noop_partials = vec![NodePartial::new().with_messages(vec![])]; // Empty - should not update
 
-    let noop_updated = app
+    let noop_outcome = app
         .apply_barrier(&mut barrier_state, &[], noop_partials)
         .await
         .map_err(|e| miette::miette!("No-op barrier failed: {e}"))?;
@@ -330,7 +337,11 @@ async fn demo() -> Result<()> {
         "   ✓ Version unchanged: {} -> {} (expected same)",
         pre_noop_version, post_noop_version
     );
-    info!("   ✓ Updated channels: {:?}", noop_updated);
+    info!("   ✓ Updated channels: {:?}", noop_outcome.updated_channels);
+    info!(
+        "   ✓ Errors recorded at barrier: {}",
+        noop_outcome.errors.len()
+    );
 
     // ✅ STEP 6: Error Handling Demonstrations
     info!("\n❌ Step 6: Demonstrating error handling and validation");

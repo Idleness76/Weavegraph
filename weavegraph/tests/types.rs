@@ -52,6 +52,18 @@ fn test_display() {
 }
 
 #[test]
+fn test_nodekind_helper_targets() {
+    // as_target on variants
+    assert_eq!(NodeKind::Start.as_target(), "Start");
+    assert_eq!(NodeKind::End.as_target(), "End");
+    assert_eq!(NodeKind::Custom("route".into()).as_target(), "route");
+
+    // endpoint helpers
+    assert_eq!(NodeKind::start_target(), "Start");
+    assert_eq!(NodeKind::end_target(), "End");
+}
+
+#[test]
 fn test_serde_support() {
     let nodes = vec![
         NodeKind::Start,

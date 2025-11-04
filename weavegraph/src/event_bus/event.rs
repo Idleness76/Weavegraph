@@ -44,11 +44,7 @@ impl Event {
         match self {
             Event::Node(node) => Some(node.scope()),
             Event::Diagnostic(diag) => Some(diag.scope()),
-            Event::LLM(llm) => llm
-                .stream_id()
-                .or_else(|| llm.node_id())
-                .or_else(|| llm.session_id())
-                .or(Some("llm_stream")),
+            Event::LLM(llm) => Some(llm.scope().as_ref()),
         }
     }
 
@@ -58,6 +54,119 @@ impl Event {
             Event::Diagnostic(diag) => diag.message(),
             Event::LLM(llm) => llm.chunk(),
         }
+    }
+
+    /// Convert event to structured JSON value with normalized schema.
+    ///
+    /// Returns a JSON object with the following structure:
+    /// ```json
+    /// {
+    ///   "type": "node" | "diagnostic" | "llm",
+    ///   "scope": "scope_label",
+    ///   "message": "event_message",
+    ///   "timestamp": "2025-11-03T12:34:56.789Z",
+    ///   "metadata": { /* variant-specific fields */ }
+    /// }
+    /// ```
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use weavegraph::event_bus::Event;
+    ///
+    /// let event = Event::node_message_with_meta("router", 5, "routing", "Processing request");
+    /// let json = event.to_json_value();
+    ///
+    /// assert_eq!(json["type"], "node");
+    /// assert_eq!(json["scope"], "routing");
+    /// assert_eq!(json["message"], "Processing request");
+    /// assert_eq!(json["metadata"]["node_id"], "router");
+    /// assert_eq!(json["metadata"]["step"], 5);
+    /// ```
+    pub fn to_json_value(&self) -> serde_json::Value {
+        use serde_json::json;
+
+        let (event_type, metadata) = match self {
+            Event::Node(node) => {
+                let mut meta = serde_json::Map::new();
+                if let Some(node_id) = node.node_id() {
+                    meta.insert("node_id".to_string(), json!(node_id));
+                }
+                if let Some(step) = node.step() {
+                    meta.insert("step".to_string(), json!(step));
+                }
+                ("node", Value::Object(meta))
+            }
+            Event::Diagnostic(_) => {
+                let meta = serde_json::Map::new();
+                ("diagnostic", Value::Object(meta))
+            }
+            Event::LLM(llm) => {
+                let mut meta = serde_json::Map::new();
+                if let Some(session_id) = llm.session_id() {
+                    meta.insert("session_id".to_string(), json!(session_id));
+                }
+                if let Some(node_id) = llm.node_id() {
+                    meta.insert("node_id".to_string(), json!(node_id));
+                }
+                if let Some(stream_id) = llm.stream_id() {
+                    meta.insert("stream_id".to_string(), json!(stream_id));
+                }
+                meta.insert("is_final".to_string(), json!(llm.is_final()));
+
+                // Include LLM metadata fields
+                for (key, value) in llm.metadata() {
+                    meta.insert(key.clone(), value.clone());
+                }
+
+                ("llm", Value::Object(meta))
+            }
+        };
+
+        let timestamp = match self {
+            Event::LLM(llm) => llm.timestamp(),
+            _ => Utc::now(),
+        };
+
+        json!({
+            "type": event_type,
+            "scope": self.scope_label(),
+            "message": self.message(),
+            "timestamp": timestamp.to_rfc3339(),
+            "metadata": metadata,
+        })
+    }
+
+    /// Convert event to compact JSON string representation.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use weavegraph::event_bus::Event;
+    ///
+    /// let event = Event::diagnostic("test", "message");
+    /// let json_str = event.to_json_string().unwrap();
+    /// assert!(json_str.contains("\"type\":\"diagnostic\""));
+    /// ```
+    pub fn to_json_string(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&self.to_json_value())
+    }
+
+    /// Convert event to pretty-printed JSON string with indentation.
+    ///
+    /// Useful for debugging and log files where human readability is important.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use weavegraph::event_bus::Event;
+    ///
+    /// let event = Event::node_message("test", "hello");
+    /// let json_str = event.to_json_pretty().unwrap();
+    /// assert!(json_str.contains("  \"type\": \"node\""));
+    /// ```
+    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(&self.to_json_value())
     }
 }
 
@@ -136,23 +245,45 @@ impl DiagnosticEvent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LLMStreamingEventScope {
+    Streaming,
+    Chunk,
+    Final,
+    Error,
+}
+
+impl AsRef<str> for LLMStreamingEventScope {
+    fn as_ref(&self) -> &str {
+        match self {
+            LLMStreamingEventScope::Chunk => "chunk",
+            LLMStreamingEventScope::Streaming => "stream",
+            LLMStreamingEventScope::Final => STREAM_END_SCOPE,
+            LLMStreamingEventScope::Error => "error",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LLMStreamingEvent {
     session_id: Option<String>,
     node_id: Option<String>,
     stream_id: Option<String>,
     chunk: String,
     is_final: bool,
+    scope: LLMStreamingEventScope,
     metadata: FxHashMap<String, Value>,
     timestamp: DateTime<Utc>,
 }
 
 impl LLMStreamingEvent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_id: Option<String>,
         node_id: Option<String>,
         stream_id: Option<String>,
         chunk: impl Into<String>,
         is_final: bool,
+        scope: Option<LLMStreamingEventScope>,
         metadata: FxHashMap<String, Value>,
         timestamp: DateTime<Utc>,
     ) -> Self {
@@ -162,6 +293,7 @@ impl LLMStreamingEvent {
             stream_id,
             chunk: chunk.into(),
             is_final,
+            scope: scope.unwrap_or(LLMStreamingEventScope::Streaming),
             metadata,
             timestamp,
         }
@@ -180,6 +312,7 @@ impl LLMStreamingEvent {
             stream_id,
             chunk,
             false,
+            Some(LLMStreamingEventScope::Chunk),
             metadata,
             Utc::now(),
         )
@@ -198,6 +331,7 @@ impl LLMStreamingEvent {
             stream_id,
             chunk,
             true,
+            Some(LLMStreamingEventScope::Final),
             metadata,
             Utc::now(),
         )
@@ -217,6 +351,7 @@ impl LLMStreamingEvent {
             stream_id,
             error_message,
             true,
+            Some(LLMStreamingEventScope::Error),
             metadata,
             Utc::now(),
         )
@@ -240,6 +375,10 @@ impl LLMStreamingEvent {
 
     pub fn is_final(&self) -> bool {
         self.is_final
+    }
+
+    pub fn scope(&self) -> &LLMStreamingEventScope {
+        &self.scope
     }
 
     pub fn metadata(&self) -> &FxHashMap<String, Value> {

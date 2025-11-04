@@ -11,8 +11,8 @@ use rig::client::{CompletionClient, EmbeddingsClient};
 use rig::completion::{AssistantContent, CompletionModel, Message as CompletionMessage};
 use rig::embeddings::EmbeddingModel;
 use rig::providers::ollama::Client as OllamaClient;
-use rig::vector_store::request::VectorSearchRequest;
 use rig::vector_store::VectorStoreIndex;
+use rig::vector_store::request::VectorSearchRequest;
 use scraping_helpers::sanitize_filename;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -31,13 +31,13 @@ use weavegraph::runtimes::{CheckpointerType, EventBusConfig, RuntimeConfig};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 use weavegraph::utils::collections::new_extra_map;
-use wg_ragsmith::semantic_chunking::service::{ChunkDocumentRequest, ChunkSource};
 use wg_ragsmith::semantic_chunking::SemanticChunkingService;
+use wg_ragsmith::semantic_chunking::service::{ChunkDocumentRequest, ChunkSource};
 use wg_ragsmith::stores::sqlite::{ChunkDocument, SqliteChunkStore};
 
 use tracing::info;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod scraping_helpers {
     use url::Url;
@@ -513,6 +513,7 @@ impl Node for ScrapeNode {
             messages: None,
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -641,6 +642,7 @@ impl Node for ChunkNode {
             messages: None,
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -772,6 +774,7 @@ where
             messages: None,
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -901,6 +904,7 @@ where
             }]),
             extra: Some(extra),
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -974,6 +978,7 @@ impl Node for GenerateAnswerNode {
             }]),
             extra: None,
             errors: None,
+            frontier: None,
         })
     }
 }
@@ -1219,11 +1224,13 @@ mod tests {
             .get("retrieval")
             .and_then(|value| value.as_object())
             .expect("retrieval extra present");
-        assert!(retrieval
-            .get("matches")
-            .and_then(|value| value.as_array())
-            .map(|matches| !matches.is_empty())
-            .unwrap_or(false));
+        assert!(
+            retrieval
+                .get("matches")
+                .and_then(|value| value.as_array())
+                .map(|matches| !matches.is_empty())
+                .unwrap_or(false)
+        );
 
         let cache_index = pipeline_config.cache_dir.join("scraped_chapters.json");
         assert!(cache_index.exists());

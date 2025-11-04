@@ -1,5 +1,8 @@
 use flume;
+use std::any::type_name;
+use std::fs::File;
 use std::io::{self, Result as IoResult, Stdout, Write};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use super::event::Event;
@@ -12,6 +15,14 @@ pub trait EventSink: Sync + Send {
     /// Implementations are allowed to perform blocking I/O; the event bus will
     /// hand the call off to `spawn_blocking` to keep the async runtime responsive.
     fn handle(&mut self, event: &Event) -> IoResult<()>;
+
+    /// A stable, human-friendly identifier for this sink instance.
+    ///
+    /// Defaults to the concrete type name; implementors may override to provide
+    /// shorter names or include configuration context.
+    fn name(&self) -> String {
+        type_name::<Self>().to_string()
+    }
 }
 
 /// Stdout sink with optional formatting.
@@ -24,7 +35,7 @@ impl Default for StdOutSink {
     fn default() -> Self {
         Self {
             handle: io::stdout(),
-            formatter: PlainFormatter,
+            formatter: PlainFormatter::new(),
         }
     }
 }
@@ -73,6 +84,161 @@ impl EventSink for MemorySink {
     fn handle(&mut self, event: &Event) -> IoResult<()> {
         self.entries.lock().unwrap().push(event.clone());
         Ok(())
+    }
+}
+
+/// JSON Lines (JSONL) sink for machine-readable structured logging.
+///
+/// Outputs one JSON object per line, ideal for:
+/// - Log aggregation systems (ELK, Splunk, DataDog)
+/// - Stream processing pipelines
+/// - Automated testing with structured assertions
+/// - Integration with monitoring tools
+///
+/// # Format
+///
+/// Each event is serialized to a single line of JSON using the normalized schema:
+/// ```json
+/// {"type":"node","scope":"routing","message":"Processing","timestamp":"2025-11-03T12:34:56Z","metadata":{"node_id":"router","step":5}}
+/// {"type":"diagnostic","scope":"system","message":"Ready","timestamp":"2025-11-03T12:34:57Z","metadata":{}}
+/// ```
+///
+/// # Examples
+///
+/// ## Write to stdout
+///
+/// ```rust,no_run
+/// use weavegraph::event_bus::{EventBus, JsonLinesSink};
+///
+/// let sink = JsonLinesSink::to_stdout();
+/// let bus = EventBus::with_sinks(vec![Box::new(sink)]);
+/// // Events will be written as JSON lines to stdout
+/// ```
+///
+/// ## Write to file
+///
+/// ```rust,no_run
+/// use weavegraph::event_bus::{EventBus, JsonLinesSink};
+///
+/// let sink = JsonLinesSink::to_file("events.jsonl").unwrap();
+/// let bus = EventBus::with_sinks(vec![Box::new(sink)]);
+/// // Events will be written to events.jsonl
+/// ```
+///
+/// ## Pretty-printed output
+///
+/// ```rust,no_run
+/// use weavegraph::event_bus::JsonLinesSink;
+/// use std::io;
+///
+/// let sink = JsonLinesSink::with_pretty_print(Box::new(io::stdout()));
+/// // Events will be pretty-printed (not valid JSONL, but human-readable)
+/// ```
+pub struct JsonLinesSink {
+    handle: Box<dyn Write + Send + Sync>,
+    pretty: bool,
+}
+
+impl JsonLinesSink {
+    /// Create a new JsonLinesSink with a custom writer.
+    ///
+    /// # Parameters
+    ///
+    /// * `handle` - Any writer implementing Write + Send
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use weavegraph::event_bus::JsonLinesSink;
+    /// use std::io::Cursor;
+    ///
+    /// let buffer = Cursor::new(Vec::new());
+    /// let sink = JsonLinesSink::new(Box::new(buffer));
+    /// ```
+    pub fn new(handle: Box<dyn Write + Send + Sync>) -> Self {
+        Self {
+            handle,
+            pretty: false,
+        }
+    }
+
+    /// Create a JsonLinesSink with pretty-printing enabled.
+    ///
+    /// Note: Pretty-printed output is NOT valid JSON Lines format
+    /// (which requires one JSON object per line). Use this for debugging
+    /// and human-readable logs only.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use weavegraph::event_bus::JsonLinesSink;
+    /// use std::io::Cursor;
+    ///
+    /// let buffer = Cursor::new(Vec::new());
+    /// let sink = JsonLinesSink::with_pretty_print(Box::new(buffer));
+    /// ```
+    pub fn with_pretty_print(handle: Box<dyn Write + Send + Sync>) -> Self {
+        Self {
+            handle,
+            pretty: true,
+        }
+    }
+
+    /// Create a JsonLinesSink writing to stdout.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::event_bus::JsonLinesSink;
+    ///
+    /// let sink = JsonLinesSink::to_stdout();
+    /// ```
+    pub fn to_stdout() -> Self {
+        Self::new(Box::new(io::stdout()))
+    }
+
+    /// Create a JsonLinesSink writing to a file.
+    ///
+    /// # Parameters
+    ///
+    /// * `path` - Path to the output file (will be created or truncated)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created or opened.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use weavegraph::event_bus::JsonLinesSink;
+    ///
+    /// let sink = JsonLinesSink::to_file("events.jsonl").unwrap();
+    /// ```
+    pub fn to_file(path: impl AsRef<Path>) -> IoResult<Self> {
+        let file = File::create(path)?;
+        Ok(Self::new(Box::new(file)))
+    }
+}
+
+impl EventSink for JsonLinesSink {
+    fn handle(&mut self, event: &Event) -> IoResult<()> {
+        let json = if self.pretty {
+            event.to_json_pretty()
+        } else {
+            event.to_json_string()
+        }
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        writeln!(self.handle, "{}", json)?;
+        self.handle.flush()
+    }
+
+    fn name(&self) -> String {
+        if self.pretty {
+            "JsonLinesSink(pretty)".to_string()
+        } else {
+            "JsonLinesSink".to_string()
+        }
     }
 }
 
