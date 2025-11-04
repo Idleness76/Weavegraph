@@ -13,6 +13,15 @@
 
 Weavegraph is a modern Rust framework for building complex, stateful workflows using graph-based execution. It's designed for AI agents, data processing pipelines, and any application requiring sophisticated state management with concurrent node execution.
 
+---
+
+> **⚠️ EARLY BETA WARNING**  
+> This framework is in active development (v0.1.x). APIs are evolving rapidly, and **breaking changes will happen** between minor versions.  
+> The core architecture is solid, but expect rough edges, API churn, and occasional surprises. Pin exact versions if stability matters.  
+> Use in production at your own risk—or better yet, help us shape the future by reporting issues and suggesting improvements.
+
+---
+
 ## ✨ Key Features
 
 - **🔄 Concurrent Graph Execution**: Bounded-concurrency scheduler with dependency resolution and versioned barrier synchronization
@@ -687,7 +696,7 @@ cg --> viz
 
 Weavegraph originated as a capstone project for a Rust online course, developed by contributors with Python backgrounds and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to Rust while leveraging its performance, safety, and concurrency advantages.
 
-While rooted in educational exploration, Weavegraph has evolved into a production-ready framework with continued active development well beyond the classroom setting.
+While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.1.x), it's still maturing—use with awareness of ongoing API evolution.
 
 ## 🤝 Contributing
 

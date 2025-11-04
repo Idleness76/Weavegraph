@@ -8,6 +8,15 @@
 
 `wg-ragsmith` provides high-performance semantic chunking algorithms and vector storage utilities designed for building RAG (Retrieval-Augmented Generation) applications. It supports multiple document formats (HTML, JSON, plain text) and integrates with popular embedding providers.
 
+---
+
+> **⚠️ EARLY BETA WARNING**  
+> This crate is in early development (v0.1.x). APIs are unstable and **will** change between minor versions.  
+> Breaking changes may arrive without fanfare. Pin exact versions in production, and check release notes carefully before upgrading.  
+> That said, the core algorithms work—just expect some assembly required.
+
+---
+
 ## ✨ Key Features
 
 - **🔍 Semantic Chunking**: Intelligent document segmentation using embeddings and structural analysis

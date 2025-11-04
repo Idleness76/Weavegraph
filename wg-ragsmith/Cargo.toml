@@ -1,6 +1,6 @@
 [package]
 name = "wg-ragsmith"
-version = "0.1.0-alpha.1"
+version = "0.1.1"
 edition = "2024"
 description = "Semantic chunking and RAG utilities for document processing and retrieval-augmented generation."
 license = "MIT"
