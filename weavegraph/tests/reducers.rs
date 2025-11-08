@@ -281,7 +281,7 @@ async fn test_reducer_thread_safety() {
                 };
 
                 let mut state_guard = state.lock().await;
-                let _ = registry.try_update(ChannelType::Message, &mut *state_guard, &partial);
+                let _ = registry.try_update(ChannelType::Message, &mut state_guard, &partial);
             })
         })
         .collect();
@@ -324,7 +324,7 @@ async fn test_reducer_determinism_under_concurrency() {
 
                 tokio::spawn(async move {
                     let mut state_guard = state.lock().await;
-                    let _ = registry.try_update(ChannelType::Message, &mut *state_guard, &partial);
+                    let _ = registry.try_update(ChannelType::Message, &mut state_guard, &partial);
                 })
             })
             .collect();
@@ -339,7 +339,7 @@ async fn test_reducer_determinism_under_concurrency() {
 
                 tokio::spawn(async move {
                     let mut state_guard = state.lock().await;
-                    let _ = registry.try_update(ChannelType::Message, &mut *state_guard, &partial);
+                    let _ = registry.try_update(ChannelType::Message, &mut state_guard, &partial);
                 })
             })
             .collect();

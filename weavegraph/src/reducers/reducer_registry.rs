@@ -68,15 +68,8 @@ impl ReducerRegistry {
     ///
     /// # Returns
     /// A mutable reference to self for method chaining
-    pub fn register(
-        &mut self,
-        channel: ChannelType,
-        reducer: Arc<dyn Reducer>,
-    ) -> &mut Self {
-        self.reducer_map
-            .entry(channel)
-            .or_default()
-            .push(reducer);
+    pub fn register(&mut self, channel: ChannelType, reducer: Arc<dyn Reducer>) -> &mut Self {
+        self.reducer_map.entry(channel).or_default().push(reducer);
         self
     }
 
@@ -101,11 +94,7 @@ impl ReducerRegistry {
     /// let registry = ReducerRegistry::new()
     ///     .with_reducer(ChannelType::Message, Arc::new(AddMessages));
     /// ```
-    pub fn with_reducer(
-        mut self,
-        channel: ChannelType,
-        reducer: Arc<dyn Reducer>,
-    ) -> Self {
+    pub fn with_reducer(mut self, channel: ChannelType, reducer: Arc<dyn Reducer>) -> Self {
         self.register(channel, reducer);
         self
     }
