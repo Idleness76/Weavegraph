@@ -1,7 +1,7 @@
 use parking_lot::Mutex as ParkingMutex;
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
@@ -154,7 +154,7 @@ use chrono::Utc;
 const DEFAULT_BUFFER_CAPACITY: usize = 1024;
 
 pub struct EventBus {
-    sinks: Arc<Mutex<Vec<SinkEntry>>>,
+    sinks: Arc<ParkingMutex<Vec<SinkEntry>>>,
     hub: Arc<EventHub>,
     started: AtomicBool,
     /// Generation counter tracking listener restarts so stale workers exit.
@@ -206,7 +206,7 @@ impl EventBus {
             broadcast::channel(1)
         };
         Self {
-            sinks: Arc::new(Mutex::new(entries)),
+            sinks: Arc::new(ParkingMutex::new(entries)),
             hub,
             started: AtomicBool::new(false),
             generation: Arc::new(AtomicU64::new(0)),
@@ -223,7 +223,7 @@ impl EventBus {
 
     /// Attach a new sink to the hub, starting a worker immediately if the bus is live.
     pub fn add_boxed_sink(&self, sink: Box<dyn EventSink>) {
-        let mut sinks_guard = self.sinks.lock().unwrap();
+        let mut sinks_guard = self.sinks.lock();
         let mut entry = SinkEntry::new(sink);
         if self.started.load(Ordering::SeqCst) {
             let generation = self.generation.load(Ordering::SeqCst);
@@ -282,7 +282,7 @@ impl EventBus {
         if self.started.swap(true, Ordering::SeqCst) {
             return;
         }
-        let mut sinks = self.sinks.lock().unwrap();
+        let mut sinks = self.sinks.lock();
         let generation = self.generation.load(Ordering::SeqCst);
         for entry in sinks.iter_mut() {
             entry.spawn_worker(
@@ -304,7 +304,7 @@ impl EventBus {
         }
         self.generation.fetch_add(1, Ordering::SeqCst);
         let workers = {
-            let mut sinks = self.sinks.lock().unwrap();
+            let mut sinks = self.sinks.lock();
             let mut collected = Vec::with_capacity(sinks.len());
             for entry in sinks.iter_mut() {
                 if let Some(worker) = entry.worker.take() {
@@ -328,9 +328,8 @@ impl EventBus {
 impl Drop for EventBus {
     fn drop(&mut self) {
         self.hub.close();
-        if self.started.load(Ordering::SeqCst)
-            && let Ok(mut sinks) = self.sinks.lock()
-        {
+        if self.started.load(Ordering::SeqCst) {
+            let mut sinks = self.sinks.lock();
             for entry in sinks.iter_mut() {
                 entry.abort_worker();
             }
@@ -339,7 +338,7 @@ impl Drop for EventBus {
 }
 
 struct SinkEntry {
-    sink: Arc<Mutex<Box<dyn EventSink>>>,
+    sink: Arc<ParkingMutex<Box<dyn EventSink>>>,
     /// Resolved once at registration to avoid recomputing on error paths.
     name: String,
     worker: Option<SinkWorker>,
@@ -356,7 +355,7 @@ impl SinkEntry {
             candidate
         };
         Self {
-            sink: Arc::new(Mutex::new(sink)),
+            sink: Arc::new(ParkingMutex::new(sink)),
             name,
             worker: None,
         }
@@ -385,7 +384,7 @@ impl SinkEntry {
         let de_enabled = diagnostics_enabled;
         let de_emit = diagnostics_emit_to_events;
         let hub_clone = Arc::clone(&hub);
-        let handle = task::spawn(async move {
+            let handle = task::spawn(async move {
             fn record_sink_error(
                 health: &Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
                 diagnostics_tx: &broadcast::Sender<SinkDiagnostic>,
@@ -428,9 +427,7 @@ impl SinkEntry {
                             // Dispatch potentially blocking sink logic onto the dedicated
                             // blocking pool so we never park the async runtime thread.
                             let dispatch = task::spawn_blocking(move || -> io::Result<()> {
-                                let mut guard = sink.lock().map_err(|_| {
-                                    io::Error::other("event sink mutex poisoned")
-                                })?;
+                                let mut guard = sink.lock();
                                 guard.handle(&event)
                             });
                             match dispatch.await {
