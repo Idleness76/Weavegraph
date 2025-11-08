@@ -1,6 +1,7 @@
 #[cfg(feature = "sqlite")]
 use chrono::Utc;
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 use weavegraph::channels::Channel;
 use weavegraph::runtimes::checkpointer::{
     Checkpoint, Checkpointer, InMemoryCheckpointer, restore_session_state,
@@ -308,4 +309,37 @@ async fn test_sqlite_query_steps_pagination() {
     assert_eq!(result.checkpoints.len(), 2);
     assert_eq!(result.checkpoints[0].step, 5);
     assert_eq!(result.checkpoints[1].step, 4);
+}
+
+// Concurrency behavior: ensure async RwLock in InMemoryCheckpointer allows many concurrent saves
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_inmemory_checkpointer_concurrent_operations() {
+    let cp_store = Arc::new(InMemoryCheckpointer::new());
+    let mut handles = Vec::new();
+
+    for i in 0..100u32 {
+        let cp = cp_store.clone();
+        handles.push(tokio::spawn(async move {
+            let session_id = format!("session_{i}");
+            let session = SessionState {
+                state: state_with_user("test"),
+                step: 0,
+                frontier: vec![NodeKind::Start],
+                scheduler: Scheduler::new(1),
+                scheduler_state: SchedulerState::default(),
+            };
+            let checkpoint = Checkpoint::from_session(&session_id, &session);
+            cp.save(checkpoint).await.expect("save");
+        }));
+    }
+
+    for h in handles {
+        h.await.expect("join");
+    }
+
+    let mut sessions = cp_store.list_sessions().await.expect("list_sessions");
+    sessions.sort();
+    assert_eq!(sessions.len(), 100);
+    assert_eq!(sessions[0], "session_0");
+    assert_eq!(sessions.last().unwrap(), "session_99");
 }
