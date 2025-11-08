@@ -14,7 +14,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rustc_hash::FxHashMap;
-use std::sync::RwLock;
+use tokio::sync::RwLock;
 
 use crate::{
     runtimes::runner::SessionState, schedulers::SchedulerState, state::VersionedState,
@@ -327,25 +327,22 @@ impl InMemoryCheckpointer {
 
 #[async_trait]
 impl Checkpointer for InMemoryCheckpointer {
+    #[tracing::instrument(skip(self), fields(session_id = %checkpoint.session_id, step = checkpoint.step))]
     async fn save(&self, checkpoint: Checkpoint) -> Result<()> {
-        let mut map = self.inner.write().map_err(|e| CheckpointerError::Backend {
-            message: format!("lock poisoned: {e}"),
-        })?;
+        let mut map = self.inner.write().await;
         map.insert(checkpoint.session_id.clone(), checkpoint);
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(session_id = %session_id))]
     async fn load_latest(&self, session_id: &str) -> Result<Option<Checkpoint>> {
-        let map = self.inner.read().map_err(|e| CheckpointerError::Backend {
-            message: format!("lock poisoned: {e}"),
-        })?;
+        let map = self.inner.read().await;
         Ok(map.get(session_id).cloned())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn list_sessions(&self) -> Result<Vec<String>> {
-        let map = self.inner.read().map_err(|e| CheckpointerError::Backend {
-            message: format!("lock poisoned: {e}"),
-        })?;
+        let map = self.inner.read().await;
         Ok(map.keys().cloned().collect())
     }
 }
