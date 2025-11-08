@@ -1,15 +1,115 @@
 # Architecture Overview
 
-The `graft` workspace houses two Rust crates that work together to deliver graph-driven
-workflow orchestration and retrieval-augmented generation (RAG) tooling:
+Comprehensive technical documentation for Weavegraph's internal design and module organization.
+
+**Related Documentation:**
+- [Developer Guide](GUIDE.md) - Core concepts, messages, state, and graphs
+- [Operations Guide](OPERATIONS.md) - Event streaming, persistence, testing, and production
+- [Documentation Index](INDEX.md) - Complete reference with anchor links
+
+## 🎓 Project Background
+
+Weavegraph originated as a capstone project for a Rust online course, developed by contributors with Python/TypeScript backgrounds and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to Rust while leveraging its performance, safety, and concurrency advantages.
+
+While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.1.x), it's still maturing—use with awareness of ongoing API evolution.
+
 
 | Crate | Purpose | Highlights |
 | ----- | ------- | ---------- |
 | `weavegraph` | Executes concurrent, stateful graphs with structured observability. | Graph builder + runtime, event bus, checkpointing, reducers, scheduler. |
 | `wg-ragsmith` | Provides ingestion, semantic chunking, and storage utilities for RAG workloads. | HTML/JSON parsers, semantic chunkers, SQLite vector store helpers. |
 
-The workspace-level `Cargo.toml` ties both crates together, while shared tooling (`Makefile`,
-GitHub Actions workflows) enforces consistent governance across the repository.
+
+## Overview flowchart of the app (mermaid)
+
+```mermaid
+flowchart TB
+
+subgraph Client
+  user[Client App or UI]
+end
+
+subgraph Build
+  gb[GraphBuilder]
+end
+
+subgraph Runtime
+  app[App]
+  sched[Scheduler]
+  router[Router: Edges and Commands]
+  barrier[Barrier Applier]
+end
+
+subgraph Nodes
+  usernode[Custom User Nodes]
+  llmnode[LLM Node]
+  toolnode[Tool Node]
+end
+
+subgraph State
+  vstate[Versioned State]
+  snap[State Snapshot]
+end
+
+subgraph Reducers
+  redreg[Reducer Registry]
+end
+
+subgraph Checkpoint
+  cpif[Checkpointer: SQLite/InMemory]
+end
+
+subgraph EventBus
+  eventbus[Event Bus with Sinks]
+end
+
+subgraph Rig
+  rigad[Rig Adapter]
+  llmprov[LLM Provider: Ollama/MCP]
+end
+
+subgraph Tools
+  toolreg[Tool Registry]
+  exttools[External Tools]
+end
+
+user --> gb
+gb -->|compile| app
+
+user -->|invoke/invoke_streaming| app
+
+app --> sched
+sched -->|creates| snap
+vstate --> snap
+
+sched --> usernode
+sched --> llmnode
+sched --> toolnode
+
+usernode -->|NodePartial| barrier
+llmnode -->|NodePartial| barrier
+toolnode -->|NodePartial| barrier
+redreg --> barrier
+barrier -->|merges updates| vstate
+
+snap --> router
+app --> router
+router -->|next frontier| sched
+
+llmnode --> rigad
+rigad --> llmprov
+llmprov --> rigad
+rigad --> llmnode
+
+toolnode --> toolreg
+toolnode --> exttools
+exttools --> toolnode
+
+barrier --> cpif
+
+app --> eventbus
+eventbus -->|streams events| user
+```
 
 ---
 
@@ -49,7 +149,11 @@ is organised around a handful of core modules:
 
 ### Authoring Nodes & State
 
-Weavegraph applications revolve around three building blocks:
+Weavegraph applications revolve around three building blocks: nodes, state, and graphs.
+
+> **Note:** `NodeKind::Start` and `NodeKind::End` are virtual structural endpoints.  
+> You never register them with `add_node`; attempts to do so are ignored with a warning.  
+> Define only your executable (custom) nodes and connect them with edges from `Start` and to `End`.
 
 ```rust
 use weavegraph::{
@@ -85,27 +189,76 @@ let initial = VersionedState::new_with_user_message("Hi?");
 let result = app.invoke(initial).await?;
 ```
 
-Key practices:
+**Key practices:**
 
-- Prefer the convenience constructors on `Message` (`Message::user`, `Message::assistant`, etc.) or the builder helpers when crafting payloads.
-- Build state with `VersionedState::new_with_user_message` or the builder pattern (`VersionedState::builder()...build()`).
-- Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout.
-- Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`) or populate `NodePartial::with_errors` for recoverable issues.
+- Prefer the convenience constructors on `Message` (`Message::user`, `Message::assistant`, etc.) - see [Messages](GUIDE.md#messages)
+- Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](GUIDE.md#state)
+- Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout
+- Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
+
+### Custom Reducers {#custom-reducers}
+
+Weavegraph supports custom reducers for extending or replacing channel update behavior. By default,
+three reducers are registered:
+
+- **Message channel**: `AddMessages` – Appends messages to the message list
+- **Extra channel**: `MapMerge` – Shallow merges JSON objects in the extra data map
+- **Error channel**: `AddErrors` – Appends error events to the error list
+
+To register custom reducers:
+
+```rust
+use std::sync::Arc;
+use weavegraph::reducers::{Reducer, ReducerRegistry};
+use weavegraph::types::ChannelType;
+
+// Define a custom reducer
+struct MyCustomReducer;
+
+impl Reducer for MyCustomReducer {
+    fn apply(&self, state: &mut VersionedState, update: &NodePartial) {
+        // Custom merge logic here
+    }
+}
+
+// Register during graph building
+let app = GraphBuilder::new()
+    .add_node(...)
+    .with_reducer(ChannelType::Message, Arc::new(MyCustomReducer))
+    .compile()?;
+
+// Or replace the entire registry
+let custom_registry = ReducerRegistry::new()
+    .with_reducer(ChannelType::Message, Arc::new(MyCustomReducer));
+
+let app = GraphBuilder::new()
+    .add_node(...)
+    .with_reducer_registry(custom_registry)
+    .compile()?;
+```
+
+Multiple reducers can be registered for the same channel and will be applied in registration order.
+This enables middleware-style processing, validation, or transformation of channel updates during
+barrier synchronization.
 
 ### Execution Flow
 
 1. **Authoring** – Build a graph with `GraphBuilder`, registering nodes (implementations of `Node`)
    and the edges that connect them. Conditional edges can inspect `StateSnapshot` at runtime.
+   See [Graph Building](GUIDE.md#graphs) for details.
 2. **Compilation** – `GraphBuilder::compile()` validates topology and produces an `App`.
-3. **Invocation** – `App::invoke()` (or streaming variants) constructs an `AppRunner` with the
-   chosen `RuntimeConfig`, checkpointer (`InMemory` or SQLite), and event bus sinks.
+3. **Invocation** – `App::invoke()` (or streaming variants like `invoke_streaming`, `invoke_with_channel`)
+   constructs an `AppRunner` with the chosen checkpointer (`InMemory` or SQLite), and event bus configuration.
+   See [Event Streaming](OPERATIONS.md#event-streaming) for streaming patterns.
 4. **Scheduling** – The scheduler selects runnable nodes, issues `NodeContext`s, and executes
    nodes concurrently. Each node returns a `NodePartial` with channel deltas and optional
    control-flow directives.
 5. **Barrier & Reduction** – Reducers merge channel updates deterministically, update the
    versioned state, and hand control back to the scheduler for the next superstep.
+   See [Custom Reducers](#custom-reducers) above.
 6. **Persistence & Observability** – Checkpointer snapshots state into SQLite (when enabled),
    the event bus broadcasts diagnostics / LLM chunk streams, and telemetry surfaces to sinks.
+   See [Persistence](OPERATIONS.md#persistence) and [Event Streaming](OPERATIONS.md#event-streaming).
 
 ### Optional Features
 
@@ -116,12 +269,15 @@ Key practices:
 ### Tests & Examples
 
 * `weavegraph/tests/` – Covers state channels, reducers, scheduler semantics, checkpointer, and event bus.
+  See [Testing](OPERATIONS.md#testing) for running tests and patterns.
 * `weavegraph/examples/` – Progressive walkthroughs:
   * `basic_nodes.rs`, `demo1.rs`, `demo2.rs` show core messaging and state channels.
+    See [Messages](GUIDE.md#messages) and [State](GUIDE.md#state).
   * `demo3.rs`, `demo4.rs`, `demo6_agent_mcp.rs` integrate LLM providers (Ollama/MCP),
     leveraging the `llm` feature.
   * `streaming_events.rs`, `convenience_streaming.rs`, `demo7_axum_sse.rs` demonstrate the
     broadcast event bus and web-friendly streaming patterns.
+    See [Event Streaming](OPERATIONS.md#event-streaming).
   * `demo5_rag.rs` ties into `wg-ragsmith` to orchestrate a RAG pipeline end-to-end.
 
 ---
@@ -132,17 +288,16 @@ The event bus uses a bounded broadcast channel (default capacity: 1024 events pe
 When a subscriber falls behind faster producers, the following semantics apply:
 
 - Slow subscribers receive a lag notice and skip older events (no blocking of producers)
-- Missed events are counted and exposed via `EventBus::metrics()`
+- Missed events are counted and exposed via sink diagnostics
 - A WARN log entry is emitted with the number of dropped events and the running total
 - Streams continue from the most recent position for graceful degradation under load
 
-To adjust capacity or sinks, prefer the public runtime config entry point:
+To adjust capacity, configure the event bus when using `App::invoke_streaming` or construct
+an `EventBus` directly with custom capacity via `EventBus::with_capacity`.
 
-- `RuntimeConfig::default().with_event_bus(EventBusConfig::new(capacity, sinks))`
-
-See the streaming quickstart for practical guidance and code samples:
-
-- `weavegraph/examples/STREAMING_QUICKSTART.md` (section: “Tuning Buffer Capacity”)
+For practical guidance and code samples, see:
+- [Event Streaming](OPERATIONS.md#event-streaming) for patterns and sink configuration
+- `weavegraph/examples/STREAMING_QUICKSTART.md` for detailed tuning guidance
 
 ## `wg-ragsmith` Crate
 
@@ -186,20 +341,3 @@ These examples share environment variables with the weavegraph RAG demo (see `.e
   this architecture document as the entry point.
 
 ---
-
-## From Examples to Production
-
-1. **Local exploration** – Start with `cargo run --example basic_nodes` to learn the node API.
-2. **Observability** – Switch to `convenience_streaming.rs` or `streaming_events.rs` to wire
-   custom sinks or web streams.
-3. **Persistence** – Enable SQLite checkpointing by setting `WEAVEGRAPH_SQLITE_URL`
-   (defaults provided in `.env.example`) and run `make migrate` to initialise the database.
-4. **RAG integration** – Flip on the `examples` feature and execute `demo5_rag.rs` or the
-   `wg-ragsmith` pipelines to ingest data. Migrate to Qdrant by replacing the SQLite store
-   with future adapters described in `docs/hybrid_rag_pipeline_plan.md`.
-5. **Hardening** – Follow `docs/production_readiness_plan.md` for remaining governance,
-   API audits, and release engineering tasks.
-
-By keeping orchestration (`weavegraph`) and content pipelines (`wg-ragsmith`) modular, the
-workspace supports both lightweight agent workflows and full production RAG systems using
-the same building blocks.
