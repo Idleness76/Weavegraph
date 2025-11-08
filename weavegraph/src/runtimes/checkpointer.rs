@@ -1,15 +1,29 @@
-//! Checkpointer infrastructure
+//! Checkpointer infrastructure with thread‑safe persistence.
 //!
-//! This initial implementation introduces a `Checkpointer` trait and an
-//! in‑memory implementation (`InMemoryCheckpointer`). It is intentionally
-//! minimal: it stores only the latest checkpoint per session (no history)
-//! and performs no serialization (pure in‑process persistence). Later
-//! extensions (Week 2+) can add:
-//!   * Persistent backends (e.g. Postgres)
-//!   * Incremental history / lineage
-//!   * Compaction & retention policies
-//!   * Structured metadata & tracing correlation IDs
+//! This module provides:
+//! - Thread‑safe async operations using `tokio::sync::RwLock`
+//! - Tracing integration (`#[instrument]`) for observability
+//! - Multiple backends: in‑memory (volatile) and SQLite (durable)
 //!
+//! # Thread Safety
+//! All implementations use async‑aware synchronization primitives and can be
+//! called across `await` points without blocking executor threads.
+//!
+//! # Observability
+//! Each operation on `InMemoryCheckpointer` and `SQLiteCheckpointer` is
+//! instrumented with structured tracing fields (e.g. `session_id`, `step`).
+//! Enable debug logging to view activity:
+//! ```bash
+//! RUST_LOG=weavegraph::runtimes::checkpointer=debug cargo run
+//! ```
+//!
+//! # Storage Management
+//! - **InMemoryCheckpointer**: Stores only the latest checkpoint per session
+//!   (implicit retention; no history).
+//! - **SQLiteCheckpointer**: Stores full step history for durable audit and
+//!   replay; use external SQL maintenance for long‑running deployments.
+//!
+//! See type‑level docs for cleanup guidance.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -305,7 +319,18 @@ pub trait Checkpointer: Send + Sync {
     async fn list_sessions(&self) -> Result<Vec<String>>;
 }
 
-/// Simple in‑memory checkpointer. Stores only the *latest* checkpoint per session.
+/// Simple in‑memory checkpointer with implicit retention.
+///
+/// Characteristics:
+/// - Volatile: process‑local only
+/// - Retention: last checkpoint per session (no historical steps)
+/// - Concurrency: `tokio::sync::RwLock` for non‑blocking async use
+/// - Observability: `#[instrument]` on public trait methods
+///
+/// Enable debug tracing to inspect operations:
+/// ```bash
+/// RUST_LOG=weavegraph::runtimes::checkpointer=debug
+/// ```
 #[derive(Default)]
 pub struct InMemoryCheckpointer {
     inner: RwLock<FxHashMap<String, Checkpoint>>,

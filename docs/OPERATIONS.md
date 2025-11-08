@@ -112,6 +112,62 @@ For testing and ephemeral workflows:
 let runner = AppRunner::new(app, CheckpointerType::InMemory).await;
 ```
 
+### Storage Management
+
+**InMemoryCheckpointer** stores only the latest checkpoint per session (automatic retention). No storage management needed.
+
+**SQLiteCheckpointer** stores complete step history for audit trails and debugging. Storage grows with `(sessions × steps_per_session × state_size)`.
+
+For long-running applications, implement periodic cleanup:
+
+**Option 1: Direct SQL maintenance (recommended)**
+
+```bash
+# Delete checkpoints older than 30 days
+sqlite3 workflow.db "DELETE FROM steps WHERE created_at < datetime('now', '-30 days')"
+
+# Keep only latest 100 steps per session
+sqlite3 workflow.db "
+  DELETE FROM steps 
+  WHERE step NOT IN (
+    SELECT step FROM steps 
+    WHERE session_id = steps.session_id 
+    ORDER BY step DESC 
+    LIMIT 100
+  )
+"
+
+# Vacuum to reclaim space
+sqlite3 workflow.db "VACUUM"
+```
+
+**Option 2: Application-level session management**
+
+Delete entire sessions when workflows complete:
+
+```rust
+// Using sqlx directly
+sqlx::query("DELETE FROM sessions WHERE id = ?")
+    .bind(&session_id)
+    .execute(&pool)
+    .await?;
+// Cascading delete removes all associated steps
+```
+
+**Storage monitoring:**
+
+```bash
+# Check database size
+ls -lh workflow.db
+
+# Count checkpoints per session
+sqlite3 workflow.db "
+  SELECT session_id, COUNT(*) as checkpoint_count 
+  FROM steps 
+  GROUP BY session_id
+"
+```
+
 ## Testing {#testing}
 
 Weavegraph supports comprehensive testing, including property-based tests and event capture.
