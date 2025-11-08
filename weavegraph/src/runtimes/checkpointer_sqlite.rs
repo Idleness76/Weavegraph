@@ -109,7 +109,7 @@ pub struct StepQueryResult {
 }
 
 #[derive(Debug, Error, Diagnostic)]
-pub enum SqliteCheckpointerError {
+pub enum SQLiteCheckpointerError {
     #[error("SQLx error: {0}")]
     #[diagnostic(
         code(weavegraph::sqlite::sqlx),
@@ -140,20 +140,20 @@ pub enum SqliteCheckpointerError {
     Other(String),
 }
 
-impl From<SqliteCheckpointerError> for CheckpointerError {
-    fn from(e: SqliteCheckpointerError) -> Self {
+impl From<SQLiteCheckpointerError> for CheckpointerError {
+    fn from(e: SQLiteCheckpointerError) -> Self {
         match e {
-            SqliteCheckpointerError::Sqlx(err) => CheckpointerError::Backend {
+            SQLiteCheckpointerError::Sqlx(err) => CheckpointerError::Backend {
                 message: err.to_string(),
             },
-            SqliteCheckpointerError::Serde(err) => CheckpointerError::Other {
+            SQLiteCheckpointerError::Serde(err) => CheckpointerError::Other {
                 message: err.to_string(),
             },
-            SqliteCheckpointerError::Missing(what) => CheckpointerError::Other {
+            SQLiteCheckpointerError::Missing(what) => CheckpointerError::Other {
                 message: format!("missing persisted field: {what}"),
             },
-            SqliteCheckpointerError::Backend(msg) => CheckpointerError::Backend { message: msg },
-            SqliteCheckpointerError::Other(msg) => CheckpointerError::Other { message: msg },
+            SQLiteCheckpointerError::Backend(msg) => CheckpointerError::Backend { message: msg },
+            SQLiteCheckpointerError::Other(msg) => CheckpointerError::Other { message: msg },
         }
     }
 }

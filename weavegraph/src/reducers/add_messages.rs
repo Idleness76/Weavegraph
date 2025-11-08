@@ -7,8 +7,8 @@ pub struct AddMessages;
 impl Reducer for AddMessages {
     fn apply(&self, state: &mut VersionedState, update: &NodePartial) {
         if let Some(msgs) = &update.messages {
-            // Append new messages and bump version
-            state.messages.get_mut().extend(msgs.clone());
+            // Append new messages without cloning the entire vector
+            state.messages.get_mut().extend_from_slice(msgs);
         }
     }
 }

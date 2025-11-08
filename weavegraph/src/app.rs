@@ -220,12 +220,13 @@ impl App {
         edges: FxHashMap<NodeKind, Vec<NodeKind>>,
         conditional_edges: Vec<crate::graphs::ConditionalEdge>,
         runtime_config: RuntimeConfig,
+        reducer_registry: ReducerRegistry,
     ) -> Self {
         App {
             nodes,
             edges,
             conditional_edges,
-            reducer_registry: ReducerRegistry::default(),
+            reducer_registry,
             runtime_config,
         }
     }

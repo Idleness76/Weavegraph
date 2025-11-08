@@ -25,11 +25,17 @@ pub enum ReducerError {
     #[error("no reducers registered for channel: {0:?}")]
     #[diagnostic(
         code(weavegraph::reducers::unknown_channel),
-        help("Register a reducer for this channel or adjust the registry configuration.")
+        help("Use GraphBuilder::with_reducer() to register a reducer for {0:?}")
     )]
     UnknownChannel(ChannelType),
 
-    #[error("reducer apply error: {0}")]
-    #[diagnostic(code(weavegraph::reducers::apply))]
-    Apply(String),
+    #[error("reducer apply failed for channel {channel:?}: {message}")]
+    #[diagnostic(
+        code(weavegraph::reducers::apply),
+        help("Check that your reducer implementation correctly handles the NodePartial structure")
+    )]
+    Apply {
+        channel: ChannelType,
+        message: String,
+    },
 }
