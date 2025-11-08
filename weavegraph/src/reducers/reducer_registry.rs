@@ -9,23 +9,6 @@ use crate::{
 };
 use tracing::instrument;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum ReducerType {
-    AddMessages(AddMessages),
-    JsonShallowMerge(MapMerge),
-    AddErrors(AddErrors),
-}
-
-impl ReducerType {
-    pub fn apply(&self, state: &mut VersionedState, update: &NodePartial) {
-        match self {
-            ReducerType::AddMessages(r) => r.apply(state, update),
-            ReducerType::JsonShallowMerge(r) => r.apply(state, update),
-            ReducerType::AddErrors(r) => r.apply(state, update),
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct ReducerRegistry {
     reducer_map: FxHashMap<ChannelType, Vec<Arc<dyn Reducer>>>,
@@ -140,8 +123,8 @@ impl ReducerRegistry {
         }
 
         if let Some(reducers) = self.reducer_map.get(&channel_type) {
-            for r in reducers {
-                r.apply(state, to_update);
+            for reducer in reducers {
+                reducer.apply(state, to_update);
             }
             Ok(())
         } else {

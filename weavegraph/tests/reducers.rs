@@ -1,10 +1,11 @@
 use rustc_hash::FxHashMap;
 use serde_json::Value;
+use std::sync::Arc;
 
 use weavegraph::channels::Channel;
 use weavegraph::message::Message;
 use weavegraph::node::NodePartial;
-use weavegraph::reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry, ReducerType};
+use weavegraph::reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry};
 use weavegraph::state::VersionedState;
 
 mod common;
@@ -159,9 +160,9 @@ fn test_map_merge_empty_partial_noop() {
 
 #[test]
 fn test_enum_wrapper_dispatch() {
-    let reducers = vec![
-        ReducerType::AddMessages(AddMessages),
-        ReducerType::JsonShallowMerge(MapMerge),
+    let reducers: Vec<Arc<dyn Reducer>> = vec![
+        Arc::new(AddMessages),
+        Arc::new(MapMerge),
     ];
 
     let mut state = base_state();
