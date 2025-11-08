@@ -1,10 +1,10 @@
 use flume;
+use parking_lot::Mutex as ParkingMutex;
 use std::any::type_name;
 use std::fs::File;
 use std::io::{self, Result as IoResult, Stdout, Write};
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex as ParkingMutex;
 
 use super::event::Event;
 use crate::telemetry::{PlainFormatter, TelemetryFormatter};

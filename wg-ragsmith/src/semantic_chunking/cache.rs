@@ -1,8 +1,8 @@
+use parking_lot::{Mutex, MutexGuard};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque, hash_map::Entry};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use parking_lot::{Mutex, MutexGuard};
 
 /// Snapshot of cache interactions, useful for telemetry.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

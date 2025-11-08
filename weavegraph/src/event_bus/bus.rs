@@ -1,7 +1,7 @@
 use parking_lot::Mutex as ParkingMutex;
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::{broadcast, oneshot};
 use tokio::task;
 
@@ -384,7 +384,7 @@ impl SinkEntry {
         let de_enabled = diagnostics_enabled;
         let de_emit = diagnostics_emit_to_events;
         let hub_clone = Arc::clone(&hub);
-            let handle = task::spawn(async move {
+        let handle = task::spawn(async move {
             fn record_sink_error(
                 health: &Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
                 diagnostics_tx: &broadcast::Sender<SinkDiagnostic>,

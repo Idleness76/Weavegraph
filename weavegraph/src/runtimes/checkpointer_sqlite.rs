@@ -178,11 +178,11 @@ impl From<SQLiteCheckpointerError> for CheckpointerError {
 ///
 /// # Keep only latest 100 steps per session
 /// sqlite3 workflow.db "
-///   DELETE FROM steps 
+///   DELETE FROM steps
 ///   WHERE step NOT IN (
-///     SELECT step FROM steps 
-///     WHERE session_id = steps.session_id 
-///     ORDER BY step DESC 
+///     SELECT step FROM steps
+///     WHERE session_id = steps.session_id
+///     ORDER BY step DESC
 ///     LIMIT 100
 ///   )
 /// "
