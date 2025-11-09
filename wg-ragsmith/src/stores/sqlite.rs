@@ -1,8 +1,4 @@
-use std::mem::transmute;
-use std::os::raw::c_char;
-use std::path::Path;
-
-use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use rig::OneOrMany;
 use rig::embeddings::{Embedding, EmbeddingModel};
 use rig_sqlite::{
@@ -10,6 +6,9 @@ use rig_sqlite::{
 };
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
+use std::mem::transmute;
+use std::os::raw::c_char;
+use std::path::Path;
 use tokio_rusqlite::{Connection, ffi};
 
 use crate::types::RagError;
@@ -146,29 +145,33 @@ where
     }
 
     fn register_sqlite_vec() -> Result<(), RagError> {
-        static REGISTER: OnceCell<()> = OnceCell::new();
-        REGISTER
-            .get_or_try_init(|| {
-                unsafe {
-                    type SqliteExtensionInit = unsafe extern "C" fn(
-                        *mut ffi::sqlite3,
-                        *mut *mut c_char,
-                        *const ffi::sqlite3_api_routines,
-                    ) -> i32;
+        static REGISTERED: Mutex<bool> = Mutex::new(false);
 
-                    let init: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
-                    let init_fn: SqliteExtensionInit =
-                        transmute::<unsafe extern "C" fn(), SqliteExtensionInit>(init);
-                    let rc = ffi::sqlite3_auto_extension(Some(init_fn));
-                    if rc != 0 {
-                        return Err(RagError::Storage(format!(
-                            "failed to register sqlite-vec extension (code {rc})"
-                        )));
-                    }
-                }
-                Ok(())
-            })
-            .map(|_| ())
+        let mut registered = REGISTERED.lock();
+        if *registered {
+            return Ok(());
+        }
+
+        unsafe {
+            type SqliteExtensionInit = unsafe extern "C" fn(
+                *mut ffi::sqlite3,
+                *mut *mut c_char,
+                *const ffi::sqlite3_api_routines,
+            ) -> i32;
+
+            let init: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
+            let init_fn: SqliteExtensionInit =
+                transmute::<unsafe extern "C" fn(), SqliteExtensionInit>(init);
+            let rc = ffi::sqlite3_auto_extension(Some(init_fn));
+            if rc != 0 {
+                return Err(RagError::Storage(format!(
+                    "failed to register sqlite-vec extension (code {rc})"
+                )));
+            }
+        }
+
+        *registered = true;
+        Ok(())
     }
 
     pub fn index(&self, model: E) -> SqliteVectorIndex<E, ChunkDocument> {
