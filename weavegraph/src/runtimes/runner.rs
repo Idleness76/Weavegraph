@@ -41,6 +41,35 @@ pub struct StateVersions {
     pub extra_version: u32,
 }
 
+/// Context captured at error time for debugging and retry decisions
+#[derive(Debug, Clone)]
+pub struct FrontierContext {
+    pub frontier: Vec<NodeKind>,
+    pub versions: StateVersions,
+}
+
+impl std::fmt::Display for FrontierContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "frontier: {:?}, messages_version: {}, extra_version: {}",
+            self.frontier, self.versions.messages_version, self.versions.extra_version
+        )
+    }
+}
+
+impl FrontierContext {
+    pub fn capture(s: &SessionState) -> Self {
+        Self {
+            frontier: s.frontier.clone(),
+            versions: StateVersions {
+                messages_version: s.state.messages.version(),
+                extra_version: s.state.extra.version(),
+            },
+        }
+    }
+}
+
 /// Session state that needs to be persisted across steps
 #[derive(Debug, Clone)]
 pub struct SessionState {
@@ -233,9 +262,14 @@ pub enum RunnerError {
     #[diagnostic(code(weavegraph::runner::barrier))]
     AppBarrier(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error(transparent)]
+    #[error("scheduler error")]
     #[diagnostic(code(weavegraph::runner::scheduler))]
-    Scheduler(#[from] SchedulerError),
+    Scheduler {
+        #[source]
+        source: SchedulerError,
+        #[help]
+        context: FrontierContext,
+    },
 }
 
 impl AppRunner {
@@ -676,7 +710,7 @@ impl AppRunner {
             Err(e) => {
                 // Build error event
                 let event = match &e {
-                    RunnerError::Scheduler(s) => match s {
+                    RunnerError::Scheduler { source, .. } => match source {
                         crate::schedulers::SchedulerError::NodeRun { kind, step, source } => {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
@@ -796,7 +830,11 @@ impl AppRunner {
                 step,
                 self.event_bus.get_emitter(),
             )
-            .await?;
+            .await
+            .map_err(|source| RunnerError::Scheduler {
+                source,
+                context: FrontierContext::capture(session_state),
+            })?;
 
         let mut by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
         for (k, p) in result.outputs {
