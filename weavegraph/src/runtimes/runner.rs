@@ -727,12 +727,11 @@ impl AppRunner {
                 // Save back to sessions map so callers can inspect accumulated errors
                 self.sessions.insert(session_id.to_string(), session_state);
                 // Re-persist if autosave
-                if self.autosave {
-                    if let Some(cp) = &self.checkpointer {
-                        if let Some(s) = self.sessions.get(session_id) {
-                            let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
-                        }
-                    }
+                if self.autosave
+                    && let Some(cp) = &self.checkpointer
+                    && let Some(s) = self.sessions.get(session_id)
+                {
+                    let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
                 }
                 return Err(e);
             }
@@ -941,12 +940,11 @@ impl AppRunner {
         let checkpoint_span = tracing::info_span!("checkpoint", step);
         checkpoint_span
             .in_scope(|| async {
-                if self.autosave {
-                    if let Some(cp) = &self.checkpointer {
-                        if let Some(s) = self.sessions.get(session_id) {
-                            let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
-                        }
-                    }
+                if self.autosave
+                    && let Some(cp) = &self.checkpointer
+                    && let Some(s) = self.sessions.get(session_id)
+                {
+                    let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
                 }
             })
             .await;
