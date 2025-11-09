@@ -754,7 +754,7 @@ impl AppRunner {
             let persisted = session_state.clone();
             self.sessions.insert(session_id.to_string(), persisted);
             // Re-persist via helper
-            self.maybe_checkpoint(session_id).await;
+            self.maybe_checkpoint(session_id, step_report.step).await;
             return Ok(StepResult::Paused(PausedReport {
                 session_state,
                 reason: PausedReason::AfterNode(node.clone()),
@@ -764,7 +764,7 @@ impl AppRunner {
             let persisted = session_state.clone();
             self.sessions.insert(session_id.to_string(), persisted);
             // Re-persist via helper
-            self.maybe_checkpoint(session_id).await;
+            self.maybe_checkpoint(session_id, step_report.step).await;
             return Ok(StepResult::Paused(PausedReport {
                 session_state,
                 reason: PausedReason::AfterStep(step_report.step),
@@ -774,7 +774,7 @@ impl AppRunner {
         // Normal completion path: reinsert owned session_state directly (no clone)
         self.sessions.insert(session_id.to_string(), session_state);
         // Persist via helper
-        self.maybe_checkpoint(session_id).await;
+        self.maybe_checkpoint(session_id, step_report.step).await;
         Ok(StepResult::Completed(step_report))
     }
 
@@ -942,15 +942,17 @@ impl AppRunner {
     }
 
     /// Conditionally persist a checkpoint for the given session if autosave is enabled.
-    #[tracing::instrument(skip(self))]
-    async fn maybe_checkpoint(&self, session_id: &str) {
-        if self.autosave {
-            if let Some(cp) = &self.checkpointer {
-                if let Some(s) = self.sessions.get(session_id) {
-                    let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
+    async fn maybe_checkpoint(&self, session_id: &str, step: u64) {
+        let checkpoint_span = tracing::info_span!("checkpoint", step);
+        checkpoint_span.in_scope(|| async {
+            if self.autosave {
+                if let Some(cp) = &self.checkpointer {
+                    if let Some(s) = self.sessions.get(session_id) {
+                        let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
+                    }
                 }
             }
-        }
+        }).await;
     }
 
     /// Helper method that executes exactly one superstep on the given session state.
@@ -968,17 +970,23 @@ impl AppRunner {
         tracing::debug!(step, "starting superstep");
 
         // Phase 1: schedule and normalize outputs
-        let sched = self.schedule_step(session_state, step).await?;
+        let schedule_span = tracing::info_span!("schedule", step, frontier_len = session_state.frontier.len());
+        let sched = schedule_span.in_scope(|| self.schedule_step(session_state, step)).await?;
 
         // Phase 2: apply barrier and update state
-        let barrier_outcome =
-            self
-                .apply_barrier_and_update(session_state, &sched.ran_nodes, sched.partials)
-                .await?;
+        let errors_in_partials = sched.partials.iter().filter_map(|p| p.errors.as_ref()).map(|e| e.len()).sum::<usize>();
+        let barrier_span = tracing::info_span!("barrier", ran_nodes_len = sched.ran_nodes.len(), errors_in_partials);
+        let barrier_outcome = barrier_span.in_scope(|| 
+            self.apply_barrier_and_update(session_state, &sched.ran_nodes, sched.partials)
+        ).await?;
 
         // Phase 3: compute next frontier
-        let next_frontier =
-            self.compute_next_frontier(session_state, &sched.ran_nodes, &barrier_outcome, step);
+        let commands_count = barrier_outcome.frontier_commands.len();
+        let conditional_edges_evaluated = self.app.conditional_edges().len();
+        let frontier_span = tracing::info_span!("frontier", commands_count, conditional_edges_evaluated);
+        let next_frontier = frontier_span.in_scope(|| 
+            self.compute_next_frontier(session_state, &sched.ran_nodes, &barrier_outcome, step)
+        );
 
         tracing::debug!(
             step,
