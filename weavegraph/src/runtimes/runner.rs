@@ -81,6 +81,13 @@ pub enum StepResult {
     Paused(PausedReport),
 }
 
+/// Outcome from scheduler after normalization (ordered partials)
+struct SchedulerOutcome {
+    ran_nodes: Vec<NodeKind>,
+    skipped_nodes: Vec<NodeKind>,
+    partials: Vec<NodePartial>,
+}
+
 enum StreamEndReason {
     Completed { step: u64 },
     Error { step: Option<u64>, error: String },
@@ -753,32 +760,15 @@ impl AppRunner {
         Ok(StepResult::Completed(step_report))
     }
 
-    /// Helper method that executes exactly one superstep on the given session state.
-    ///
-    /// Applies barrier outcomes (including frontier commands) and returns the updated
-    /// step report with deterministic routing decisions.
-    #[instrument(skip(self, session_state), err)]
-    async fn run_one_superstep(
+    /// Schedule one step: invoke scheduler and normalize outputs to ordered partials.
+    #[inline]
+    async fn schedule_step(
         &self,
         session_state: &mut SessionState,
-    ) -> Result<StepReport, RunnerError> {
-        session_state.step += 1;
-        let step = session_state.step;
-
-        tracing::debug!(step, "starting superstep");
-
+        step: u64,
+    ) -> Result<SchedulerOutcome, RunnerError> {
         let snapshot = session_state.state.snapshot();
-        tracing::debug!(
-            step,
-            messages = snapshot.messages.len(),
-            messages_version = snapshot.messages_version,
-            extra_keys = snapshot.extra.len(),
-            extra_version = snapshot.extra_version,
-            "state snapshot prior to scheduling"
-        );
-
-        // Execute via scheduler
-        let step_result = session_state
+        let result = session_state
             .scheduler
             .superstep(
                 &mut session_state.scheduler_state,
@@ -790,44 +780,65 @@ impl AppRunner {
             )
             .await?;
 
-        // Reorder outputs to match ran_nodes order expected by the barrier
         let mut by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
-        for (kind, part) in step_result.outputs {
-            by_kind.insert(kind, part);
+        for (k, p) in result.outputs {
+            by_kind.insert(k, p);
         }
-        let run_ids: Vec<NodeKind> = step_result.ran_nodes.clone();
-        let node_partials: Vec<NodePartial> = run_ids
+        let ran = result.ran_nodes.clone();
+        let partials = ran
             .iter()
             .cloned()
             .filter_map(|k| by_kind.remove(&k))
             .collect();
+        
+        Ok(SchedulerOutcome {
+            ran_nodes: ran,
+            skipped_nodes: result.skipped_nodes,
+            partials,
+        })
+    }
 
-        // Apply barrier using the app's existing method
+    /// Apply barrier and update session state with the results.
+    #[tracing::instrument(skip(self, session_state, partials, ran), err)]
+    async fn apply_barrier_and_update(
+        &self,
+        session_state: &mut SessionState,
+        ran: &[NodeKind],
+        partials: Vec<NodePartial>,
+    ) -> Result<BarrierOutcome, RunnerError> {
         let mut update_state = session_state.state.clone();
-        let barrier_outcome = self
+        let outcome = self
             .app
-            .apply_barrier(&mut update_state, &run_ids, node_partials)
+            .apply_barrier(&mut update_state, ran, partials)
             .await
             .map_err(RunnerError::AppBarrier)?;
-
-        // Update session state with the modified state
         session_state.state = update_state;
+        Ok(outcome)
+    }
 
-        // Compute next frontier: unconditional edges + control commands + conditional edges
+    /// Compute next frontier from barrier outcome, resolving commands and conditional edges.
+    #[inline]
+    fn compute_next_frontier(
+        &self,
+        session_state: &SessionState,
+        ran: &[NodeKind],
+        barrier: &BarrierOutcome,
+        step: u64,
+    ) -> Vec<NodeKind> {
         let mut next_frontier: Vec<NodeKind> = Vec::new();
         let app_edges = self.app.edges();
         let conditional_edges = self.app.conditional_edges();
         let snapshot = session_state.state.snapshot();
 
         let mut command_map: FxHashMap<NodeKind, Vec<FrontierCommand>> = FxHashMap::default();
-        for (origin, command) in &barrier_outcome.frontier_commands {
+        for (origin, command) in &barrier.frontier_commands {
             command_map
                 .entry(origin.clone())
                 .or_default()
                 .push(command.clone());
         }
 
-        for id in run_ids.iter() {
+        for id in ran.iter() {
             let default_edges = app_edges.get(id).cloned().unwrap_or_default();
             let mut routes: Vec<NodeKind> = Vec::new();
             let mut replaced = false;
@@ -909,6 +920,36 @@ impl AppRunner {
             }
         }
 
+        next_frontier
+    }
+
+    /// Helper method that executes exactly one superstep on the given session state.
+    ///
+    /// Applies barrier outcomes (including frontier commands) and returns the updated
+    /// step report with deterministic routing decisions.
+    #[instrument(skip(self, session_state), err)]
+    async fn run_one_superstep(
+        &self,
+        session_state: &mut SessionState,
+    ) -> Result<StepReport, RunnerError> {
+        session_state.step += 1;
+        let step = session_state.step;
+
+        tracing::debug!(step, "starting superstep");
+
+        // Phase 1: schedule and normalize outputs
+        let sched = self.schedule_step(session_state, step).await?;
+
+        // Phase 2: apply barrier and update state
+        let barrier_outcome =
+            self
+                .apply_barrier_and_update(session_state, &sched.ran_nodes, sched.partials)
+                .await?;
+
+        // Phase 3: compute next frontier
+        let next_frontier =
+            self.compute_next_frontier(session_state, &sched.ran_nodes, &barrier_outcome, step);
+
         tracing::debug!(
             step,
             updated_channels = ?barrier_outcome.updated_channels,
@@ -930,8 +971,8 @@ impl AppRunner {
 
         Ok(StepReport {
             step,
-            ran_nodes: run_ids,
-            skipped_nodes: step_result.skipped_nodes,
+            ran_nodes: sched.ran_nodes,
+            skipped_nodes: sched.skipped_nodes,
             barrier_outcome,
             next_frontier,
             state_versions,
