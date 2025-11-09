@@ -41,35 +41,6 @@ pub struct StateVersions {
     pub extra_version: u32,
 }
 
-/// Context captured at error time for debugging and retry decisions
-#[derive(Debug, Clone)]
-pub struct FrontierContext {
-    pub frontier: Vec<NodeKind>,
-    pub versions: StateVersions,
-}
-
-impl std::fmt::Display for FrontierContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "frontier: {:?}, messages_version: {}, extra_version: {}",
-            self.frontier, self.versions.messages_version, self.versions.extra_version
-        )
-    }
-}
-
-impl FrontierContext {
-    pub fn capture(s: &SessionState) -> Self {
-        Self {
-            frontier: s.frontier.clone(),
-            versions: StateVersions {
-                messages_version: s.state.messages.version(),
-                extra_version: s.state.extra.version(),
-            },
-        }
-    }
-}
-
 /// Session state that needs to be persisted across steps
 #[derive(Debug, Clone)]
 pub struct SessionState {
@@ -262,14 +233,9 @@ pub enum RunnerError {
     #[diagnostic(code(weavegraph::runner::barrier))]
     AppBarrier(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("scheduler error")]
+    #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::scheduler))]
-    Scheduler {
-        #[source]
-        source: SchedulerError,
-        #[help]
-        context: FrontierContext,
-    },
+    Scheduler(#[from] SchedulerError),
 }
 
 impl AppRunner {
@@ -669,9 +635,7 @@ impl AppRunner {
         };
 
         // Check if already completed
-        if frontier_snapshot.is_empty()
-            || frontier_snapshot.iter().all(|n| *n == NodeKind::End)
-        {
+        if frontier_snapshot.is_empty() || frontier_snapshot.iter().all(|n| *n == NodeKind::End) {
             return Ok(StepResult::Completed(StepReport {
                 step: step_before,
                 ran_nodes: vec![],
@@ -710,7 +674,7 @@ impl AppRunner {
             Err(e) => {
                 // Build error event
                 let event = match &e {
-                    RunnerError::Scheduler { source, .. } => match source {
+                    RunnerError::Scheduler(source) => match source {
                         crate::schedulers::SchedulerError::NodeRun { kind, step, source } => {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
@@ -761,15 +725,12 @@ impl AppRunner {
                     .await;
                 session_state.state = update_state;
                 // Save back to sessions map so callers can inspect accumulated errors
-                self.sessions
-                    .insert(session_id.to_string(), session_state);
+                self.sessions.insert(session_id.to_string(), session_state);
                 // Re-persist if autosave
                 if self.autosave {
                     if let Some(cp) = &self.checkpointer {
                         if let Some(s) = self.sessions.get(session_id) {
-                            let _ = cp
-                                .save(Checkpoint::from_session(session_id, s))
-                                .await;
+                            let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
                         }
                     }
                 }
@@ -830,11 +791,7 @@ impl AppRunner {
                 step,
                 self.event_bus.get_emitter(),
             )
-            .await
-            .map_err(|source| RunnerError::Scheduler {
-                source,
-                context: FrontierContext::capture(session_state),
-            })?;
+            .await?;
 
         let mut by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
         for (k, p) in result.outputs {
@@ -846,7 +803,7 @@ impl AppRunner {
             .cloned()
             .filter_map(|k| by_kind.remove(&k))
             .collect();
-        
+
         Ok(SchedulerOutcome {
             ran_nodes: ran,
             skipped_nodes: result.skipped_nodes,
@@ -982,15 +939,17 @@ impl AppRunner {
     /// Conditionally persist a checkpoint for the given session if autosave is enabled.
     async fn maybe_checkpoint(&self, session_id: &str, step: u64) {
         let checkpoint_span = tracing::info_span!("checkpoint", step);
-        checkpoint_span.in_scope(|| async {
-            if self.autosave {
-                if let Some(cp) = &self.checkpointer {
-                    if let Some(s) = self.sessions.get(session_id) {
-                        let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
+        checkpoint_span
+            .in_scope(|| async {
+                if self.autosave {
+                    if let Some(cp) = &self.checkpointer {
+                        if let Some(s) = self.sessions.get(session_id) {
+                            let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
+                        }
                     }
                 }
-            }
-        }).await;
+            })
+            .await;
     }
 
     /// Helper method that executes exactly one superstep on the given session state.
@@ -1008,23 +967,41 @@ impl AppRunner {
         tracing::debug!(step, "starting superstep");
 
         // Phase 1: schedule and normalize outputs
-        let schedule_span = tracing::info_span!("schedule", step, frontier_len = session_state.frontier.len());
-        let sched = schedule_span.in_scope(|| self.schedule_step(session_state, step)).await?;
+        let schedule_span = tracing::info_span!(
+            "schedule",
+            step,
+            frontier_len = session_state.frontier.len()
+        );
+        let sched = schedule_span
+            .in_scope(|| self.schedule_step(session_state, step))
+            .await?;
 
         // Phase 2: apply barrier and update state
-        let errors_in_partials = sched.partials.iter().filter_map(|p| p.errors.as_ref()).map(|e| e.len()).sum::<usize>();
-        let barrier_span = tracing::info_span!("barrier", ran_nodes_len = sched.ran_nodes.len(), errors_in_partials);
-        let barrier_outcome = barrier_span.in_scope(|| 
-            self.apply_barrier_and_update(session_state, &sched.ran_nodes, sched.partials)
-        ).await?;
+        let errors_in_partials = sched
+            .partials
+            .iter()
+            .filter_map(|p| p.errors.as_ref())
+            .map(|e| e.len())
+            .sum::<usize>();
+        let barrier_span = tracing::info_span!(
+            "barrier",
+            ran_nodes_len = sched.ran_nodes.len(),
+            errors_in_partials
+        );
+        let barrier_outcome = barrier_span
+            .in_scope(|| {
+                self.apply_barrier_and_update(session_state, &sched.ran_nodes, sched.partials)
+            })
+            .await?;
 
         // Phase 3: compute next frontier
         let commands_count = barrier_outcome.frontier_commands.len();
         let conditional_edges_evaluated = self.app.conditional_edges().len();
-        let frontier_span = tracing::info_span!("frontier", commands_count, conditional_edges_evaluated);
-        let next_frontier = frontier_span.in_scope(|| 
+        let frontier_span =
+            tracing::info_span!("frontier", commands_count, conditional_edges_evaluated);
+        let next_frontier = frontier_span.in_scope(|| {
             self.compute_next_frontier(session_state, &sched.ran_nodes, &barrier_outcome, step)
-        );
+        });
 
         tracing::debug!(
             step,
@@ -1201,12 +1178,12 @@ impl AppRunner {
         &self,
         session_id: &str,
     ) -> Result<(VersionedState, StateVersions, u64), RunnerError> {
-        let final_session = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| RunnerError::SessionNotFound {
-                session_id: session_id.to_string(),
-            })?;
+        let final_session =
+            self.sessions
+                .get(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
 
         let final_state = final_session.state.clone();
         let state_versions = StateVersions {
