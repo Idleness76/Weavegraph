@@ -1,18 +1,12 @@
 # Contributing to Weavegraph
 
-Thank you for your interest in contributing to Weavegraph! This project welcomes contributions from developers of all skill levels.
-
-## 🎓 Project Origins
-
-Weavegraph began as a capstone project for a Rust online course, developed by contributors with backgrounds in Python and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to the Rust ecosystem with modern concurrency, type safety, and performance benefits.
-
-While the project started in an educational context, **it has grown beyond the classroom** and continues active development well beyond course completion. As an early beta framework (v0.1.x), we're actively evolving APIs and architecture based on real-world usage and community feedback.
+Thank you for your interest in contributing to Weavegraph! This project welcomes contributions from developers of all skill levels. As an early beta framework (v0.1.x), we're actively evolving APIs and architecture based on real-world usage and community feedback.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Rust 1.91 or later
+- Rust 1.89 or later
 - Basic familiarity with async Rust and the `tokio` runtime
 - Understanding of graph-based workflows is helpful but not required
 
@@ -97,7 +91,7 @@ We welcome various types of contributions:
 
 #### Development Guidelines
 
-**Code Style**:
+**Code Style and Guidelines**:
 - Follow standard Rust formatting (`cargo fmt`)
 - Run Clippy and address warnings (`cargo clippy`)
 - Use meaningful variable and function names
@@ -128,91 +122,6 @@ We welcome various types of contributions:
 - Add more real-world examples
 - Create tutorials for common patterns
 - Translate documentation (future consideration)
-
-## 🔄 Pull Request Process
-
-1. **Fork the repository** and create a feature branch
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make your changes** following the guidelines above
-
-3. **Test thoroughly**:
-   ```bash
-   cargo test --all
-   cargo clippy
-   cargo fmt --check
-   ```
-
-4. **Update documentation** as needed
-
-5. **Submit the pull request**:
-   - Provide a clear description of changes
-   - Reference any related issues
-   - Include examples of the new functionality
-   - Ensure CI passes
-
-6. **Respond to feedback** and iterate as needed
-
-## 🏗️ Architecture Guidelines
-
-When contributing, keep these architectural principles in mind:
-
-### Core Principles
-
-- **Composability**: Components should work well together
-- **Type Safety**: Leverage Rust's type system for correctness
-- **Performance**: Efficient concurrent execution without sacrificing safety
-- **Observability**: Rich tracing and event streaming throughout
-- **Error Handling**: Comprehensive, actionable error reporting
-
-### Module Organization
-
-- **`message`**: Keep message types simple and role-focused
-- **`state`**: Maintain versioning and snapshot isolation
-- **`node`**: Async-first design with clear error propagation
-- **`graph`**: Declarative graph definition with conditional routing
-- **`schedulers`**: Concurrent execution with dependency resolution
-- **`runtimes`**: High-level orchestration and persistence
-- **`channels`**: Efficient state storage and versioning
-- **`reducers`**: Deterministic merge strategies
-- **`event_bus`**: Non-blocking event streaming
-
-### Design Patterns
-
-- **Builder Pattern**: For complex object construction
-- **Convenience Constructors**: Reduce boilerplate for common cases
-- **Rich Error Types**: Provide context and suggestions
-- **Instrument Everything**: Add tracing spans for observability
-
-## 🧪 Testing Philosophy
-
-- **Unit Tests**: Test individual components in isolation
-- **Integration Tests**: Test component interactions
-- **Property Tests**: Use `proptest` for edge case discovery
-- **Example Tests**: Ensure all examples compile and run
-- **Performance Tests**: Benchmark critical paths
-
-## 📋 Project Roadmap
-
-### Short Term (Next 3 months)
-- Enhanced LLM integration patterns
-- Additional persistence backends
-- Performance optimizations
-- More comprehensive examples
-
-### Medium Term (6 months)
-- Distributed execution capabilities
-- Enhanced monitoring and metrics
-- Plugin system for custom components
-- WebAssembly support exploration
-
-### Long Term (1+ years)
-- Multi-language bindings
-- Cloud-native deployment patterns
-- Enterprise features (audit trails, compliance)
-- Integration with major ML/AI platforms
 
 ## 💬 Community
 
