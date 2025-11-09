@@ -213,7 +213,10 @@ async fn setup_test_database(conn: &Connection) -> Result<()> {
             )",
             [],
         )?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_url ON chunks(url)", [])?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chunks_url ON chunks(url)",
+            [],
+        )?;
         Ok(())
     })
     .await?;
