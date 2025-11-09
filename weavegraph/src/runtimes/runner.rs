@@ -619,43 +619,56 @@ impl AppRunner {
         session_id: &str,
         options: StepOptions,
     ) -> Result<StepResult, RunnerError> {
-        // Clone session state to avoid borrowing issues
-        let mut session_state = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| RunnerError::SessionNotFound {
-                session_id: session_id.to_string(),
-            })?
-            .clone();
+        // Phase 3.1 (Clone Reduction - A): capture minimal snapshots without cloning full session
+        let (step_before, frontier_snapshot, versions_snapshot) = {
+            let s = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
+            let versions = StateVersions {
+                messages_version: s.state.messages.version(),
+                extra_version: s.state.extra.version(),
+            };
+            (s.step, s.frontier.clone(), versions)
+        };
 
         // Check if already completed
-        if session_state.frontier.is_empty()
-            || session_state.frontier.iter().all(|n| *n == NodeKind::End)
+        if frontier_snapshot.is_empty()
+            || frontier_snapshot.iter().all(|n| *n == NodeKind::End)
         {
-            let versions = StateVersions {
-                messages_version: session_state.state.messages.version(),
-                extra_version: session_state.state.extra.version(),
-            };
             return Ok(StepResult::Completed(StepReport {
-                step: session_state.step,
+                step: step_before,
                 ran_nodes: vec![],
-                skipped_nodes: session_state.frontier.clone(),
+                skipped_nodes: frontier_snapshot.clone(),
                 barrier_outcome: BarrierOutcome::default(),
                 next_frontier: vec![],
-                state_versions: versions,
+                state_versions: versions_snapshot,
                 completed: true,
             }));
         }
 
         // Check for interrupt_before
-        for node in &session_state.frontier {
+        for node in &frontier_snapshot {
             if options.interrupt_before.contains(node) {
+                let session_state = self
+                    .sessions
+                    .get(session_id)
+                    .expect("session exists after initial lookup")
+                    .clone();
                 return Ok(StepResult::Paused(PausedReport {
-                    session_state: session_state.clone(),
+                    session_state,
                     reason: PausedReason::BeforeNode(node.clone()),
                 }));
             }
         }
+
+        // Take ownership of session state for execution (eliminates full clone)
+        let mut session_state = self
+            .sessions
+            .remove(session_id)
+            .expect("session exists after initial lookup");
 
         // Execute one superstep; on error, emit an ErrorEvent and rethrow
         let step_report = match self.run_one_superstep(&mut session_state).await {
@@ -715,48 +728,53 @@ impl AppRunner {
                 session_state.state = update_state;
                 // Save back to sessions map so callers can inspect accumulated errors
                 self.sessions
-                    .insert(session_id.to_string(), session_state.clone());
+                    .insert(session_id.to_string(), session_state);
                 // Re-persist if autosave
-                if self.autosave
-                    && let Some(cp) = &self.checkpointer
-                {
-                    let _ = cp
-                        .save(Checkpoint::from_session(session_id, &session_state))
-                        .await;
+                if self.autosave {
+                    if let Some(cp) = &self.checkpointer {
+                        if let Some(s) = self.sessions.get(session_id) {
+                            let _ = cp
+                                .save(Checkpoint::from_session(session_id, s))
+                                .await;
+                        }
+                    }
                 }
                 return Err(e);
             }
         };
 
-        // Update the session in map & persist if configured
-        self.sessions
-            .insert(session_id.to_string(), session_state.clone());
-        if self.autosave
-            && let Some(cp) = &self.checkpointer
+        // Evaluate post-execution interrupts BEFORE reinserting to minimize clones
+        // If an interrupt triggers, we insert a clone for persistence and move original into PausedReport.
+        if let Some(node) = step_report
+            .ran_nodes
+            .iter()
+            .find(|n| options.interrupt_after.contains(n))
         {
-            let _ = cp
-                .save(Checkpoint::from_session(session_id, &session_state))
-                .await;
-        }
-
-        // Check for interrupt_after
-        for node in &step_report.ran_nodes {
-            if options.interrupt_after.contains(node) {
-                return Ok(StepResult::Paused(PausedReport {
-                    session_state: session_state.clone(),
-                    reason: PausedReason::AfterNode(node.clone()),
-                }));
-            }
-        }
-
-        // Check for interrupt_each_step
-        if options.interrupt_each_step {
+            // Persist a clone, return original in PausedReport
+            let persisted = session_state.clone();
+            self.sessions.insert(session_id.to_string(), persisted);
+            // Re-persist via helper
+            self.maybe_checkpoint(session_id).await;
             return Ok(StepResult::Paused(PausedReport {
-                session_state: session_state.clone(),
+                session_state,
+                reason: PausedReason::AfterNode(node.clone()),
+            }));
+        }
+        if options.interrupt_each_step {
+            let persisted = session_state.clone();
+            self.sessions.insert(session_id.to_string(), persisted);
+            // Re-persist via helper
+            self.maybe_checkpoint(session_id).await;
+            return Ok(StepResult::Paused(PausedReport {
+                session_state,
                 reason: PausedReason::AfterStep(step_report.step),
             }));
         }
 
+        // Normal completion path: reinsert owned session_state directly (no clone)
+        self.sessions.insert(session_id.to_string(), session_state);
+        // Persist via helper
+        self.maybe_checkpoint(session_id).await;
         Ok(StepResult::Completed(step_report))
     }
 
@@ -923,6 +941,18 @@ impl AppRunner {
         next_frontier
     }
 
+    /// Conditionally persist a checkpoint for the given session if autosave is enabled.
+    #[tracing::instrument(skip(self))]
+    async fn maybe_checkpoint(&self, session_id: &str) {
+        if self.autosave {
+            if let Some(cp) = &self.checkpointer {
+                if let Some(s) = self.sessions.get(session_id) {
+                    let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
+                }
+            }
+        }
+    }
+
     /// Helper method that executes exactly one superstep on the given session state.
     ///
     /// Applies barrier outcomes (including frontier commands) and returns the updated
@@ -997,9 +1027,7 @@ impl AppRunner {
                         session_id: session_id.to_string(),
                     })?;
 
-            if session_state.frontier.is_empty()
-                || session_state.frontier.iter().all(|n| *n == NodeKind::End)
-            {
+            if self.is_session_complete(session_state) {
                 tracing::info!(
                     session = %session_id,
                     step = session_state.step,
@@ -1047,35 +1075,11 @@ impl AppRunner {
         }
 
         tracing::info!(session = %session_id, "workflow run completed");
-        let (
-            final_state,
-            messages_snapshot,
-            messages_version,
-            extra_snapshot,
-            extra_version,
-            final_step,
-        ) = {
-            let final_session =
-                self.sessions
-                    .get(session_id)
-                    .ok_or_else(|| RunnerError::SessionNotFound {
-                        session_id: session_id.to_string(),
-                    })?;
-            let final_state = final_session.state.clone();
-            let messages_snapshot = final_state.messages.snapshot();
-            let messages_version = final_state.messages.version();
-            let extra_snapshot = final_state.extra.snapshot();
-            let extra_version = final_state.extra.version();
-            let final_step = final_session.step;
-            (
-                final_state,
-                messages_snapshot,
-                messages_version,
-                extra_snapshot,
-                extra_version,
-                final_step,
-            )
-        };
+        let (final_state, versions, final_step) = self.finalize_state_snapshot(session_id)?;
+        let messages_snapshot = final_state.messages.snapshot();
+        let extra_snapshot = final_state.extra.snapshot();
+        let messages_version = versions.messages_version;
+        let extra_version = versions.extra_version;
 
         // Print final state summary (matching App::invoke output)
         for (i, m) in messages_snapshot.iter().enumerate() {
@@ -1138,6 +1142,35 @@ impl AppRunner {
 }
 
 impl AppRunner {
+    /// Determine if a session has reached a terminal frontier (no work or only End nodes).
+    #[inline]
+    fn is_session_complete(&self, s: &SessionState) -> bool {
+        s.frontier.is_empty() || s.frontier.iter().all(|n| *n == NodeKind::End)
+    }
+
+    /// Return the final state clone, channel versions, and last step for the session.
+    /// Logging should occur after retrieval by the caller.
+    #[inline]
+    fn finalize_state_snapshot(
+        &self,
+        session_id: &str,
+    ) -> Result<(VersionedState, StateVersions, u64), RunnerError> {
+        let final_session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| RunnerError::SessionNotFound {
+                session_id: session_id.to_string(),
+            })?;
+
+        let final_state = final_session.state.clone();
+        let state_versions = StateVersions {
+            messages_version: final_state.messages.version(),
+            extra_version: final_state.extra.version(),
+        };
+        let final_step = final_session.step;
+        Ok((final_state, state_versions, final_step))
+    }
+
     fn finalize_event_stream(&mut self, session_id: &str, reason: StreamEndReason) {
         let message = match reason {
             StreamEndReason::Completed { step } => {
