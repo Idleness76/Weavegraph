@@ -19,3 +19,8 @@ ignore = [
     "RUSTSEC-2025-0052", # async-std transitive dependency used only in test tooling
     "RUSTSEC-2025-0057", # fxhash via scraper/selectors; upstream is unmaintained but non-optional
 ]
+
+[bans]
+# Multiple versions of these crates are unavoidable transitive dependencies
+# They come from incompatible version ranges in upstream dependencies
+multiple-versions = "warn"
