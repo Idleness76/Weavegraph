@@ -620,35 +620,39 @@ impl AppRunner {
         options: StepOptions,
     ) -> Result<StepResult, RunnerError> {
         // Phase 3.1 (Clone Reduction - A): capture minimal snapshots without cloning full session
-        let (step_before, frontier_snapshot, versions_snapshot) = {
-            let s = self
-                .sessions
-                .get(session_id)
-                .ok_or_else(|| RunnerError::SessionNotFound {
-                    session_id: session_id.to_string(),
-                })?;
+        let (current_step, current_frontier, current_versions) = {
+            let current_session_state =
+                self.sessions
+                    .get(session_id)
+                    .ok_or_else(|| RunnerError::SessionNotFound {
+                        session_id: session_id.to_string(),
+                    })?;
             let versions = StateVersions {
-                messages_version: s.state.messages.version(),
-                extra_version: s.state.extra.version(),
+                messages_version: current_session_state.state.messages.version(),
+                extra_version: current_session_state.state.extra.version(),
             };
-            (s.step, s.frontier.clone(), versions)
+            (
+                current_session_state.step,
+                current_session_state.frontier.clone(),
+                versions,
+            )
         };
 
         // Check if already completed
-        if frontier_snapshot.is_empty() || frontier_snapshot.iter().all(|n| *n == NodeKind::End) {
+        if current_frontier.is_empty() || current_frontier.iter().all(|n| *n == NodeKind::End) {
             return Ok(StepResult::Completed(StepReport {
-                step: step_before,
+                step: current_step,
                 ran_nodes: vec![],
-                skipped_nodes: frontier_snapshot.clone(),
+                skipped_nodes: current_frontier.clone(),
                 barrier_outcome: BarrierOutcome::default(),
                 next_frontier: vec![],
-                state_versions: versions_snapshot,
+                state_versions: current_versions,
                 completed: true,
             }));
         }
 
         // Check for interrupt_before
-        for node in &frontier_snapshot {
+        for node in &current_frontier {
             if options.interrupt_before.contains(node) {
                 let session_state = self
                     .sessions
@@ -792,19 +796,19 @@ impl AppRunner {
             )
             .await?;
 
-        let mut by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
-        for (k, p) in result.outputs {
-            by_kind.insert(k, p);
+        let mut partials_by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
+        for (k, partial) in result.outputs {
+            partials_by_kind.insert(k, partial);
         }
-        let ran = result.ran_nodes.clone();
-        let partials = ran
+        let executed_nodes = result.ran_nodes.clone();
+        let partials = executed_nodes
             .iter()
             .cloned()
-            .filter_map(|k| by_kind.remove(&k))
+            .filter_map(|k| partials_by_kind.remove(&k))
             .collect();
 
         Ok(SchedulerOutcome {
-            ran_nodes: ran,
+            ran_nodes: executed_nodes,
             skipped_nodes: result.skipped_nodes,
             partials,
         })
@@ -838,29 +842,30 @@ impl AppRunner {
         step: u64,
     ) -> Vec<NodeKind> {
         let mut next_frontier: Vec<NodeKind> = Vec::new();
-        let app_edges = self.app.edges();
+        let graph_edges = self.app.edges();
         let conditional_edges = self.app.conditional_edges();
-        let snapshot = session_state.state.snapshot();
+        let state_snapshot = session_state.state.snapshot();
 
-        let mut command_map: FxHashMap<NodeKind, Vec<FrontierCommand>> = FxHashMap::default();
+        let mut frontier_commands_by_node: FxHashMap<NodeKind, Vec<FrontierCommand>> =
+            FxHashMap::default();
         for (origin, command) in &barrier.frontier_commands {
-            command_map
+            frontier_commands_by_node
                 .entry(origin.clone())
                 .or_default()
                 .push(command.clone());
         }
 
         for id in ran.iter() {
-            let default_edges = app_edges.get(id).cloned().unwrap_or_default();
-            let mut routes: Vec<NodeKind> = Vec::new();
-            let mut replaced = false;
+            let default_edges = graph_edges.get(id).cloned().unwrap_or_default();
+            let mut next_targets: Vec<NodeKind> = Vec::new();
+            let mut frontier_replaced = false;
 
-            if let Some(commands) = command_map.get(id) {
+            if let Some(commands) = frontier_commands_by_node.get(id) {
                 // Commands are processed in emission order to preserve author intent.
                 for command in commands {
                     match command {
                         FrontierCommand::Replace(entries) => {
-                            if replaced {
+                            if frontier_replaced {
                                 tracing::warn!(
                                     step,
                                     origin = %id.encode(),
@@ -871,31 +876,31 @@ impl AppRunner {
                                 );
                                 continue;
                             }
-                            routes = entries.iter().map(NodeRoute::to_node_kind).collect();
-                            replaced = true;
+                            next_targets = entries.iter().map(NodeRoute::to_node_kind).collect();
+                            frontier_replaced = true;
                         }
                         FrontierCommand::Append(entries) => {
-                            if routes.is_empty() && !replaced {
-                                routes.extend(default_edges.clone());
+                            if next_targets.is_empty() && !frontier_replaced {
+                                next_targets.extend(default_edges.clone());
                             }
-                            routes.extend(entries.iter().map(NodeRoute::to_node_kind));
+                            next_targets.extend(entries.iter().map(NodeRoute::to_node_kind));
                         }
                     }
                 }
 
-                if routes.is_empty() && !replaced {
-                    routes.extend(default_edges.clone());
+                if next_targets.is_empty() && !frontier_replaced {
+                    next_targets.extend(default_edges.clone());
                 }
             } else {
-                routes.extend(default_edges.clone());
+                next_targets.extend(default_edges.clone());
             }
 
-            if !replaced {
-                for ce in conditional_edges.iter().filter(|ce| ce.from() == id) {
-                    tracing::debug!(from = ?ce.from(), step, "evaluating conditional edge");
-                    let target_names = (ce.predicate())(snapshot.clone());
+            if !frontier_replaced {
+                for conditional_edge in conditional_edges.iter().filter(|ce| ce.from() == id) {
+                    tracing::debug!(from = ?conditional_edge.from(), step, "evaluating conditional edge");
+                    let target_node_names = (conditional_edge.predicate())(state_snapshot.clone());
 
-                    for target_name in target_names {
+                    for target_name in target_node_names {
                         let target = if target_name == "End" {
                             NodeKind::End
                         } else if target_name == "Start" {
@@ -906,12 +911,12 @@ impl AppRunner {
 
                         tracing::debug!(target = ?target, step, "conditional edge routed");
 
-                        routes.push(target);
+                        next_targets.push(target);
                     }
                 }
             }
 
-            for target in routes {
+            for target in next_targets {
                 let is_valid_target = match &target {
                     NodeKind::End | NodeKind::Start => true,
                     NodeKind::Custom(_) => self.app.nodes().contains_key(&target),
@@ -941,10 +946,12 @@ impl AppRunner {
         checkpoint_span
             .in_scope(|| async {
                 if self.autosave
-                    && let Some(cp) = &self.checkpointer
-                    && let Some(s) = self.sessions.get(session_id)
+                    && let Some(checkpointer) = &self.checkpointer
+                    && let Some(session_state) = self.sessions.get(session_id)
                 {
-                    let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
+                    let _ = checkpointer
+                        .save(Checkpoint::from_session(session_id, session_state))
+                        .await;
                 }
             })
             .await;
@@ -970,12 +977,12 @@ impl AppRunner {
             step,
             frontier_len = session_state.frontier.len()
         );
-        let sched = schedule_span
+        let scheduler_outcome = schedule_span
             .in_scope(|| self.schedule_step(session_state, step))
             .await?;
 
         // Phase 2: apply barrier and update state
-        let errors_in_partials = sched
+        let errors_in_partials = scheduler_outcome
             .partials
             .iter()
             .filter_map(|p| p.errors.as_ref())
@@ -983,12 +990,16 @@ impl AppRunner {
             .sum::<usize>();
         let barrier_span = tracing::info_span!(
             "barrier",
-            ran_nodes_len = sched.ran_nodes.len(),
+            ran_nodes_len = scheduler_outcome.ran_nodes.len(),
             errors_in_partials
         );
         let barrier_outcome = barrier_span
             .in_scope(|| {
-                self.apply_barrier_and_update(session_state, &sched.ran_nodes, sched.partials)
+                self.apply_barrier_and_update(
+                    session_state,
+                    &scheduler_outcome.ran_nodes,
+                    scheduler_outcome.partials,
+                )
             })
             .await?;
 
@@ -998,7 +1009,12 @@ impl AppRunner {
         let frontier_span =
             tracing::info_span!("frontier", commands_count, conditional_edges_evaluated);
         let next_frontier = frontier_span.in_scope(|| {
-            self.compute_next_frontier(session_state, &sched.ran_nodes, &barrier_outcome, step)
+            self.compute_next_frontier(
+                session_state,
+                &scheduler_outcome.ran_nodes,
+                &barrier_outcome,
+                step,
+            )
         });
 
         tracing::debug!(
@@ -1022,8 +1038,8 @@ impl AppRunner {
 
         Ok(StepReport {
             step,
-            ran_nodes: sched.ran_nodes,
-            skipped_nodes: sched.skipped_nodes,
+            ran_nodes: scheduler_outcome.ran_nodes,
+            skipped_nodes: scheduler_outcome.skipped_nodes,
             barrier_outcome,
             next_frontier,
             state_versions,
@@ -1165,8 +1181,9 @@ impl AppRunner {
 impl AppRunner {
     /// Determine if a session has reached a terminal frontier (no work or only End nodes).
     #[inline]
-    fn is_session_complete(&self, s: &SessionState) -> bool {
-        s.frontier.is_empty() || s.frontier.iter().all(|n| *n == NodeKind::End)
+    fn is_session_complete(&self, session_state: &SessionState) -> bool {
+        session_state.frontier.is_empty()
+            || session_state.frontier.iter().all(|n| *n == NodeKind::End)
     }
 
     /// Return the final state clone, channel versions, and last step for the session.
@@ -1176,19 +1193,19 @@ impl AppRunner {
         &self,
         session_id: &str,
     ) -> Result<(VersionedState, StateVersions, u64), RunnerError> {
-        let final_session =
+        let session_state =
             self.sessions
                 .get(session_id)
                 .ok_or_else(|| RunnerError::SessionNotFound {
                     session_id: session_id.to_string(),
                 })?;
 
-        let final_state = final_session.state.clone();
+        let final_state = session_state.state.clone();
         let state_versions = StateVersions {
             messages_version: final_state.messages.version(),
             extra_version: final_state.extra.version(),
         };
-        let final_step = final_session.step;
+        let final_step = session_state.step;
         Ok((final_state, state_versions, final_step))
     }
 
