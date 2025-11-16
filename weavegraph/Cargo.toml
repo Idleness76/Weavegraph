@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
