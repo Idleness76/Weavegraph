@@ -9,7 +9,7 @@ impl Reducer for AddErrors {
         if let Some(error_events) = &update.errors
             && !error_events.is_empty()
         {
-            state.errors.get_mut().extend(error_events.iter().cloned());
+            state.errors.get_mut().extend_from_slice(error_events);
         }
     }
 }

@@ -1,11 +1,11 @@
+use parking_lot::Once;
+use reqwest::Client;
+use rig::embeddings::embedding::{Embedding, EmbeddingError, EmbeddingModel};
+use scraper::{Html, Selector};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use reqwest::Client;
-use rig::embeddings::embedding::{Embedding, EmbeddingError, EmbeddingModel};
-use scraper::{Html, Selector};
 use tokio::fs;
 use tracing_subscriber::FmtSubscriber;
 use url::Url;
@@ -167,7 +167,7 @@ async fn main() -> Result<(), RagError> {
 }
 
 fn init_tracing() {
-    static INIT: std::sync::Once = std::sync::Once::new();
+    static INIT: Once = Once::new();
     INIT.call_once(|| {
         let subscriber = FmtSubscriber::builder().with_env_filter("info").finish();
         let _ = tracing::subscriber::set_global_default(subscriber);

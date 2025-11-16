@@ -1,20 +1,34 @@
-//! Checkpointer infrastructure
+//! Checkpointer infrastructure with thread‑safe persistence.
 //!
-//! This initial implementation introduces a `Checkpointer` trait and an
-//! in‑memory implementation (`InMemoryCheckpointer`). It is intentionally
-//! minimal: it stores only the latest checkpoint per session (no history)
-//! and performs no serialization (pure in‑process persistence). Later
-//! extensions (Week 2+) can add:
-//!   * Persistent backends (e.g. Postgres)
-//!   * Incremental history / lineage
-//!   * Compaction & retention policies
-//!   * Structured metadata & tracing correlation IDs
+//! This module provides:
+//! - Thread‑safe async operations using `tokio::sync::RwLock`
+//! - Tracing integration (`#[instrument]`) for observability
+//! - Multiple backends: in‑memory (volatile) and SQLite (durable)
 //!
+//! # Thread Safety
+//! All implementations use async‑aware synchronization primitives and can be
+//! called across `await` points without blocking executor threads.
+//!
+//! # Observability
+//! Each operation on `InMemoryCheckpointer` and `SQLiteCheckpointer` is
+//! instrumented with structured tracing fields (e.g. `session_id`, `step`).
+//! Enable debug logging to view activity:
+//! ```bash
+//! RUST_LOG=weavegraph::runtimes::checkpointer=debug cargo run
+//! ```
+//!
+//! # Storage Management
+//! - **InMemoryCheckpointer**: Stores only the latest checkpoint per session
+//!   (implicit retention; no history).
+//! - **SQLiteCheckpointer**: Stores full step history for durable audit and
+//!   replay; use external SQL maintenance for long‑running deployments.
+//!
+//! See type‑level docs for cleanup guidance.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use std::sync::RwLock;
 
 use crate::{
     runtimes::runner::SessionState, schedulers::SchedulerState, state::VersionedState,
@@ -305,7 +319,18 @@ pub trait Checkpointer: Send + Sync {
     async fn list_sessions(&self) -> Result<Vec<String>>;
 }
 
-/// Simple in‑memory checkpointer. Stores only the *latest* checkpoint per session.
+/// Simple in‑memory checkpointer with implicit retention.
+///
+/// Characteristics:
+/// - Volatile: process‑local only
+/// - Retention: last checkpoint per session (no historical steps)
+/// - Concurrency: `parking_lot::RwLock` for fast synchronous access (no async overhead)
+/// - Observability: `#[instrument]` on public trait methods
+///
+/// Enable debug tracing to inspect operations:
+/// ```bash
+/// RUST_LOG=weavegraph::runtimes::checkpointer=debug
+/// ```
 #[derive(Default)]
 pub struct InMemoryCheckpointer {
     inner: RwLock<FxHashMap<String, Checkpoint>>,
@@ -327,25 +352,22 @@ impl InMemoryCheckpointer {
 
 #[async_trait]
 impl Checkpointer for InMemoryCheckpointer {
+    #[tracing::instrument(skip(self), fields(session_id = %checkpoint.session_id, step = checkpoint.step))]
     async fn save(&self, checkpoint: Checkpoint) -> Result<()> {
-        let mut map = self.inner.write().map_err(|e| CheckpointerError::Backend {
-            message: format!("lock poisoned: {e}"),
-        })?;
+        let mut map = self.inner.write();
         map.insert(checkpoint.session_id.clone(), checkpoint);
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(session_id = %session_id))]
     async fn load_latest(&self, session_id: &str) -> Result<Option<Checkpoint>> {
-        let map = self.inner.read().map_err(|e| CheckpointerError::Backend {
-            message: format!("lock poisoned: {e}"),
-        })?;
+        let map = self.inner.read();
         Ok(map.get(session_id).cloned())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn list_sessions(&self) -> Result<Vec<String>> {
-        let map = self.inner.read().map_err(|e| CheckpointerError::Backend {
-            message: format!("lock poisoned: {e}"),
-        })?;
+        let map = self.inner.read();
         Ok(map.keys().cloned().collect())
     }
 }

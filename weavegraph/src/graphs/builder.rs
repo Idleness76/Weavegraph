@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use super::edges::{ConditionalEdge, EdgePredicate};
 use crate::node::Node;
+use crate::reducers::{Reducer, ReducerRegistry};
 use crate::runtimes::{EventBusConfig, RuntimeConfig};
-use crate::types::NodeKind;
+use crate::types::{ChannelType, NodeKind};
 
 /// Type alias for the internal parts of a GraphBuilder.
 /// Used to reduce type complexity in the `into_parts()` method.
@@ -18,6 +19,7 @@ type GraphParts = (
     FxHashMap<NodeKind, Vec<NodeKind>>,
     Vec<ConditionalEdge>,
     RuntimeConfig,
+    ReducerRegistry,
 );
 
 /// Builder for constructing workflow graphs with fluent API.
@@ -99,6 +101,8 @@ pub struct GraphBuilder {
     conditional_edges: Vec<ConditionalEdge>,
     /// Runtime configuration for the compiled application.
     runtime_config: RuntimeConfig,
+    /// Reducer registry for channel update operations.
+    reducer_registry: ReducerRegistry,
 }
 
 impl Default for GraphBuilder {
@@ -129,6 +133,7 @@ impl GraphBuilder {
             edges: FxHashMap::default(),
             conditional_edges: Vec::new(),
             runtime_config: RuntimeConfig::default(),
+            reducer_registry: ReducerRegistry::default(),
         }
     }
 
@@ -226,6 +231,88 @@ impl GraphBuilder {
         self
     }
 
+    /// Registers a custom reducer for a specific channel.
+    ///
+    /// This method enables registration of custom reducers to extend or replace
+    /// the default reducer behavior for a channel. Multiple reducers can be
+    /// registered for the same channel and will be applied in registration order.
+    ///
+    /// # Parameters
+    ///
+    /// - `channel`: The channel type to register the reducer for
+    /// - `reducer`: The reducer implementation wrapped in Arc
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use weavegraph::reducers::{Reducer, AddMessages};
+    /// use weavegraph::types::{ChannelType, NodeKind};
+    ///
+    /// # struct MyNode;
+    /// # #[async_trait::async_trait]
+    /// # impl weavegraph::node::Node for MyNode {
+    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
+    /// #         Ok(weavegraph::node::NodePartial::default())
+    /// #     }
+    /// # }
+    ///
+    /// let app = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("worker".into()), MyNode)
+    ///     .with_reducer(ChannelType::Message, Arc::new(AddMessages))
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker".into()))
+    ///     .add_edge(NodeKind::Custom("worker".into()), NodeKind::End)
+    ///     .compile();
+    /// ```
+    #[must_use]
+    pub fn with_reducer(mut self, channel: ChannelType, reducer: Arc<dyn Reducer>) -> Self {
+        self.reducer_registry.register(channel, reducer);
+        self
+    }
+
+    /// Replaces the entire reducer registry with a custom one.
+    ///
+    /// This method allows complete control over reducer configuration by
+    /// replacing the default registry. Useful when you need fine-grained
+    /// control over reducer ordering or want to start with an empty registry.
+    ///
+    /// # Parameters
+    ///
+    /// - `registry`: The reducer registry to use
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use weavegraph::reducers::{ReducerRegistry, AddMessages};
+    /// use weavegraph::types::{ChannelType, NodeKind};
+    ///
+    /// # struct MyNode;
+    /// # #[async_trait::async_trait]
+    /// # impl weavegraph::node::Node for MyNode {
+    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
+    /// #         Ok(weavegraph::node::NodePartial::default())
+    /// #     }
+    /// # }
+    ///
+    /// let custom_registry = ReducerRegistry::new()
+    ///     .with_reducer(ChannelType::Message, Arc::new(AddMessages));
+    ///
+    /// let app = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("worker".into()), MyNode)
+    ///     .with_reducer_registry(custom_registry)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("worker".into()))
+    ///     .add_edge(NodeKind::Custom("worker".into()), NodeKind::End)
+    ///     .compile();
+    /// ```
+    #[must_use]
+    pub fn with_reducer_registry(mut self, registry: ReducerRegistry) -> Self {
+        self.reducer_registry = registry;
+        self
+    }
+
     /// Extracts the components for compilation (internal use only).
     pub(super) fn into_parts(self) -> GraphParts {
         (
@@ -233,6 +320,7 @@ impl GraphBuilder {
             self.edges,
             self.conditional_edges,
             self.runtime_config,
+            self.reducer_registry,
         )
     }
 

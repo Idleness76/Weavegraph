@@ -81,6 +81,13 @@ pub enum StepResult {
     Paused(PausedReport),
 }
 
+/// Outcome from scheduler after normalization (ordered partials)
+struct SchedulerOutcome {
+    ran_nodes: Vec<NodeKind>,
+    skipped_nodes: Vec<NodeKind>,
+    partials: Vec<NodePartial>,
+}
+
 enum StreamEndReason {
     Completed { step: u64 },
     Error { step: Option<u64>, error: String },
@@ -612,43 +619,58 @@ impl AppRunner {
         session_id: &str,
         options: StepOptions,
     ) -> Result<StepResult, RunnerError> {
-        // Clone session state to avoid borrowing issues
-        let mut session_state = self
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| RunnerError::SessionNotFound {
-                session_id: session_id.to_string(),
-            })?
-            .clone();
+        // Phase 3.1 (Clone Reduction - A): capture minimal snapshots without cloning full session
+        let (current_step, current_frontier, current_versions) = {
+            let current_session_state =
+                self.sessions
+                    .get(session_id)
+                    .ok_or_else(|| RunnerError::SessionNotFound {
+                        session_id: session_id.to_string(),
+                    })?;
+            let versions = StateVersions {
+                messages_version: current_session_state.state.messages.version(),
+                extra_version: current_session_state.state.extra.version(),
+            };
+            (
+                current_session_state.step,
+                current_session_state.frontier.clone(),
+                versions,
+            )
+        };
 
         // Check if already completed
-        if session_state.frontier.is_empty()
-            || session_state.frontier.iter().all(|n| *n == NodeKind::End)
-        {
-            let versions = StateVersions {
-                messages_version: session_state.state.messages.version(),
-                extra_version: session_state.state.extra.version(),
-            };
+        if current_frontier.is_empty() || current_frontier.iter().all(|n| *n == NodeKind::End) {
             return Ok(StepResult::Completed(StepReport {
-                step: session_state.step,
+                step: current_step,
                 ran_nodes: vec![],
-                skipped_nodes: session_state.frontier.clone(),
+                skipped_nodes: current_frontier.clone(),
                 barrier_outcome: BarrierOutcome::default(),
                 next_frontier: vec![],
-                state_versions: versions,
+                state_versions: current_versions,
                 completed: true,
             }));
         }
 
         // Check for interrupt_before
-        for node in &session_state.frontier {
+        for node in &current_frontier {
             if options.interrupt_before.contains(node) {
+                let session_state = self
+                    .sessions
+                    .get(session_id)
+                    .expect("session exists after initial lookup")
+                    .clone();
                 return Ok(StepResult::Paused(PausedReport {
-                    session_state: session_state.clone(),
+                    session_state,
                     reason: PausedReason::BeforeNode(node.clone()),
                 }));
             }
         }
+
+        // Take ownership of session state for execution (eliminates full clone)
+        let mut session_state = self
+            .sessions
+            .remove(session_id)
+            .expect("session exists after initial lookup");
 
         // Execute one superstep; on error, emit an ErrorEvent and rethrow
         let step_report = match self.run_one_superstep(&mut session_state).await {
@@ -656,7 +678,7 @@ impl AppRunner {
             Err(e) => {
                 // Build error event
                 let event = match &e {
-                    RunnerError::Scheduler(s) => match s {
+                    RunnerError::Scheduler(source) => match source {
                         crate::schedulers::SchedulerError::NodeRun { kind, step, source } => {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
@@ -707,78 +729,62 @@ impl AppRunner {
                     .await;
                 session_state.state = update_state;
                 // Save back to sessions map so callers can inspect accumulated errors
-                self.sessions
-                    .insert(session_id.to_string(), session_state.clone());
+                self.sessions.insert(session_id.to_string(), session_state);
                 // Re-persist if autosave
                 if self.autosave
                     && let Some(cp) = &self.checkpointer
+                    && let Some(s) = self.sessions.get(session_id)
                 {
-                    let _ = cp
-                        .save(Checkpoint::from_session(session_id, &session_state))
-                        .await;
+                    let _ = cp.save(Checkpoint::from_session(session_id, s)).await;
                 }
                 return Err(e);
             }
         };
 
-        // Update the session in map & persist if configured
-        self.sessions
-            .insert(session_id.to_string(), session_state.clone());
-        if self.autosave
-            && let Some(cp) = &self.checkpointer
+        // Evaluate post-execution interrupts BEFORE reinserting to minimize clones
+        // If an interrupt triggers, we insert a clone for persistence and move original into PausedReport.
+        if let Some(node) = step_report
+            .ran_nodes
+            .iter()
+            .find(|n| options.interrupt_after.contains(n))
         {
-            let _ = cp
-                .save(Checkpoint::from_session(session_id, &session_state))
-                .await;
-        }
-
-        // Check for interrupt_after
-        for node in &step_report.ran_nodes {
-            if options.interrupt_after.contains(node) {
-                return Ok(StepResult::Paused(PausedReport {
-                    session_state: session_state.clone(),
-                    reason: PausedReason::AfterNode(node.clone()),
-                }));
-            }
-        }
-
-        // Check for interrupt_each_step
-        if options.interrupt_each_step {
+            // Persist a clone, return original in PausedReport
+            let persisted = session_state.clone();
+            self.sessions.insert(session_id.to_string(), persisted);
+            // Re-persist via helper
+            self.maybe_checkpoint(session_id, step_report.step).await;
             return Ok(StepResult::Paused(PausedReport {
-                session_state: session_state.clone(),
+                session_state,
+                reason: PausedReason::AfterNode(node.clone()),
+            }));
+        }
+        if options.interrupt_each_step {
+            let persisted = session_state.clone();
+            self.sessions.insert(session_id.to_string(), persisted);
+            // Re-persist via helper
+            self.maybe_checkpoint(session_id, step_report.step).await;
+            return Ok(StepResult::Paused(PausedReport {
+                session_state,
                 reason: PausedReason::AfterStep(step_report.step),
             }));
         }
 
+        // Normal completion path: reinsert owned session_state directly (no clone)
+        self.sessions.insert(session_id.to_string(), session_state);
+        // Persist via helper
+        self.maybe_checkpoint(session_id, step_report.step).await;
         Ok(StepResult::Completed(step_report))
     }
 
-    /// Helper method that executes exactly one superstep on the given session state.
-    ///
-    /// Applies barrier outcomes (including frontier commands) and returns the updated
-    /// step report with deterministic routing decisions.
-    #[instrument(skip(self, session_state), err)]
-    async fn run_one_superstep(
+    /// Schedule one step: invoke scheduler and normalize outputs to ordered partials.
+    #[inline]
+    async fn schedule_step(
         &self,
         session_state: &mut SessionState,
-    ) -> Result<StepReport, RunnerError> {
-        session_state.step += 1;
-        let step = session_state.step;
-
-        tracing::debug!(step, "starting superstep");
-
+        step: u64,
+    ) -> Result<SchedulerOutcome, RunnerError> {
         let snapshot = session_state.state.snapshot();
-        tracing::debug!(
-            step,
-            messages = snapshot.messages.len(),
-            messages_version = snapshot.messages_version,
-            extra_keys = snapshot.extra.len(),
-            extra_version = snapshot.extra_version,
-            "state snapshot prior to scheduling"
-        );
-
-        // Execute via scheduler
-        let step_result = session_state
+        let result = session_state
             .scheduler
             .superstep(
                 &mut session_state.scheduler_state,
@@ -790,54 +796,76 @@ impl AppRunner {
             )
             .await?;
 
-        // Reorder outputs to match ran_nodes order expected by the barrier
-        let mut by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
-        for (kind, part) in step_result.outputs {
-            by_kind.insert(kind, part);
+        let mut partials_by_kind: FxHashMap<NodeKind, NodePartial> = FxHashMap::default();
+        for (k, partial) in result.outputs {
+            partials_by_kind.insert(k, partial);
         }
-        let run_ids: Vec<NodeKind> = step_result.ran_nodes.clone();
-        let node_partials: Vec<NodePartial> = run_ids
+        let executed_nodes = result.ran_nodes.clone();
+        let partials = executed_nodes
             .iter()
             .cloned()
-            .filter_map(|k| by_kind.remove(&k))
+            .filter_map(|k| partials_by_kind.remove(&k))
             .collect();
 
-        // Apply barrier using the app's existing method
+        Ok(SchedulerOutcome {
+            ran_nodes: executed_nodes,
+            skipped_nodes: result.skipped_nodes,
+            partials,
+        })
+    }
+
+    /// Apply barrier and update session state with the results.
+    #[tracing::instrument(skip(self, session_state, partials, ran), err)]
+    async fn apply_barrier_and_update(
+        &self,
+        session_state: &mut SessionState,
+        ran: &[NodeKind],
+        partials: Vec<NodePartial>,
+    ) -> Result<BarrierOutcome, RunnerError> {
         let mut update_state = session_state.state.clone();
-        let barrier_outcome = self
+        let outcome = self
             .app
-            .apply_barrier(&mut update_state, &run_ids, node_partials)
+            .apply_barrier(&mut update_state, ran, partials)
             .await
             .map_err(RunnerError::AppBarrier)?;
-
-        // Update session state with the modified state
         session_state.state = update_state;
+        Ok(outcome)
+    }
 
-        // Compute next frontier: unconditional edges + control commands + conditional edges
+    /// Compute next frontier from barrier outcome, resolving commands and conditional edges.
+    #[inline]
+    fn compute_next_frontier(
+        &self,
+        session_state: &SessionState,
+        ran: &[NodeKind],
+        barrier: &BarrierOutcome,
+        step: u64,
+    ) -> Vec<NodeKind> {
         let mut next_frontier: Vec<NodeKind> = Vec::new();
-        let app_edges = self.app.edges();
+        let graph_edges = self.app.edges();
         let conditional_edges = self.app.conditional_edges();
-        let snapshot = session_state.state.snapshot();
+        let state_snapshot = session_state.state.snapshot();
 
-        let mut command_map: FxHashMap<NodeKind, Vec<FrontierCommand>> = FxHashMap::default();
-        for (origin, command) in &barrier_outcome.frontier_commands {
-            command_map
+        let mut frontier_commands_by_node: FxHashMap<NodeKind, Vec<FrontierCommand>> =
+            FxHashMap::default();
+        for (origin, command) in &barrier.frontier_commands {
+            frontier_commands_by_node
                 .entry(origin.clone())
                 .or_default()
                 .push(command.clone());
         }
 
-        for id in run_ids.iter() {
-            let default_edges = app_edges.get(id).cloned().unwrap_or_default();
-            let mut routes: Vec<NodeKind> = Vec::new();
-            let mut replaced = false;
+        for id in ran.iter() {
+            let default_edges = graph_edges.get(id).cloned().unwrap_or_default();
+            let mut next_targets: Vec<NodeKind> = Vec::new();
+            let mut frontier_replaced = false;
 
-            if let Some(commands) = command_map.get(id) {
+            if let Some(commands) = frontier_commands_by_node.get(id) {
                 // Commands are processed in emission order to preserve author intent.
                 for command in commands {
                     match command {
                         FrontierCommand::Replace(entries) => {
-                            if replaced {
+                            if frontier_replaced {
                                 tracing::warn!(
                                     step,
                                     origin = %id.encode(),
@@ -848,31 +876,31 @@ impl AppRunner {
                                 );
                                 continue;
                             }
-                            routes = entries.iter().map(NodeRoute::to_node_kind).collect();
-                            replaced = true;
+                            next_targets = entries.iter().map(NodeRoute::to_node_kind).collect();
+                            frontier_replaced = true;
                         }
                         FrontierCommand::Append(entries) => {
-                            if routes.is_empty() && !replaced {
-                                routes.extend(default_edges.clone());
+                            if next_targets.is_empty() && !frontier_replaced {
+                                next_targets.extend(default_edges.clone());
                             }
-                            routes.extend(entries.iter().map(NodeRoute::to_node_kind));
+                            next_targets.extend(entries.iter().map(NodeRoute::to_node_kind));
                         }
                     }
                 }
 
-                if routes.is_empty() && !replaced {
-                    routes.extend(default_edges.clone());
+                if next_targets.is_empty() && !frontier_replaced {
+                    next_targets.extend(default_edges.clone());
                 }
             } else {
-                routes.extend(default_edges.clone());
+                next_targets.extend(default_edges.clone());
             }
 
-            if !replaced {
-                for ce in conditional_edges.iter().filter(|ce| ce.from() == id) {
-                    tracing::debug!(from = ?ce.from(), step, "evaluating conditional edge");
-                    let target_names = (ce.predicate())(snapshot.clone());
+            if !frontier_replaced {
+                for conditional_edge in conditional_edges.iter().filter(|ce| ce.from() == id) {
+                    tracing::debug!(from = ?conditional_edge.from(), step, "evaluating conditional edge");
+                    let target_node_names = (conditional_edge.predicate())(state_snapshot.clone());
 
-                    for target_name in target_names {
+                    for target_name in target_node_names {
                         let target = if target_name == "End" {
                             NodeKind::End
                         } else if target_name == "Start" {
@@ -883,12 +911,12 @@ impl AppRunner {
 
                         tracing::debug!(target = ?target, step, "conditional edge routed");
 
-                        routes.push(target);
+                        next_targets.push(target);
                     }
                 }
             }
 
-            for target in routes {
+            for target in next_targets {
                 let is_valid_target = match &target {
                     NodeKind::End | NodeKind::Start => true,
                     NodeKind::Custom(_) => self.app.nodes().contains_key(&target),
@@ -908,6 +936,86 @@ impl AppRunner {
                 }
             }
         }
+
+        next_frontier
+    }
+
+    /// Conditionally persist a checkpoint for the given session if autosave is enabled.
+    async fn maybe_checkpoint(&self, session_id: &str, step: u64) {
+        let checkpoint_span = tracing::info_span!("checkpoint", step);
+        checkpoint_span
+            .in_scope(|| async {
+                if self.autosave
+                    && let Some(checkpointer) = &self.checkpointer
+                    && let Some(session_state) = self.sessions.get(session_id)
+                {
+                    let _ = checkpointer
+                        .save(Checkpoint::from_session(session_id, session_state))
+                        .await;
+                }
+            })
+            .await;
+    }
+
+    /// Helper method that executes exactly one superstep on the given session state.
+    ///
+    /// Applies barrier outcomes (including frontier commands) and returns the updated
+    /// step report with deterministic routing decisions.
+    #[instrument(skip(self, session_state), err)]
+    async fn run_one_superstep(
+        &self,
+        session_state: &mut SessionState,
+    ) -> Result<StepReport, RunnerError> {
+        session_state.step += 1;
+        let step = session_state.step;
+
+        tracing::debug!(step, "starting superstep");
+
+        // Phase 1: schedule and normalize outputs
+        let schedule_span = tracing::info_span!(
+            "schedule",
+            step,
+            frontier_len = session_state.frontier.len()
+        );
+        let scheduler_outcome = schedule_span
+            .in_scope(|| self.schedule_step(session_state, step))
+            .await?;
+
+        // Phase 2: apply barrier and update state
+        let errors_in_partials = scheduler_outcome
+            .partials
+            .iter()
+            .filter_map(|p| p.errors.as_ref())
+            .map(|e| e.len())
+            .sum::<usize>();
+        let barrier_span = tracing::info_span!(
+            "barrier",
+            ran_nodes_len = scheduler_outcome.ran_nodes.len(),
+            errors_in_partials
+        );
+        let barrier_outcome = barrier_span
+            .in_scope(|| {
+                self.apply_barrier_and_update(
+                    session_state,
+                    &scheduler_outcome.ran_nodes,
+                    scheduler_outcome.partials,
+                )
+            })
+            .await?;
+
+        // Phase 3: compute next frontier
+        let commands_count = barrier_outcome.frontier_commands.len();
+        let conditional_edges_evaluated = self.app.conditional_edges().len();
+        let frontier_span =
+            tracing::info_span!("frontier", commands_count, conditional_edges_evaluated);
+        let next_frontier = frontier_span.in_scope(|| {
+            self.compute_next_frontier(
+                session_state,
+                &scheduler_outcome.ran_nodes,
+                &barrier_outcome,
+                step,
+            )
+        });
 
         tracing::debug!(
             step,
@@ -930,8 +1038,8 @@ impl AppRunner {
 
         Ok(StepReport {
             step,
-            ran_nodes: run_ids,
-            skipped_nodes: step_result.skipped_nodes,
+            ran_nodes: scheduler_outcome.ran_nodes,
+            skipped_nodes: scheduler_outcome.skipped_nodes,
             barrier_outcome,
             next_frontier,
             state_versions,
@@ -956,9 +1064,7 @@ impl AppRunner {
                         session_id: session_id.to_string(),
                     })?;
 
-            if session_state.frontier.is_empty()
-                || session_state.frontier.iter().all(|n| *n == NodeKind::End)
-            {
+            if self.is_session_complete(session_state) {
                 tracing::info!(
                     session = %session_id,
                     step = session_state.step,
@@ -1006,35 +1112,11 @@ impl AppRunner {
         }
 
         tracing::info!(session = %session_id, "workflow run completed");
-        let (
-            final_state,
-            messages_snapshot,
-            messages_version,
-            extra_snapshot,
-            extra_version,
-            final_step,
-        ) = {
-            let final_session =
-                self.sessions
-                    .get(session_id)
-                    .ok_or_else(|| RunnerError::SessionNotFound {
-                        session_id: session_id.to_string(),
-                    })?;
-            let final_state = final_session.state.clone();
-            let messages_snapshot = final_state.messages.snapshot();
-            let messages_version = final_state.messages.version();
-            let extra_snapshot = final_state.extra.snapshot();
-            let extra_version = final_state.extra.version();
-            let final_step = final_session.step;
-            (
-                final_state,
-                messages_snapshot,
-                messages_version,
-                extra_snapshot,
-                extra_version,
-                final_step,
-            )
-        };
+        let (final_state, versions, final_step) = self.finalize_state_snapshot(session_id)?;
+        let messages_snapshot = final_state.messages.snapshot();
+        let extra_snapshot = final_state.extra.snapshot();
+        let messages_version = versions.messages_version;
+        let extra_version = versions.extra_version;
 
         // Print final state summary (matching App::invoke output)
         for (i, m) in messages_snapshot.iter().enumerate() {
@@ -1097,6 +1179,36 @@ impl AppRunner {
 }
 
 impl AppRunner {
+    /// Determine if a session has reached a terminal frontier (no work or only End nodes).
+    #[inline]
+    fn is_session_complete(&self, session_state: &SessionState) -> bool {
+        session_state.frontier.is_empty()
+            || session_state.frontier.iter().all(|n| *n == NodeKind::End)
+    }
+
+    /// Return the final state clone, channel versions, and last step for the session.
+    /// Logging should occur after retrieval by the caller.
+    #[inline]
+    fn finalize_state_snapshot(
+        &self,
+        session_id: &str,
+    ) -> Result<(VersionedState, StateVersions, u64), RunnerError> {
+        let session_state =
+            self.sessions
+                .get(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
+
+        let final_state = session_state.state.clone();
+        let state_versions = StateVersions {
+            messages_version: final_state.messages.version(),
+            extra_version: final_state.extra.version(),
+        };
+        let final_step = session_state.step;
+        Ok((final_state, state_versions, final_step))
+    }
+
     fn finalize_event_stream(&mut self, session_id: &str, reason: StreamEndReason) {
         let message = match reason {
             StreamEndReason::Completed { step } => {

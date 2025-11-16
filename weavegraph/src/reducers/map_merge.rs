@@ -8,8 +8,9 @@ impl Reducer for MapMerge {
         if let Some(extras_update) = &update.extra
             && !extras_update.is_empty()
         {
-            for (k, v) in extras_update {
-                state.extra.get_mut().insert(k.clone(), v.clone());
+            let state_map = state.extra.get_mut();
+            for (k, v) in extras_update.iter() {
+                state_map.insert(k.clone(), v.clone());
             }
         }
     }

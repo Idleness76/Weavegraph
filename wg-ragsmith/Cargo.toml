@@ -1,6 +1,6 @@
 [package]
 name = "wg-ragsmith"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Semantic chunking and RAG utilities for document processing and retrieval-augmented generation."
 license = "MIT"
@@ -30,6 +30,7 @@ tokio = { version = "1", features = [
     "fs",
 ] }
 tracing = "0.1"
+parking_lot = "0.12"
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "gzip",
@@ -37,11 +38,10 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ] }
 url = "2"
-rig-core = { version = "0.23", features = ["derive"] }
-rig-sqlite = "0.1.26"
+rig-core = { version = "0.24", features = ["derive"] }
+rig-sqlite = "0.1.27"
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 sqlite-vec = "0.1"
-once_cell = "1.19"
 regex = "1"
 scraper = "0.24"
 unicode-segmentation = "1.11"

@@ -109,7 +109,7 @@ pub struct StepQueryResult {
 }
 
 #[derive(Debug, Error, Diagnostic)]
-pub enum SqliteCheckpointerError {
+pub enum SQLiteCheckpointerError {
     #[error("SQLx error: {0}")]
     #[diagnostic(
         code(weavegraph::sqlite::sqlx),
@@ -140,28 +140,62 @@ pub enum SqliteCheckpointerError {
     Other(String),
 }
 
-impl From<SqliteCheckpointerError> for CheckpointerError {
-    fn from(e: SqliteCheckpointerError) -> Self {
+impl From<SQLiteCheckpointerError> for CheckpointerError {
+    fn from(e: SQLiteCheckpointerError) -> Self {
         match e {
-            SqliteCheckpointerError::Sqlx(err) => CheckpointerError::Backend {
+            SQLiteCheckpointerError::Sqlx(err) => CheckpointerError::Backend {
                 message: err.to_string(),
             },
-            SqliteCheckpointerError::Serde(err) => CheckpointerError::Other {
+            SQLiteCheckpointerError::Serde(err) => CheckpointerError::Other {
                 message: err.to_string(),
             },
-            SqliteCheckpointerError::Missing(what) => CheckpointerError::Other {
+            SQLiteCheckpointerError::Missing(what) => CheckpointerError::Other {
                 message: format!("missing persisted field: {what}"),
             },
-            SqliteCheckpointerError::Backend(msg) => CheckpointerError::Backend { message: msg },
-            SqliteCheckpointerError::Other(msg) => CheckpointerError::Other { message: msg },
+            SQLiteCheckpointerError::Backend(msg) => CheckpointerError::Backend { message: msg },
+            SQLiteCheckpointerError::Other(msg) => CheckpointerError::Other { message: msg },
         }
     }
 }
 
-/// SQLite-backed implementation of `Checkpointer`.
+/// SQLite-backed checkpointer with full step history.
 ///
-/// Provides persistent checkpoint storage with advanced querying capabilities
+/// Provides durable checkpoint storage with advanced querying capabilities
 /// including pagination, filtering, and optimistic concurrency control.
+///
+/// # Storage Growth
+///
+/// This backend stores complete step history. Storage grows roughly with:
+/// `(sessions × steps_per_session × state_size)`.
+///
+/// For long-running applications, plan periodic cleanup to control database size:
+///
+/// ## Option 1: Direct SQL maintenance (recommended)
+///
+/// ```bash
+/// # Delete checkpoints older than 30 days
+/// sqlite3 workflow.db "DELETE FROM steps WHERE created_at < datetime('now', '-30 days')"
+///
+/// # Keep only latest 100 steps per session
+/// sqlite3 workflow.db "
+///   DELETE FROM steps
+///   WHERE step NOT IN (
+///     SELECT step FROM steps
+///     WHERE session_id = steps.session_id
+///     ORDER BY step DESC
+///     LIMIT 100
+///   )
+/// "
+///
+/// # Reclaim space
+/// sqlite3 workflow.db "VACUUM"
+/// ```
+///
+/// ## Option 2: Application lifecycle management
+///
+/// Delete entire sessions when workflows complete or expire. The schema includes
+/// timestamps (`created_at` on steps, `updated_at` on sessions) to facilitate
+/// time-based policies.
 pub struct SQLiteCheckpointer {
     /// Shared SQLite connection pool for concurrent checkpoint operations
     pool: Arc<SqlitePool>,

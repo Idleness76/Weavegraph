@@ -115,12 +115,13 @@ impl super::builder::GraphBuilder {
         // Validate without consuming self
         self.validate()?;
 
-        let (nodes, edges, conditional_edges, runtime_config) = self.into_parts();
+        let (nodes, edges, conditional_edges, runtime_config, reducer_registry) = self.into_parts();
         Ok(App::from_parts(
             nodes,
             edges,
             conditional_edges,
             runtime_config,
+            reducer_registry,
         ))
     }
 
