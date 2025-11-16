@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
 use rig::OneOrMany;
-use rig::embeddings::{Embedding, EmbeddingModel};
+use rig::embeddings::embedding::EmbeddingModel;
+use rig::embeddings::Embedding;
 use rig_sqlite::{
     Column, ColumnValue, SqliteVectorIndex, SqliteVectorStore, SqliteVectorStoreTable,
 };

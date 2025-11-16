@@ -38,8 +38,8 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ] }
 url = "2"
-rig-core = { version = "0.23", features = ["derive"] }
-rig-sqlite = "0.1.26"
+rig-core = { version = "0.24", features = ["derive"] }
+rig-sqlite = "0.1.27"
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 sqlite-vec = "0.1"
 regex = "1"
