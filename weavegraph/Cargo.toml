@@ -79,6 +79,7 @@ rmcp = { version = "0.8", features = ["client"], optional = true }
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
     "sqlite",
+    "postgres",
     "macros",
     "uuid",
     "chrono",
@@ -106,6 +107,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["sqlite-migrations"]
 sqlite-migrations = ["sqlite"]
 sqlite = ["sqlx"]
+postgres-migrations = ["postgres"]
+postgres = ["sqlx"]
 llm = ["rig-core", "rmcp"]
 examples = ["reqwest", "scraper", "wg-ragsmith"]
 
