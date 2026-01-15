@@ -9,7 +9,7 @@
 //! cargo test --features postgres-migrations runtimes_persistence_postgres
 //! ```
 //!
-//! Each test uses transaction-based isolation with rollback to ensure test independence.
+//! Each test uses unique session IDs to ensure test independence.
 
 #![cfg(feature = "postgres")]
 
@@ -17,7 +17,7 @@ use chrono::Utc;
 use rustc_hash::FxHashMap;
 use weavegraph::channels::Channel;
 use weavegraph::channels::errors::{ErrorEvent, LadderError};
-use weavegraph::runtimes::{Checkpoint, Checkpointer, PostgresCheckpointer, PgStepQuery};
+use weavegraph::runtimes::{Checkpoint, Checkpointer, PgStepQuery, PostgresCheckpointer};
 use weavegraph::types::NodeKind;
 
 mod common;
@@ -25,8 +25,22 @@ use common::*;
 
 /// Get the test database URL from environment or use default docker-compose URL.
 fn get_test_db_url() -> String {
-    std::env::var("WEAVEGRAPH_POSTGRES_TEST_URL")
-        .unwrap_or_else(|_| "postgresql://weavegraph:weavegraph@localhost/weavegraph_test".into())
+    std::env::var("WEAVEGRAPH_POSTGRES_TEST_URL").unwrap_or_else(|_| {
+        "postgresql://weavegraph:weavegraph@localhost:5433/weavegraph_test".into()
+    })
+}
+
+/// Connect to Postgres or panic with helpful message.
+async fn connect_or_fail() -> PostgresCheckpointer {
+    let db_url = get_test_db_url();
+    PostgresCheckpointer::connect(&db_url)
+        .await
+        .unwrap_or_else(|e| {
+            panic!(
+                "Failed to connect to Postgres at {db_url}: {e}\n\
+                 Start Postgres with: docker-compose up -d postgres"
+            )
+        })
 }
 
 /// Helper to generate unique session IDs for test isolation.
@@ -36,15 +50,7 @@ fn unique_session_id(prefix: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_postgres_checkpointer_roundtrip() {
-    let db_url = get_test_db_url();
-    let cp = match PostgresCheckpointer::connect(&db_url).await {
-        Ok(cp) => cp,
-        Err(e) => {
-            eprintln!("Skipping test - cannot connect to Postgres: {e}");
-            eprintln!("Start Postgres with: docker-compose up -d postgres");
-            return;
-        }
-    };
+    let cp = connect_or_fail().await;
 
     let session_id = unique_session_id("roundtrip");
     let mut state = state_with_user("hello");
@@ -99,14 +105,7 @@ async fn test_postgres_checkpointer_roundtrip() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_list_sessions_and_empty_load() {
-    let db_url = get_test_db_url();
-    let cp = match PostgresCheckpointer::connect(&db_url).await {
-        Ok(cp) => cp,
-        Err(e) => {
-            eprintln!("Skipping test - cannot connect to Postgres: {e}");
-            return;
-        }
-    };
+    let cp = connect_or_fail().await;
 
     // Use unique session IDs for this test
     let prefix = format!("list_test_{}", uuid::Uuid::new_v4());
@@ -146,14 +145,7 @@ async fn test_list_sessions_and_empty_load() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_step_execution_metadata_query_and_pagination() {
-    let db_url = get_test_db_url();
-    let cp = match PostgresCheckpointer::connect(&db_url).await {
-        Ok(cp) => cp,
-        Err(e) => {
-            eprintln!("Skipping test - cannot connect to Postgres: {e}");
-            return;
-        }
-    };
+    let cp = connect_or_fail().await;
 
     let session_id = unique_session_id("paginate");
 
@@ -200,14 +192,7 @@ async fn test_step_execution_metadata_query_and_pagination() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_error_persistence_roundtrip() {
-    let db_url = get_test_db_url();
-    let cp = match PostgresCheckpointer::connect(&db_url).await {
-        Ok(cp) => cp,
-        Err(e) => {
-            eprintln!("Skipping test - cannot connect to Postgres: {e}");
-            return;
-        }
-    };
+    let cp = connect_or_fail().await;
 
     let session_id = unique_session_id("err");
     let mut state = state_with_user("err");
@@ -238,14 +223,7 @@ async fn test_error_persistence_roundtrip() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_idempotent_save() {
-    let db_url = get_test_db_url();
-    let cp = match PostgresCheckpointer::connect(&db_url).await {
-        Ok(cp) => cp,
-        Err(e) => {
-            eprintln!("Skipping test - cannot connect to Postgres: {e}");
-            return;
-        }
-    };
+    let cp = connect_or_fail().await;
 
     let session_id = unique_session_id("idempotent");
     let state = state_with_user("test");
@@ -273,14 +251,7 @@ async fn test_idempotent_save() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_concurrency_check() {
-    let db_url = get_test_db_url();
-    let cp = match PostgresCheckpointer::connect(&db_url).await {
-        Ok(cp) => cp,
-        Err(e) => {
-            eprintln!("Skipping test - cannot connect to Postgres: {e}");
-            return;
-        }
-    };
+    let cp = connect_or_fail().await;
 
     let session_id = unique_session_id("concurrency");
     let state = state_with_user("test");
@@ -330,8 +301,6 @@ async fn test_concurrency_check() {
         skipped_nodes: vec![],
         updated_channels: vec![],
     };
-    let result = cp
-        .save_with_concurrency_check(checkpoint3, Some(1))
-        .await;
+    let result = cp.save_with_concurrency_check(checkpoint3, Some(1)).await;
     assert!(result.is_err(), "should fail with wrong expected step");
 }
