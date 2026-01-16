@@ -58,10 +58,7 @@ pub use checkpointer::{
 #[cfg(feature = "sqlite")]
 pub use checkpointer_sqlite::{PageInfo, SQLiteCheckpointer, StepQuery, StepQueryResult};
 #[cfg(feature = "postgres")]
-pub use checkpointer_postgres::{
-    PageInfo as PgPageInfo, PostgresCheckpointer, StepQuery as PgStepQuery,
-    StepQueryResult as PgStepQueryResult,
-};
+pub use checkpointer_postgres::PostgresCheckpointer;
 pub use persistence::*;
 pub use runner::{
     AppRunner, PausedReason, PausedReport, SessionInit, SessionState, StateVersions, StepOptions,
