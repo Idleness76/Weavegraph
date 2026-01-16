@@ -34,9 +34,10 @@ pub enum ReducerError {
         code(weavegraph::reducers::apply),
         help("Check that your reducer implementation correctly handles the NodePartial structure")
     )]
-    #[allow(unused_assignments)]
     Apply {
+        #[allow(unused_assignments)]
         channel: ChannelType,
+        #[allow(unused_assignments)]
         message: String,
     },
 }
