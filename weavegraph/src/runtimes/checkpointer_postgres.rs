@@ -52,10 +52,8 @@ NodeKinds are encoded as strings for JSON storage:
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use miette::Diagnostic;
 use serde_json::Value;
 use sqlx::{PgPool, Row, postgres::PgRow};
-use thiserror::Error;
 use tracing::instrument;
 
 use crate::{
@@ -66,7 +64,7 @@ use crate::{
 };
 
 use super::checkpointer_postgres_helpers::{
-    deserialize_json, deserialize_json_value, require_json_field, serialize_json,
+    deserialize_json_value, require_json_field, serialize_json,
 };
 
 /// Query parameters for filtering step history.
@@ -106,56 +104,6 @@ pub struct StepQueryResult {
     pub checkpoints: Vec<Checkpoint>,
     /// Pagination metadata
     pub page_info: PageInfo,
-}
-
-#[derive(Debug, Error, Diagnostic)]
-pub enum PostgresCheckpointerError {
-    #[error("SQLx error: {0}")]
-    #[diagnostic(
-        code(weavegraph::postgres::sqlx),
-        help("Ensure the PostgreSQL database URL is valid and accessible.")
-    )]
-    Sqlx(#[from] sqlx::Error),
-
-    #[error("JSON serialization error: {0}")]
-    #[diagnostic(
-        code(weavegraph::postgres::serde),
-        help("Check serialized shapes for state/frontier/versions_seen.")
-    )]
-    Serde(#[from] serde_json::Error),
-
-    #[error("Missing persisted field: {0}")]
-    #[diagnostic(
-        code(weavegraph::postgres::missing),
-        help("Backfill or re-run migrations to populate the missing field.")
-    )]
-    Missing(&'static str),
-
-    #[error("Backend error: {0}")]
-    #[diagnostic(code(weavegraph::postgres::backend))]
-    Backend(String),
-
-    #[error("Other error: {0}")]
-    #[diagnostic(code(weavegraph::postgres::other))]
-    Other(String),
-}
-
-impl From<PostgresCheckpointerError> for CheckpointerError {
-    fn from(e: PostgresCheckpointerError) -> Self {
-        match e {
-            PostgresCheckpointerError::Sqlx(err) => CheckpointerError::Backend {
-                message: err.to_string(),
-            },
-            PostgresCheckpointerError::Serde(err) => CheckpointerError::Other {
-                message: err.to_string(),
-            },
-            PostgresCheckpointerError::Missing(what) => CheckpointerError::Other {
-                message: format!("missing persisted field: {what}"),
-            },
-            PostgresCheckpointerError::Backend(msg) => CheckpointerError::Backend { message: msg },
-            PostgresCheckpointerError::Other(msg) => CheckpointerError::Other { message: msg },
-        }
-    }
 }
 
 /// PostgreSQL-backed checkpointer with full step history.
@@ -323,6 +271,34 @@ impl Checkpointer for PostgresCheckpointer {
             message: format!("insert step: {e}"),
         })?;
 
+        // Maintain denormalized latest snapshot on sessions row.
+        //
+        // IMPORTANT: steps may be written out-of-order (replays/imports/retries),
+        // so this update MUST be monotonic. We only advance last_* when the new
+        // step is >= the currently recorded last_step.
+        sqlx::query(
+            r#"
+            UPDATE sessions
+            SET
+                updated_at = NOW(),
+                last_step = CASE WHEN last_step <= $2 THEN $2 ELSE last_step END,
+                last_state_json = CASE WHEN last_step <= $2 THEN $3::jsonb ELSE last_state_json END,
+                last_frontier_json = CASE WHEN last_step <= $2 THEN $4::jsonb ELSE last_frontier_json END,
+                last_versions_seen_json = CASE WHEN last_step <= $2 THEN $5::jsonb ELSE last_versions_seen_json END
+            WHERE id = $1
+            "#,
+        )
+        .bind(&checkpoint.session_id)
+        .bind(checkpoint.step as i64)
+        .bind(&state_json)
+        .bind(&frontier_json)
+        .bind(&versions_seen_json)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| CheckpointerError::Backend {
+            message: format!("update session latest: {e}"),
+        })?;
+
         tx.commit().await.map_err(|e| CheckpointerError::Backend {
             message: format!("tx commit: {e}"),
         })?;
@@ -483,30 +459,30 @@ impl PostgresCheckpointer {
     #[instrument(skip(self), err)]
     pub async fn query_steps(&self, session_id: &str, query: StepQuery) -> Result<StepQueryResult> {
         // Build WHERE clause conditions
-        let mut conditions = vec!["session_id = $1".to_string()];
+        let mut conditions = vec!["st.session_id = $1".to_string()];
         let mut param_count = 1;
 
         if query.min_step.is_some() {
             param_count += 1;
-            conditions.push(format!("step >= ${param_count}"));
+            conditions.push(format!("st.step >= ${param_count}"));
         }
         if query.max_step.is_some() {
             param_count += 1;
-            conditions.push(format!("step <= ${param_count}"));
+            conditions.push(format!("st.step <= ${param_count}"));
         }
         if query.ran_node.is_some() {
             param_count += 1;
-            conditions.push(format!("ran_nodes_json::text LIKE ${param_count}"));
+            conditions.push(format!("st.ran_nodes_json @> ${param_count}::jsonb"));
         }
         if query.skipped_node.is_some() {
             param_count += 1;
-            conditions.push(format!("skipped_nodes_json::text LIKE ${param_count}"));
+            conditions.push(format!("st.skipped_nodes_json @> ${param_count}::jsonb"));
         }
 
         let where_clause = conditions.join(" AND ");
 
         // Count total matching records
-        let count_sql = format!("SELECT COUNT(*) as total FROM steps WHERE {where_clause}");
+        let count_sql = format!("SELECT COUNT(*) as total FROM steps st WHERE {where_clause}");
 
         let limit = query.limit.unwrap_or(100).min(1000); // Cap at 1000
         let offset = query.offset.unwrap_or(0);
@@ -514,11 +490,20 @@ impl PostgresCheckpointer {
         // Query with pagination
         let select_sql = format!(
             r#"SELECT
-                session_id, step, state_json, frontier_json, versions_seen_json,
-                ran_nodes_json, skipped_nodes_json, updated_channels_json, created_at
-               FROM steps
+                st.session_id,
+                st.step,
+                st.state_json,
+                st.frontier_json,
+                st.versions_seen_json,
+                st.ran_nodes_json,
+                st.skipped_nodes_json,
+                st.updated_channels_json,
+                st.created_at,
+                s.concurrency_limit
+               FROM steps st
+               JOIN sessions s ON s.id = st.session_id
                WHERE {where_clause}
-               ORDER BY step DESC
+               ORDER BY st.step DESC
                LIMIT {limit} OFFSET {offset}"#
         );
 
@@ -531,10 +516,10 @@ impl PostgresCheckpointer {
             count_query = count_query.bind(max_step as i64);
         }
         if let Some(ran_node) = &query.ran_node {
-            count_query = count_query.bind(format!("%{}%", ran_node.encode()));
+            count_query = count_query.bind(serde_json::json!([ran_node.encode()]));
         }
         if let Some(skipped_node) = &query.skipped_node {
-            count_query = count_query.bind(format!("%{}%", skipped_node.encode()));
+            count_query = count_query.bind(serde_json::json!([skipped_node.encode()]));
         }
 
         let total_count: i64 = count_query
@@ -554,10 +539,10 @@ impl PostgresCheckpointer {
             select_query = select_query.bind(max_step as i64);
         }
         if let Some(ran_node) = &query.ran_node {
-            select_query = select_query.bind(format!("%{}%", ran_node.encode()));
+            select_query = select_query.bind(serde_json::json!([ran_node.encode()]));
         }
         if let Some(skipped_node) = &query.skipped_node {
-            select_query = select_query.bind(format!("%{}%", skipped_node.encode()));
+            select_query = select_query.bind(serde_json::json!([skipped_node.encode()]));
         }
 
         let rows =
@@ -571,7 +556,7 @@ impl PostgresCheckpointer {
         // Convert rows to checkpoints
         let mut checkpoints = Vec::new();
         for row in rows {
-            let checkpoint = self.row_to_checkpoint(session_id, &row).await?;
+            let checkpoint = self.row_to_checkpoint(session_id, &row)?;
             checkpoints.push(checkpoint);
         }
 
@@ -653,38 +638,6 @@ impl PostgresCheckpointer {
                 message: format!("tx begin: {e}"),
             })?;
 
-        // Check concurrency constraint if specified
-        if let Some(expected_step) = expected_last_step {
-            let current_step: Option<i64> =
-                sqlx::query_scalar("SELECT last_step FROM sessions WHERE id = $1")
-                    .bind(&checkpoint.session_id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(|e| CheckpointerError::Backend {
-                        message: format!("concurrency check: {e}"),
-                    })?;
-
-            match current_step {
-                Some(step) if step != expected_step as i64 => {
-                    return Err(CheckpointerError::Backend {
-                        message: format!(
-                            "concurrency conflict: expected step {}, found {}",
-                            expected_step, step
-                        ),
-                    });
-                }
-                None if expected_step != 0 => {
-                    return Err(CheckpointerError::Backend {
-                        message: format!(
-                            "concurrency conflict: session not found, expected step {}",
-                            expected_step
-                        ),
-                    });
-                }
-                _ => {} // Check passed
-            }
-        }
-
         // Ensure session row exists
         sqlx::query(
             r#"
@@ -701,7 +654,31 @@ impl PostgresCheckpointer {
             message: format!("insert session: {e}"),
         })?;
 
-        // Insert step row (fail if step already exists to prevent overwrites)
+        // Check concurrency constraint if specified.
+        //
+        // We take a row-level lock so concurrent writers serialize their checks.
+        if let Some(expected_step) = expected_last_step {
+            let current_step: i64 = sqlx::query_scalar(
+                "SELECT last_step FROM sessions WHERE id = $1 FOR UPDATE",
+            )
+            .bind(&checkpoint.session_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| CheckpointerError::Backend {
+                message: format!("concurrency check: {e}"),
+            })?;
+
+            if current_step != expected_step as i64 {
+                return Err(CheckpointerError::Backend {
+                    message: format!(
+                        "concurrency conflict: expected step {}, found {}",
+                        expected_step, current_step
+                    ),
+                });
+            }
+        }
+
+        // Insert or replace step row (upsert for idempotent re-save of same step)
         sqlx::query(
             r#"
             INSERT INTO steps (
@@ -714,6 +691,13 @@ impl PostgresCheckpointer {
                 skipped_nodes_json,
                 updated_channels_json
             ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb)
+            ON CONFLICT (session_id, step) DO UPDATE SET
+                state_json = EXCLUDED.state_json,
+                frontier_json = EXCLUDED.frontier_json,
+                versions_seen_json = EXCLUDED.versions_seen_json,
+                ran_nodes_json = EXCLUDED.ran_nodes_json,
+                skipped_nodes_json = EXCLUDED.skipped_nodes_json,
+                updated_channels_json = EXCLUDED.updated_channels_json
             "#,
         )
         .bind(&checkpoint.session_id)
@@ -730,6 +714,30 @@ impl PostgresCheckpointer {
             message: format!("insert step: {e}"),
         })?;
 
+        // Maintain denormalized latest snapshot (monotonic).
+        sqlx::query(
+            r#"
+            UPDATE sessions
+            SET
+                updated_at = NOW(),
+                last_step = CASE WHEN last_step <= $2 THEN $2 ELSE last_step END,
+                last_state_json = CASE WHEN last_step <= $2 THEN $3::jsonb ELSE last_state_json END,
+                last_frontier_json = CASE WHEN last_step <= $2 THEN $4::jsonb ELSE last_frontier_json END,
+                last_versions_seen_json = CASE WHEN last_step <= $2 THEN $5::jsonb ELSE last_versions_seen_json END
+            WHERE id = $1
+            "#,
+        )
+        .bind(&checkpoint.session_id)
+        .bind(checkpoint.step as i64)
+        .bind(&state_json)
+        .bind(&frontier_json)
+        .bind(&versions_seen_json)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| CheckpointerError::Backend {
+            message: format!("update session latest: {e}"),
+        })?;
+
         tx.commit().await.map_err(|e| CheckpointerError::Backend {
             message: format!("tx commit: {e}"),
         })?;
@@ -738,15 +746,20 @@ impl PostgresCheckpointer {
     }
 
     /// Helper to convert a database row to a Checkpoint.
-    async fn row_to_checkpoint(&self, session_id: &str, row: &PgRow) -> Result<Checkpoint> {
+    fn row_to_checkpoint(&self, session_id: &str, row: &PgRow) -> Result<Checkpoint> {
         let step: i64 = row.get("step");
         let state_json: Value = row.get("state_json");
         let frontier_json: Value = row.get("frontier_json");
         let versions_seen_json: Value = row.get("versions_seen_json");
         let ran_nodes_json: Value = row.get("ran_nodes_json");
         let skipped_nodes_json: Value = row.get("skipped_nodes_json");
-        let updated_channels_json: Value = row.get("updated_channels_json");
+        let updated_channels_json: Option<Value> = row
+            .try_get("updated_channels_json")
+            .map_err(|e| CheckpointerError::Backend {
+                message: format!("updated_channels_json read: {e}"),
+            })?;
         let created_at: DateTime<Utc> = row.get("created_at");
+        let concurrency_limit: i64 = row.get("concurrency_limit");
 
         // Deserialize using persistence models
         let persisted_state: PersistedState = deserialize_json_value(state_json, "state")?;
@@ -785,15 +798,18 @@ impl PostgresCheckpointer {
             .map(NodeKind::decode)
             .collect();
 
-        let updated_channels: Vec<String> = updated_channels_json
-            .as_array()
-            .ok_or_else(|| CheckpointerError::Other {
-                message: "updated_channels not array".to_string(),
-            })?
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.to_string())
-            .collect();
+        let updated_channels: Vec<String> = match updated_channels_json {
+            None => vec![],
+            Some(v) => v
+                .as_array()
+                .ok_or_else(|| CheckpointerError::Other {
+                    message: "updated_channels not array".to_string(),
+                })?
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect(),
+        };
 
         let persisted_vs: PersistedVersionsSeen =
             deserialize_json_value(versions_seen_json, "versions_seen")?;
@@ -805,7 +821,7 @@ impl PostgresCheckpointer {
             state,
             frontier,
             versions_seen,
-            concurrency_limit: 1, // Will need to be retrieved from session table if needed
+            concurrency_limit: concurrency_limit as usize,
             created_at,
             ran_nodes,
             skipped_nodes,

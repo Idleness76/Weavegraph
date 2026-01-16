@@ -15,9 +15,12 @@
 
 use chrono::Utc;
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
+use tokio::sync::Barrier;
 use weavegraph::channels::Channel;
 use weavegraph::channels::errors::{ErrorEvent, LadderError};
-use weavegraph::runtimes::{Checkpoint, Checkpointer, PgStepQuery, PostgresCheckpointer};
+use weavegraph::runtimes::{Checkpoint, Checkpointer, PostgresCheckpointer};
+use weavegraph::runtimes::checkpointer_postgres::StepQuery as PgStepQuery;
 use weavegraph::types::NodeKind;
 
 mod common;
@@ -26,7 +29,7 @@ use common::*;
 /// Get the test database URL from environment or use default docker-compose URL.
 fn get_test_db_url() -> String {
     std::env::var("WEAVEGRAPH_POSTGRES_TEST_URL").unwrap_or_else(|_| {
-        "postgresql://weavegraph:weavegraph@localhost:5433/weavegraph_test".into()
+        "postgresql://weavegraph:weavegraph@localhost:5432/weavegraph_test".into()
     })
 }
 
@@ -303,4 +306,150 @@ async fn test_concurrency_check() {
     };
     let result = cp.save_with_concurrency_check(checkpoint3, Some(1)).await;
     assert!(result.is_err(), "should fail with wrong expected step");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_out_of_order_writes_do_not_regress_latest() {
+    let cp = connect_or_fail().await;
+
+    let session_id = unique_session_id("out_of_order");
+
+    // Save a higher step first.
+    let mut state_step_5 = state_with_user("step 5");
+    state_step_5
+        .extra
+        .get_mut()
+        .insert("marker".into(), serde_json::json!(5));
+
+    let checkpoint5 = Checkpoint {
+        session_id: session_id.clone(),
+        step: 5,
+        state: state_step_5,
+        frontier: vec![NodeKind::End],
+        versions_seen: FxHashMap::default(),
+        concurrency_limit: 1,
+        created_at: Utc::now(),
+        ran_nodes: vec![NodeKind::Start],
+        skipped_nodes: vec![],
+        updated_channels: vec![],
+    };
+
+    cp.save(checkpoint5).await.expect("save step 5");
+
+    // Then save a lower step later (out-of-order).
+    let mut state_step_2 = state_with_user("step 2");
+    state_step_2
+        .extra
+        .get_mut()
+        .insert("marker".into(), serde_json::json!(2));
+
+    let checkpoint2 = Checkpoint {
+        session_id: session_id.clone(),
+        step: 2,
+        state: state_step_2,
+        frontier: vec![NodeKind::End],
+        versions_seen: FxHashMap::default(),
+        concurrency_limit: 1,
+        created_at: Utc::now(),
+        ran_nodes: vec![NodeKind::Start],
+        skipped_nodes: vec![],
+        updated_channels: vec![],
+    };
+
+    cp.save(checkpoint2).await.expect("save step 2 (out-of-order)");
+
+    // Latest must remain at step 5 and retain the step-5 snapshot.
+    let loaded = cp.load_latest(&session_id).await.unwrap().unwrap();
+    assert_eq!(loaded.step, 5);
+    assert_eq!(loaded.state.extra.snapshot().get("marker"), Some(&serde_json::json!(5)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_concurrent_writers_only_one_wins_concurrency_check() {
+    let cp = Arc::new(connect_or_fail().await);
+
+    let session_id = unique_session_id("concurrent_writers");
+    let state = state_with_user("base");
+
+    // Seed step 1 so expected_last_step = 1 is a valid check.
+    let checkpoint1 = Checkpoint {
+        session_id: session_id.clone(),
+        step: 1,
+        state: state.clone(),
+        frontier: vec![NodeKind::End],
+        versions_seen: FxHashMap::default(),
+        concurrency_limit: 1,
+        created_at: Utc::now(),
+        ran_nodes: vec![NodeKind::Start],
+        skipped_nodes: vec![],
+        updated_channels: vec![],
+    };
+    cp.save(checkpoint1).await.expect("save step 1");
+
+    let barrier = Arc::new(Barrier::new(3));
+
+    let make_checkpoint2 = |marker: i64| {
+        let mut s = state_with_user("step 2");
+        s.extra.get_mut().insert("marker".into(), serde_json::json!(marker));
+        Checkpoint {
+            session_id: session_id.clone(),
+            step: 2,
+            state: s,
+            frontier: vec![NodeKind::End],
+            versions_seen: FxHashMap::default(),
+            concurrency_limit: 1,
+            created_at: Utc::now(),
+            ran_nodes: vec![],
+            skipped_nodes: vec![],
+            updated_channels: vec![],
+        }
+    };
+
+    let cp_a = Arc::clone(&cp);
+    let barrier_a = Arc::clone(&barrier);
+    let checkpoint_a = make_checkpoint2(111);
+    let handle_a = tokio::spawn(async move {
+        barrier_a.wait().await;
+        cp_a
+            .save_with_concurrency_check(checkpoint_a, Some(1))
+            .await
+    });
+
+    let cp_b = Arc::clone(&cp);
+    let barrier_b = Arc::clone(&barrier);
+    let checkpoint_b = make_checkpoint2(222);
+    let handle_b = tokio::spawn(async move {
+        barrier_b.wait().await;
+        cp_b
+            .save_with_concurrency_check(checkpoint_b, Some(1))
+            .await
+    });
+
+    // Release both tasks at the same time.
+    barrier.wait().await;
+
+    let res_a = handle_a.await.expect("task a join");
+    let res_b = handle_b.await.expect("task b join");
+
+    let ok_count = [res_a.as_ref(), res_b.as_ref()]
+        .into_iter()
+        .filter(|r| r.is_ok())
+        .count();
+    let err_count = [res_a.as_ref(), res_b.as_ref()]
+        .into_iter()
+        .filter(|r| r.is_err())
+        .count();
+
+    assert_eq!(ok_count, 1, "exactly one writer should succeed");
+    assert_eq!(err_count, 1, "exactly one writer should fail");
+
+    // Latest must be step 2, with one of the markers.
+    let loaded = cp.load_latest(&session_id).await.unwrap().unwrap();
+    assert_eq!(loaded.step, 2);
+    let snapshot = loaded.state.extra.snapshot();
+    let marker = snapshot.get("marker");
+    assert!(
+        marker == Some(&serde_json::json!(111)) || marker == Some(&serde_json::json!(222)),
+        "latest marker should match one of the winning writers"
+    );
 }
