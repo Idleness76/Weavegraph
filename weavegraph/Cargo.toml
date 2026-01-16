@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
@@ -73,12 +73,13 @@ rand = "0.9"
 
 # LLM framework (external dependency)
 # NOTE: rig-core and rmcp are gated behind the "llm" feature (default-off) for AI/MCP users; reduces compile time for non-AI workflows.
-rig-core = { version = "0.24.0", features = ["rmcp"], optional = true }
+rig-core = { version = "0.28", features = ["rmcp"], optional = true }
 rmcp = { version = "0.8", features = ["client"], optional = true }
 # Database
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
     "sqlite",
+    "postgres",
     "macros",
     "uuid",
     "chrono",
@@ -106,6 +107,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["sqlite-migrations"]
 sqlite-migrations = ["sqlite"]
 sqlite = ["sqlx"]
+postgres-migrations = ["postgres"]
+postgres = ["sqlx"]
 llm = ["rig-core", "rmcp"]
 examples = ["reqwest", "scraper", "wg-ragsmith"]
 

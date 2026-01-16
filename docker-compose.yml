@@ -13,9 +13,32 @@ services:
     environment:
       - OLLAMA_KEEP_ALIVE=24h
       - OLLAMA_HOST=0.0.0.0
+
+  postgres:
+    container_name: weavegraph_postgres
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: weavegraph
+      POSTGRES_PASSWORD: weavegraph
+      POSTGRES_DB: weavegraph_test
+    ports:
+      - "5432:5432"
+    networks:
+      - weavegraph
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weavegraph -d weavegraph_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   ollama_data:
     external: true
+  postgres_data:
+
 networks:
   weavegraph:
     name: weavegraph

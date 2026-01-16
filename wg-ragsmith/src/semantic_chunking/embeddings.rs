@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rig::embeddings::embedding::{EmbeddingModel, EmbeddingModelDyn};
+use rig::embeddings::embedding::EmbeddingModel;
 use std::any::type_name;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -58,27 +58,25 @@ impl EmbeddingProvider for MockEmbeddingProvider {
 }
 
 /// Adapter that bridges a RIG [`EmbeddingModel`] into the local [`EmbeddingProvider`] trait.
-pub struct RigEmbeddingProvider {
-    model: Arc<dyn EmbeddingModelDyn>,
+pub struct RigEmbeddingProvider<M>
+where
+    M: EmbeddingModel + 'static,
+{
+    model: Arc<M>,
     label: String,
 }
 
-impl RigEmbeddingProvider {
+impl<M> RigEmbeddingProvider<M>
+where
+    M: EmbeddingModel + 'static,
+{
     /// Construct from a concrete RIG embedding model instance.
-    pub fn from_model<M>(model: M) -> Self
-    where
-        M: EmbeddingModel + 'static,
-    {
+    pub fn from_model(model: M) -> Self {
         let label = type_name::<M>().to_string();
-        let arc = Arc::new(model);
-        let dyn_arc: Arc<dyn EmbeddingModelDyn> = arc;
-        Self::from_dyn(dyn_arc, Some(label))
-    }
-
-    /// Construct from a trait object handle. Optional label defaults to the trait object's type name.
-    pub fn from_dyn(model: Arc<dyn EmbeddingModelDyn>, label: Option<String>) -> Self {
-        let label = label.unwrap_or_else(|| "rig-embedding".to_string());
-        Self { model, label }
+        Self {
+            model: Arc::new(model),
+            label,
+        }
     }
 
     /// Returns the model label used for telemetry.
@@ -88,7 +86,10 @@ impl RigEmbeddingProvider {
 }
 
 #[async_trait]
-impl EmbeddingProvider for RigEmbeddingProvider {
+impl<M> EmbeddingProvider for RigEmbeddingProvider<M>
+where
+    M: EmbeddingModel + 'static,
+{
     async fn embed_batch(&self, inputs: &[String]) -> Result<Vec<Vec<f32>>, ChunkingError> {
         if inputs.is_empty() {
             return Ok(Vec::new());
@@ -96,7 +97,7 @@ impl EmbeddingProvider for RigEmbeddingProvider {
 
         let embeddings = self
             .model
-            .embed_texts(inputs.to_vec())
+            .embed_texts(inputs.iter().cloned())
             .await
             .map_err(|err| ChunkingError::EmbeddingFailed {
                 reason: err.to_string(),
@@ -119,7 +120,7 @@ impl EmbeddingProvider for RigEmbeddingProvider {
     }
 
     fn max_batch_size(&self) -> usize {
-        self.model.max_documents()
+        M::MAX_DOCUMENTS
     }
 }
 

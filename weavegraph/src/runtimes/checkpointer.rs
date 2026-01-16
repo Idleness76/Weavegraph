@@ -194,6 +194,9 @@ pub enum CheckpointerType {
     #[cfg(feature = "sqlite")]
     /// SQLite‑backed durable checkpointing (see `SQLiteCheckpointer`).
     SQLite,
+    #[cfg(feature = "postgres")]
+    /// PostgreSQL‑backed durable checkpointing (see `PostgresCheckpointer`).
+    Postgres,
 }
 
 pub type Result<T> = std::result::Result<T, CheckpointerError>;

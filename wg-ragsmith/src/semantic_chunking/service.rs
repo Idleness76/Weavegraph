@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use rig::embeddings::{EmbeddingModel, embedding::EmbeddingModelDyn};
+use rig::embeddings::EmbeddingModel;
 use serde_json::Value;
 use tokio::fs;
 use tracing::{field, info_span};
@@ -190,14 +190,6 @@ impl SemanticChunkingService {
     fn resolve_provider(&self, override_embedder: Option<EmbedderKind>) -> ProviderContext {
         let embedder = override_embedder.or_else(|| self.base_embedder.clone());
         match embedder {
-            Some(EmbedderKind::Rig(handle)) => {
-                let shared: SharedEmbeddingProvider = handle.clone();
-                ProviderContext {
-                    shared,
-                    label: Some(handle.model_label().to_string()),
-                    configured: true,
-                }
-            }
             Some(EmbedderKind::Provider(provider)) => ProviderContext {
                 shared: provider.clone(),
                 label: None,
@@ -233,7 +225,6 @@ fn strategy_label(strategy: &BreakpointStrategy) -> &'static str {
 
 #[derive(Clone)]
 pub enum EmbedderKind {
-    Rig(Arc<RigEmbeddingProvider>),
     Provider(SharedEmbeddingProvider),
     None,
 }
@@ -260,18 +251,8 @@ impl SemanticChunkingServiceBuilder {
     where
         M: EmbeddingModel + 'static,
     {
-        let provider = Arc::new(RigEmbeddingProvider::from_model(model));
-        self.embedder = Some(EmbedderKind::Rig(provider));
-        self
-    }
-
-    pub fn with_rig_model_dyn(
-        mut self,
-        model: Arc<dyn EmbeddingModelDyn>,
-        label: Option<String>,
-    ) -> Self {
-        let provider = Arc::new(RigEmbeddingProvider::from_dyn(model, label));
-        self.embedder = Some(EmbedderKind::Rig(provider));
+        let provider: SharedEmbeddingProvider = Arc::new(RigEmbeddingProvider::from_model(model));
+        self.embedder = Some(EmbedderKind::Provider(provider));
         self
     }
 
@@ -366,9 +347,8 @@ impl ChunkDocumentRequest {
     where
         M: EmbeddingModel + 'static,
     {
-        self.with_embedder(EmbedderKind::Rig(Arc::new(
-            RigEmbeddingProvider::from_model(model),
-        )))
+        let provider: SharedEmbeddingProvider = Arc::new(RigEmbeddingProvider::from_model(model));
+        self.with_embedder(EmbedderKind::Provider(provider))
     }
 }
 
