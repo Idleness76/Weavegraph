@@ -35,7 +35,9 @@ pub enum ReducerError {
         help("Check that your reducer implementation correctly handles the NodePartial structure")
     )]
     Apply {
+        #[allow(unused_assignments)]
         channel: ChannelType,
+        #[allow(unused_assignments)]
         message: String,
     },
 }
