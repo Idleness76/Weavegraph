@@ -19,8 +19,8 @@ use std::sync::Arc;
 use tokio::sync::Barrier;
 use weavegraph::channels::Channel;
 use weavegraph::channels::errors::{ErrorEvent, LadderError};
-use weavegraph::runtimes::{Checkpoint, Checkpointer, PostgresCheckpointer};
 use weavegraph::runtimes::checkpointer_postgres::StepQuery as PgStepQuery;
+use weavegraph::runtimes::{Checkpoint, Checkpointer, PostgresCheckpointer};
 use weavegraph::types::NodeKind;
 
 mod common;
@@ -356,12 +356,17 @@ async fn test_out_of_order_writes_do_not_regress_latest() {
         updated_channels: vec![],
     };
 
-    cp.save(checkpoint2).await.expect("save step 2 (out-of-order)");
+    cp.save(checkpoint2)
+        .await
+        .expect("save step 2 (out-of-order)");
 
     // Latest must remain at step 5 and retain the step-5 snapshot.
     let loaded = cp.load_latest(&session_id).await.unwrap().unwrap();
     assert_eq!(loaded.step, 5);
-    assert_eq!(loaded.state.extra.snapshot().get("marker"), Some(&serde_json::json!(5)));
+    assert_eq!(
+        loaded.state.extra.snapshot().get("marker"),
+        Some(&serde_json::json!(5))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -390,7 +395,9 @@ async fn test_concurrent_writers_only_one_wins_concurrency_check() {
 
     let make_checkpoint2 = |marker: i64| {
         let mut s = state_with_user("step 2");
-        s.extra.get_mut().insert("marker".into(), serde_json::json!(marker));
+        s.extra
+            .get_mut()
+            .insert("marker".into(), serde_json::json!(marker));
         Checkpoint {
             session_id: session_id.clone(),
             step: 2,
@@ -410,8 +417,7 @@ async fn test_concurrent_writers_only_one_wins_concurrency_check() {
     let checkpoint_a = make_checkpoint2(111);
     let handle_a = tokio::spawn(async move {
         barrier_a.wait().await;
-        cp_a
-            .save_with_concurrency_check(checkpoint_a, Some(1))
+        cp_a.save_with_concurrency_check(checkpoint_a, Some(1))
             .await
     });
 
@@ -420,8 +426,7 @@ async fn test_concurrent_writers_only_one_wins_concurrency_check() {
     let checkpoint_b = make_checkpoint2(222);
     let handle_b = tokio::spawn(async move {
         barrier_b.wait().await;
-        cp_b
-            .save_with_concurrency_check(checkpoint_b, Some(1))
+        cp_b.save_with_concurrency_check(checkpoint_b, Some(1))
             .await
     });
 

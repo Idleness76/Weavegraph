@@ -658,15 +658,14 @@ impl PostgresCheckpointer {
         //
         // We take a row-level lock so concurrent writers serialize their checks.
         if let Some(expected_step) = expected_last_step {
-            let current_step: i64 = sqlx::query_scalar(
-                "SELECT last_step FROM sessions WHERE id = $1 FOR UPDATE",
-            )
-            .bind(&checkpoint.session_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| CheckpointerError::Backend {
-                message: format!("concurrency check: {e}"),
-            })?;
+            let current_step: i64 =
+                sqlx::query_scalar("SELECT last_step FROM sessions WHERE id = $1 FOR UPDATE")
+                    .bind(&checkpoint.session_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| CheckpointerError::Backend {
+                        message: format!("concurrency check: {e}"),
+                    })?;
 
             if current_step != expected_step as i64 {
                 return Err(CheckpointerError::Backend {
@@ -753,11 +752,11 @@ impl PostgresCheckpointer {
         let versions_seen_json: Value = row.get("versions_seen_json");
         let ran_nodes_json: Value = row.get("ran_nodes_json");
         let skipped_nodes_json: Value = row.get("skipped_nodes_json");
-        let updated_channels_json: Option<Value> = row
-            .try_get("updated_channels_json")
-            .map_err(|e| CheckpointerError::Backend {
-                message: format!("updated_channels_json read: {e}"),
-            })?;
+        let updated_channels_json: Option<Value> =
+            row.try_get("updated_channels_json")
+                .map_err(|e| CheckpointerError::Backend {
+                    message: format!("updated_channels_json read: {e}"),
+                })?;
         let created_at: DateTime<Utc> = row.get("created_at");
         let concurrency_limit: i64 = row.get("concurrency_limit");
 
