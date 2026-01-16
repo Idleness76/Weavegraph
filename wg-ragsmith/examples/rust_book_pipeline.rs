@@ -224,6 +224,12 @@ struct DemoEmbeddingModel;
 impl EmbeddingModel for DemoEmbeddingModel {
     const MAX_DOCUMENTS: usize = 64;
 
+    type Client = ();
+
+    fn make(_client: &Self::Client, _model: impl Into<String>, _dims: Option<usize>) -> Self {
+        Self
+    }
+
     fn ndims(&self) -> usize {
         8
     }

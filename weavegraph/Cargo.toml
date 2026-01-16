@@ -73,7 +73,7 @@ rand = "0.9"
 
 # LLM framework (external dependency)
 # NOTE: rig-core and rmcp are gated behind the "llm" feature (default-off) for AI/MCP users; reduces compile time for non-AI workflows.
-rig-core = { version = "0.27", features = ["rmcp"], optional = true }
+rig-core = { version = "0.28", features = ["rmcp"], optional = true }
 rmcp = { version = "0.8", features = ["client"], optional = true }
 # Database
 sqlx = { version = "0.8", features = [
