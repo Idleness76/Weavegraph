@@ -341,6 +341,24 @@ impl AppRunner {
                     }
                 }
             }
+            #[cfg(feature = "postgres")]
+            CheckpointerType::Postgres => {
+                let db_url = std::env::var("WEAVEGRAPH_POSTGRES_URL")
+                    .ok()
+                    .or_else(|| std::env::var("DATABASE_URL").ok())
+                    .unwrap_or_else(|| "postgresql://localhost/weavegraph".to_string());
+                match crate::runtimes::PostgresCheckpointer::connect(&db_url).await {
+                    Ok(cp) => Some(Arc::new(cp) as Arc<dyn Checkpointer>),
+                    Err(e) => {
+                        tracing::error!(
+                            url = %db_url,
+                            error = %e,
+                            "PostgresCheckpointer initialization failed"
+                        );
+                        None
+                    }
+                }
+            }
         }
     }
 

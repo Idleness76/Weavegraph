@@ -38,6 +38,10 @@
 //! ```
 
 pub mod checkpointer;
+#[cfg(feature = "postgres")]
+pub mod checkpointer_postgres;
+#[cfg(feature = "postgres")]
+mod checkpointer_postgres_helpers;
 #[cfg(feature = "sqlite")]
 pub mod checkpointer_sqlite;
 #[cfg(feature = "sqlite")]
@@ -51,9 +55,13 @@ pub use checkpointer::{
     Checkpoint, Checkpointer, CheckpointerError, CheckpointerType, InMemoryCheckpointer,
     restore_session_state,
 };
+#[cfg(feature = "postgres")]
+pub use checkpointer_postgres::{
+    PageInfo as PgPageInfo, PostgresCheckpointer, StepQuery as PgStepQuery,
+    StepQueryResult as PgStepQueryResult,
+};
 #[cfg(feature = "sqlite")]
 pub use checkpointer_sqlite::{PageInfo, SQLiteCheckpointer, StepQuery, StepQueryResult};
-pub use persistence::*;
 pub use runner::{
     AppRunner, PausedReason, PausedReport, SessionInit, SessionState, StateVersions, StepOptions,
     StepReport, StepResult,
