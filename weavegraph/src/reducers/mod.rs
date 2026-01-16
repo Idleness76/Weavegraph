@@ -21,6 +21,7 @@ pub trait Reducer: Send + Sync {
 }
 
 #[derive(Debug, Error, Diagnostic)]
+#[allow(unused_assignments)]
 pub enum ReducerError {
     #[error("no reducers registered for channel: {0:?}")]
     #[diagnostic(
