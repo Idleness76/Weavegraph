@@ -21,7 +21,6 @@ pub trait Reducer: Send + Sync {
 }
 
 #[derive(Debug, Error, Diagnostic)]
-#[allow(unused_assignments)]
 pub enum ReducerError {
     #[error("no reducers registered for channel: {0:?}")]
     #[diagnostic(
@@ -30,15 +29,13 @@ pub enum ReducerError {
     )]
     UnknownChannel(ChannelType),
 
-    #[error("reducer apply failed for channel {channel:?}: {message}")]
+    #[error("reducer apply failed")]
     #[diagnostic(
         code(weavegraph::reducers::apply),
         help("Check that your reducer implementation correctly handles the NodePartial structure")
     )]
     Apply {
-        #[allow(unused_assignments)]
         channel: ChannelType,
-        #[allow(unused_assignments)]
         message: String,
     },
 }
