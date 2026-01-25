@@ -50,6 +50,9 @@ segtok = { version = "0.1.5", optional = true }
 tiktoken-rs = { version = "0.7", optional = true }
 rust-bert = { version = "0.23", default-features = false, optional = true }
 
+# Weavegraph integration (optional)
+weavegraph = { path = "../weavegraph", optional = true }
+
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 httpmock = "0.7"
@@ -60,6 +63,8 @@ default = ["semantic-chunking-tiktoken"]
 semantic-chunking-tiktoken = ["tiktoken-rs"]
 semantic-chunking-rust-bert = ["rust-bert"]
 semantic-chunking-segtok = ["segtok"]
+# Weavegraph integration: provides Node implementations for use in workflow graphs
+weavegraph-nodes = ["weavegraph"]
 
 [lib]
 path = "src/lib.rs"

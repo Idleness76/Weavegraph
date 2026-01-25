@@ -73,7 +73,7 @@ pub use execution::{PausedReason, PausedReport, StepOptions, StepReport, StepRes
 pub use session::{SessionInit, SessionState, StateVersions};
 
 // Re-export runner
-pub use runner::AppRunner;
+pub use runner::{AppRunner, AppRunnerBuilder};
 
 pub use runtime_config::{EventBusConfig, RuntimeConfig, SinkConfig};
 pub use types::{SessionId, StepNumber};

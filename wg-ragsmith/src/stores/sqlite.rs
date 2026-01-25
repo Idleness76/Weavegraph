@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::mem::transmute;
 use std::os::raw::c_char;
 use std::path::Path;
-use tokio_rusqlite::{Connection, ffi};
+use tokio_rusqlite::{Connection, ffi, OptionalExtension};
 
 use crate::types::RagError;
 
@@ -95,6 +95,9 @@ where
     E: EmbeddingModel + 'static,
 {
     inner: SqliteVectorStore<E, ChunkDocument>,
+    /// Separate connection handle for direct queries not supported by rig-sqlite.
+    /// This is a clone of the connection used by the inner store.
+    conn: Connection,
 }
 
 impl<E> SqliteChunkStore<E>
@@ -115,10 +118,15 @@ where
         })
         .await
         .map_err(|err| RagError::Storage(err.to_string()))?;
+        // Clone connection for direct access before moving into store
+        let conn_for_queries = conn.clone();
         let store = SqliteVectorStore::new(conn, model)
             .await
             .map_err(|err| RagError::Storage(err.to_string()))?;
-        Ok(Self { inner: store })
+        Ok(Self { 
+            inner: store,
+            conn: conn_for_queries,
+        })
     }
 
     pub async fn add_chunks(
@@ -180,5 +188,189 @@ where
 
     pub fn store(&self) -> SqliteVectorStore<E, ChunkDocument> {
         self.inner.clone()
+    }
+
+    /// Get the underlying connection for direct queries.
+    ///
+    /// Use this for operations not covered by the `Backend` trait.
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+}
+
+// ============================================================================
+// Backend Trait Implementation
+// ============================================================================
+
+use super::{Backend, ChunkRecord};
+use async_trait::async_trait;
+
+#[async_trait]
+impl<E> Backend for SqliteChunkStore<E>
+where
+    E: EmbeddingModel + Clone + Send + Sync + 'static,
+{
+    async fn insert_chunks(&self, chunks: Vec<ChunkRecord>) -> Result<(), RagError> {
+        if chunks.is_empty() {
+            return Ok(());
+        }
+
+        let documents_with_embeddings: Vec<(ChunkDocument, Vec<f32>)> = chunks
+            .into_iter()
+            .filter_map(|record| {
+                let embedding = record.embedding.clone()?;
+                let doc = ChunkDocument::from(record);
+                Some((doc, embedding))
+            })
+            .collect();
+
+        self.add_chunks(documents_with_embeddings).await
+    }
+
+    async fn get_chunks_by_url(&self, url: &str) -> Result<Vec<ChunkRecord>, RagError> {
+        let url = url.to_string();
+        let conn = self.connection();
+
+        conn.call(move |conn| {
+            let mut stmt = conn
+                .prepare("SELECT id, url, heading, chunk_index, content, metadata FROM chunks WHERE url = ?")
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+
+            let rows = stmt
+                .query_map([&url], |row| {
+                    Ok(ChunkDocument {
+                        id: row.get(0)?,
+                        url: row.get(1)?,
+                        heading: row.get(2)?,
+                        chunk_index: row.get::<_, String>(3)?.parse().unwrap_or(0),
+                        content: row.get(4)?,
+                        metadata: row.get::<_, String>(5)
+                            .map(|s| serde_json::from_str(&s).unwrap_or_default())
+                            .unwrap_or_default(),
+                    })
+                })
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+
+            let mut results = Vec::new();
+            for row in rows {
+                results.push(ChunkRecord::from(row.map_err(tokio_rusqlite::Error::Rusqlite)?));
+            }
+            Ok(results)
+        })
+        .await
+        .map_err(|err| RagError::Storage(err.to_string()))
+    }
+
+    async fn get_chunk_by_id(&self, id: &str) -> Result<Option<ChunkRecord>, RagError> {
+        let id = id.to_string();
+        let conn = self.connection();
+
+        conn.call(move |conn| {
+            let mut stmt = conn
+                .prepare("SELECT id, url, heading, chunk_index, content, metadata FROM chunks WHERE id = ?")
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+
+            let result = stmt
+                .query_row([&id], |row| {
+                    Ok(ChunkDocument {
+                        id: row.get(0)?,
+                        url: row.get(1)?,
+                        heading: row.get(2)?,
+                        chunk_index: row.get::<_, String>(3)?.parse().unwrap_or(0),
+                        content: row.get(4)?,
+                        metadata: row.get::<_, String>(5)
+                            .map(|s| serde_json::from_str(&s).unwrap_or_default())
+                            .unwrap_or_default(),
+                    })
+                })
+                .optional()
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+
+            Ok(result.map(ChunkRecord::from))
+        })
+        .await
+        .map_err(|err| RagError::Storage(err.to_string()))
+    }
+
+    async fn delete_chunks_by_url(&self, url: &str) -> Result<usize, RagError> {
+        let url = url.to_string();
+        let conn = self.connection();
+
+        conn.call(move |conn| {
+            let deleted = conn
+                .execute("DELETE FROM chunks WHERE url = ?", [&url])
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+            Ok(deleted)
+        })
+        .await
+        .map_err(|err| RagError::Storage(err.to_string()))
+    }
+
+    async fn search_similar(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+    ) -> Result<Vec<(ChunkRecord, f32)>, RagError> {
+        // For similarity search, we need to use the rig vector index
+        // The index requires an embedding model to convert text to embeddings,
+        // but since we already have the query embedding, we use the raw SQL approach
+        let embedding_json = serde_json::to_string(query_embedding)
+            .map_err(|err| RagError::Storage(err.to_string()))?;
+        let conn = self.connection();
+
+        conn.call(move |conn| {
+            // Use sqlite-vec for cosine distance search
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT c.id, c.url, c.heading, c.chunk_index, c.content, c.metadata, \
+                     vec_distance_cosine(e.embedding, vec_f32(?)) as distance \
+                     FROM chunks c \
+                     JOIN chunks_embeddings e ON c.id = e.id \
+                     ORDER BY distance ASC \
+                     LIMIT {}",
+                    top_k
+                ))
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+
+            let rows = stmt
+                .query_map([&embedding_json], |row| {
+                    let doc = ChunkDocument {
+                        id: row.get(0)?,
+                        url: row.get(1)?,
+                        heading: row.get(2)?,
+                        chunk_index: row.get::<_, String>(3)?.parse().unwrap_or(0),
+                        content: row.get(4)?,
+                        metadata: row.get::<_, String>(5)
+                            .map(|s| serde_json::from_str(&s).unwrap_or_default())
+                            .unwrap_or_default(),
+                    };
+                    let distance: f32 = row.get(6)?;
+                    // Convert distance to similarity (1 - distance for cosine)
+                    let similarity = 1.0 - distance;
+                    Ok((ChunkRecord::from(doc), similarity))
+                })
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+
+            let mut results = Vec::new();
+            for row in rows {
+                results.push(row.map_err(tokio_rusqlite::Error::Rusqlite)?);
+            }
+            Ok(results)
+        })
+        .await
+        .map_err(|err| RagError::Storage(err.to_string()))
+    }
+
+    async fn count(&self) -> Result<usize, RagError> {
+        let conn = self.connection();
+
+        conn.call(|conn| {
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))
+                .map_err(tokio_rusqlite::Error::Rusqlite)?;
+            Ok(count as usize)
+        })
+        .await
+        .map_err(|err| RagError::Storage(err.to_string()))
     }
 }

@@ -368,6 +368,7 @@ impl App {
         let (event_bus, output) = build_event_bus();
         let checkpointer_type = self.resolve_checkpointer(checkpointer_override);
 
+        #[allow(deprecated)]
         let runner = AppRunner::with_options_and_bus(
             self.clone(),
             checkpointer_type,
@@ -452,6 +453,7 @@ impl App {
             .split()
             .unwrap_or_else(|_| unreachable!("fresh App::event_stream() always yields unused stream"));
 
+        #[allow(deprecated)]
         let runner =
             AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
                 .await;

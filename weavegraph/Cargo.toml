@@ -96,7 +96,8 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ], optional = true }
 scraper = { version = "0.24", optional = true }
-wg-ragsmith = { version = "0.1.2", optional = true }
+# wg-ragsmith removed from dependencies to avoid circular dependency.
+# For RAG examples, see the wg-ragsmith crate directly.
 
 [package.metadata.docs.rs]
 all-features = true
@@ -110,7 +111,7 @@ sqlite = ["sqlx"]
 postgres-migrations = ["postgres"]
 postgres = ["sqlx"]
 llm = ["rig-core", "rmcp"]
-examples = ["reqwest", "scraper", "wg-ragsmith"]
+examples = ["reqwest", "scraper"]
 
 [[example]]
 name = "demo3"

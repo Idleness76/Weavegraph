@@ -186,7 +186,231 @@ pub enum RunnerError {
     Scheduler(#[from] SchedulerError),
 }
 
+// ============================================================================
+// Builder Pattern
+// ============================================================================
+
+/// Builder for constructing [`AppRunner`] instances with a fluent API.
+///
+/// This builder consolidates all the various constructors (`new`, `with_options`,
+/// `with_options_and_bus`, etc.) into a single, discoverable interface.
+///
+/// # Examples
+///
+/// ## Basic usage with defaults
+///
+/// ```rust,no_run
+/// # use weavegraph::app::App;
+/// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+/// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// let runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .build()
+///     .await;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Full configuration with custom EventBus
+///
+/// ```rust,no_run
+/// # use weavegraph::app::App;
+/// use weavegraph::event_bus::{EventBus, ChannelSink, StdOutSink};
+/// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+/// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// let (tx, rx) = flume::unbounded();
+/// let bus = EventBus::with_sinks(vec![
+///     Box::new(StdOutSink::default()),
+///     Box::new(ChannelSink::new(tx)),
+/// ]);
+///
+/// let runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::SQLite)
+///     .event_bus(bus)
+///     .autosave(true)
+///     .start_listener(true)
+///     .build()
+///     .await;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Using Arc<App> for shared workflows
+///
+/// ```rust,no_run
+/// # use weavegraph::app::App;
+/// use std::sync::Arc;
+/// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+/// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// let shared_app = Arc::new(app);
+///
+/// // Create multiple runners sharing the same App
+/// let runner1 = AppRunner::builder()
+///     .app_arc(shared_app.clone())
+///     .checkpointer(CheckpointerType::InMemory)
+///     .build()
+///     .await;
+///
+/// let runner2 = AppRunner::builder()
+///     .app_arc(shared_app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .build()
+///     .await;
+/// # Ok(())
+/// # }
+/// ```
+pub struct AppRunnerBuilder {
+    app: Option<Arc<App>>,
+    checkpointer_type: CheckpointerType,
+    autosave: bool,
+    event_bus: Option<EventBus>,
+    start_listener: bool,
+}
+
+impl Default for AppRunnerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AppRunnerBuilder {
+    /// Create a new builder with default settings.
+    ///
+    /// Defaults:
+    /// - `checkpointer`: `InMemory`
+    /// - `autosave`: `true`
+    /// - `event_bus`: Uses the app's runtime config when built
+    /// - `start_listener`: `true`
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            app: None,
+            checkpointer_type: CheckpointerType::InMemory,
+            autosave: true,
+            event_bus: None,
+            start_listener: true,
+        }
+    }
+
+    /// Set the workflow application (takes ownership).
+    ///
+    /// This is required before calling [`build()`](Self::build).
+    #[must_use]
+    pub fn app(mut self, app: App) -> Self {
+        self.app = Some(Arc::new(app));
+        self
+    }
+
+    /// Set the workflow application from an existing `Arc<App>`.
+    ///
+    /// Use this when sharing an `App` across multiple runners to avoid cloning.
+    #[must_use]
+    pub fn app_arc(mut self, app: Arc<App>) -> Self {
+        self.app = Some(app);
+        self
+    }
+
+    /// Set the checkpointer type for state persistence.
+    ///
+    /// Defaults to [`CheckpointerType::InMemory`].
+    #[must_use]
+    pub fn checkpointer(mut self, checkpointer_type: CheckpointerType) -> Self {
+        self.checkpointer_type = checkpointer_type;
+        self
+    }
+
+    /// Set whether to automatically save checkpoints after each step.
+    ///
+    /// Defaults to `true`.
+    #[must_use]
+    pub fn autosave(mut self, autosave: bool) -> Self {
+        self.autosave = autosave;
+        self
+    }
+
+    /// Set a custom EventBus for event handling.
+    ///
+    /// If not set, the runner will use the EventBus configured in the app's
+    /// [`RuntimeConfig`](crate::runtimes::RuntimeConfig).
+    #[must_use]
+    pub fn event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = Some(event_bus);
+        self
+    }
+
+    /// Set whether to start the event listener immediately.
+    ///
+    /// Defaults to `true`. Set to `false` if you need to configure
+    /// the EventBus further before starting.
+    #[must_use]
+    pub fn start_listener(mut self, start: bool) -> Self {
+        self.start_listener = start;
+        self
+    }
+
+    /// Build the [`AppRunner`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`app()`](Self::app) or [`app_arc()`](Self::app_arc) was not called.
+    /// Use [`try_build()`](Self::try_build) for a fallible version.
+    pub async fn build(self) -> AppRunner {
+        self.try_build()
+            .await
+            .expect("AppRunnerBuilder requires an app to be set")
+    }
+
+    /// Build the [`AppRunner`], returning `None` if no app was provided.
+    pub async fn try_build(self) -> Option<AppRunner> {
+        let app = self.app?;
+        let event_bus = self
+            .event_bus
+            .unwrap_or_else(|| app.runtime_config().event_bus.build_event_bus());
+
+        Some(
+            AppRunner::with_arc_and_bus(
+                app,
+                self.checkpointer_type,
+                self.autosave,
+                event_bus,
+                self.start_listener,
+            )
+            .await,
+        )
+    }
+}
+
 impl AppRunner {
+    /// Create a new [`AppRunnerBuilder`] for fluent configuration.
+    ///
+    /// This is the **preferred method** for constructing `AppRunner` instances.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use weavegraph::app::App;
+    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// let runner = AppRunner::builder()
+    ///     .app(app)
+    ///     .checkpointer(CheckpointerType::InMemory)
+    ///     .autosave(true)
+    ///     .build()
+    ///     .await;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn builder() -> AppRunnerBuilder {
+        AppRunnerBuilder::new()
+    }
+
     /// Create a new AppRunner with default EventBus (stdout only).
     ///
     /// This is the simplest constructor, used internally by [`App::invoke()`](crate::app::App::invoke).
@@ -228,14 +452,19 @@ impl AppRunner {
     ///
     /// # See Also
     ///
+    /// - [`builder()`](Self::builder) - **Preferred**: Fluent builder API
     /// - [`with_options_and_bus()`](Self::with_options_and_bus) - For custom EventBus
     /// - [`App::invoke()`](crate::app::App::invoke) - Higher-level API using this internally
+    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app(app).checkpointer(type).build().await instead")]
     #[must_use]
+    #[allow(deprecated)]
     pub async fn new(app: App, checkpointer_type: CheckpointerType) -> Self {
         Self::with_options(app, checkpointer_type, true).await
     }
 
+    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app_arc(app).checkpointer(type).build().await instead")]
     #[must_use]
+    #[allow(deprecated)]
     pub async fn from_arc(app: Arc<App>, checkpointer_type: CheckpointerType) -> Self {
         Self::with_options_arc(app, checkpointer_type, true).await
     }
@@ -311,6 +540,7 @@ impl AppRunner {
     }
 
     /// Create with explicit checkpointer + autosave toggle
+    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).build().await instead")]
     pub async fn with_options(
         app: App,
         checkpointer_type: CheckpointerType,
@@ -321,6 +551,7 @@ impl AppRunner {
         Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
+    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).build().await instead")]
     pub async fn with_options_arc(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
@@ -460,6 +691,7 @@ impl AppRunner {
     /// - [`EventBus::with_sinks()`](crate::event_bus::EventBus::with_sinks) - Create EventBus with custom sinks
     /// - [`ChannelSink`](crate::event_bus::ChannelSink) - Stream events to async channels
     /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
+    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead")]
     pub async fn with_options_and_bus(
         app: App,
         checkpointer_type: CheckpointerType,
@@ -479,6 +711,7 @@ impl AppRunner {
     ///
     /// See [`with_options_and_bus()`](Self::with_options_and_bus) for detailed
     /// documentation and examples.
+    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead")]
     pub async fn with_options_arc_and_bus(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
