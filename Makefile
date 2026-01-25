@@ -5,7 +5,7 @@ SQLX ?= sqlx
 DATABASE_URL ?= sqlite://$(PWD)/data/weavegraph.db
 OLLAMA_VOLUME_NAME ?= ollama_data
 
-.PHONY: fmt fmt-check clippy test deny doc machete migrate migrate-revert migrate-status \
+.PHONY: fmt fmt-check clippy test deny doc machete semver-checks bench migrate migrate-revert migrate-status \
 	check_setup check_ollama_volume make_ollama_volume weavegraph
 
 fmt:
@@ -32,6 +32,19 @@ machete:
 		$(CARGO) install cargo-machete --locked; \
 	fi
 	$(CARGO) machete --with-metadata
+
+semver-checks:
+	@if ! $(CARGO) --list | grep -q 'semver-checks'; then \
+		echo "Installing cargo-semver-checks..."; \
+		$(CARGO) install cargo-semver-checks --locked; \
+	fi
+	$(CARGO) semver-checks check-release --package weavegraph
+
+bench:
+	$(CARGO) bench --workspace
+
+bench-quick:
+	$(CARGO) bench --workspace -- --quick
 
 migrate:
 	$(SQLX) migrate run --source weavegraph/migrations --database-url "$(DATABASE_URL)"

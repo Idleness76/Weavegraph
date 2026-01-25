@@ -110,3 +110,46 @@ jobs:
         with:
           prefix-key: machete
       - run: make machete
+
+  semver-checks:
+    name: cargo semver-checks
+    runs-on: ubuntu-latest
+    # Only run on PRs to catch breaking changes before merge
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: semver-checks
+      - name: Check semver compatibility
+        run: cargo semver-checks check-release --package weavegraph
+
+  benchmarks:
+    name: benchmark regression
+    runs-on: ubuntu-latest
+    # Only run on pushes to main to establish baselines and detect regressions
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bench
+      - name: Run benchmarks
+        run: cargo bench --workspace -- --noplot
+      - name: Store benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: target/criterion
+          retention-days: 30
