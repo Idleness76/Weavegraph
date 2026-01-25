@@ -201,11 +201,16 @@ impl InvocationHandle {
     }
 
     /// Await the workflow result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RunnerError::JoinHandleConsumed`] if `join()` was already called,
+    /// or [`RunnerError::Join`] if the underlying task panicked or was cancelled.
     pub async fn join(mut self) -> Result<VersionedState, RunnerError> {
         let handle = self
             .join_handle
             .take()
-            .expect("join_handle already awaited");
+            .ok_or(RunnerError::JoinHandleConsumed)?;
         match handle.await {
             Ok(result) => result,
             Err(err) => Err(RunnerError::Join(err)),
@@ -440,9 +445,12 @@ impl App {
         let checkpointer_type = self.resolve_checkpointer(None);
 
         let event_handle = self.event_stream();
+        // SAFETY: We just created the event handle via event_stream(), so the stream
+        // is guaranteed to be unconsumed. If this somehow fails, it indicates a bug
+        // in the AppEventStream implementation.
         let (event_bus, event_stream) = event_handle
             .split()
-            .expect("fresh App::event_stream() should yield an unused event stream");
+            .unwrap_or_else(|_| unreachable!("fresh App::event_stream() always yields unused stream"));
 
         let runner =
             AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)

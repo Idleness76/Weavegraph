@@ -1,10 +1,23 @@
+//! Main workflow runner coordinating session management, execution, and event streaming.
+//!
+//! The `AppRunner` is the central coordinator that brings together:
+//! - Session state management (from [`session`](super::session))
+//! - Step execution logic (from [`execution`](super::execution))
+//! - Event stream handling (from [`streaming`](super::streaming))
+//!
+//! For most use cases, interact with `AppRunner` directly rather than
+//! the constituent modules.
+
 use crate::app::{App, BarrierOutcome};
 use crate::channels::Channel;
 use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::control::{FrontierCommand, NodeRoute};
-use crate::event_bus::{Event, EventBus, EventStream, STREAM_END_SCOPE};
+use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
+use crate::runtimes::execution::{SchedulerOutcome, StepReport, StepResult, StepOptions, PausedReport, PausedReason};
+use crate::runtimes::session::{SessionState, SessionInit, StateVersions};
+use crate::runtimes::streaming::{StreamEndReason, finalize_event_stream};
 use crate::runtimes::{
     Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer, restore_session_state,
 };
@@ -17,81 +30,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinError;
 use tracing::instrument;
-
-/// Result of executing one superstep in a session.
-///
-/// The embedded [`BarrierOutcome`] carries the
-/// canonical ordering of updates/errors so callers can persist and resume
-/// without drift.
-#[derive(Debug, Clone)]
-pub struct StepReport {
-    pub step: u64,
-    pub ran_nodes: Vec<NodeKind>,
-    pub skipped_nodes: Vec<NodeKind>,
-    pub barrier_outcome: BarrierOutcome,
-    pub next_frontier: Vec<NodeKind>,
-    pub state_versions: StateVersions,
-    pub completed: bool,
-}
-
-/// Snapshot of channel versions for tracking state evolution
-#[derive(Debug, Clone)]
-pub struct StateVersions {
-    pub messages_version: u32,
-    pub extra_version: u32,
-}
-
-/// Session state that needs to be persisted across steps
-#[derive(Debug, Clone)]
-pub struct SessionState {
-    pub state: VersionedState,
-    pub step: u64,
-    pub frontier: Vec<NodeKind>,
-    pub scheduler: Scheduler,
-    pub scheduler_state: SchedulerState,
-}
-
-/// Options for step execution
-#[derive(Debug, Clone, Default)]
-pub struct StepOptions {
-    pub interrupt_before: Vec<NodeKind>,
-    pub interrupt_after: Vec<NodeKind>,
-    pub interrupt_each_step: bool,
-}
-
-/// Paused execution context
-#[derive(Debug, Clone)]
-pub enum PausedReason {
-    BeforeNode(NodeKind),
-    AfterNode(NodeKind),
-    AfterStep(u64),
-}
-
-/// Extended step report when execution is paused
-#[derive(Debug, Clone)]
-pub struct PausedReport {
-    pub session_state: SessionState,
-    pub reason: PausedReason,
-}
-
-/// Result of attempting to run a step
-#[derive(Debug, Clone)]
-pub enum StepResult {
-    Completed(StepReport),
-    Paused(PausedReport),
-}
-
-/// Outcome from scheduler after normalization (ordered partials)
-struct SchedulerOutcome {
-    ran_nodes: Vec<NodeKind>,
-    skipped_nodes: Vec<NodeKind>,
-    partials: Vec<NodePartial>,
-}
-
-enum StreamEndReason {
-    Completed { step: u64 },
-    Error { step: Option<u64>, error: String },
-}
 
 /// Runtime execution engine for workflow graphs with session management and event streaming.
 ///
@@ -198,18 +136,15 @@ pub struct AppRunner {
     event_stream_taken: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionInit {
-    Fresh,
-    Resumed { checkpoint_step: u64 },
-}
-
+/// Errors that can occur during workflow execution.
 #[derive(Debug, Error, Diagnostic)]
 pub enum RunnerError {
+    /// The requested session was not found.
     #[error("session not found: {session_id}")]
     #[diagnostic(code(weavegraph::runner::session_not_found))]
     SessionNotFound { session_id: String },
 
+    /// No nodes are reachable from the Start node.
     #[error("no nodes to run from START (empty frontier)")]
     #[diagnostic(
         code(weavegraph::runner::no_start_nodes),
@@ -217,22 +152,35 @@ pub enum RunnerError {
     )]
     NoStartNodes,
 
+    /// Execution paused unexpectedly during run_until_complete.
     #[error("unexpected pause during run_until_complete")]
     #[diagnostic(code(weavegraph::runner::unexpected_pause))]
     UnexpectedPause,
 
+    /// The join handle was already consumed by a previous call.
+    #[error("join handle already consumed")]
+    #[diagnostic(
+        code(weavegraph::runner::join_handle_consumed),
+        help("InvocationHandle::join() can only be called once.")
+    )]
+    JoinHandleConsumed,
+
+    /// The workflow task failed to join.
     #[error("workflow task join error: {0}")]
     #[diagnostic(code(weavegraph::runner::join))]
     Join(#[from] JoinError),
 
+    /// Checkpointer operation failed.
     #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::checkpointer))]
     Checkpointer(#[from] CheckpointerError),
 
+    /// Barrier application failed.
     #[error("app barrier error: {0}")]
     #[diagnostic(code(weavegraph::runner::barrier))]
     AppBarrier(#[source] Box<dyn std::error::Error + Send + Sync>),
 
+    /// Scheduler error during step execution.
     #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::scheduler))]
     Scheduler(#[from] SchedulerError),
@@ -297,7 +245,7 @@ impl AppRunner {
         sqlite_db_name: Option<String>,
     ) -> Option<Arc<dyn Checkpointer>> {
         match checkpointer_type {
-            CheckpointerType::InMemory => Some(Arc::new(InMemoryCheckpointer::new())),
+            CheckpointerType::InMemory => Some(Arc::new(InMemoryCheckpointer::new()) as Arc<dyn Checkpointer>),
             #[cfg(feature = "sqlite")]
             CheckpointerType::SQLite => {
                 let db_url = std::env::var("WEAVEGRAPH_SQLITE_URL")
@@ -672,10 +620,14 @@ impl AppRunner {
         // Check for interrupt_before
         for node in &current_frontier {
             if options.interrupt_before.contains(node) {
+                // SAFETY: We verified session existence above with the same session_id.
+                // If this fails, we have a logic bug (e.g., concurrent mutation).
                 let session_state = self
                     .sessions
                     .get(session_id)
-                    .expect("session exists after initial lookup")
+                    .ok_or_else(|| RunnerError::SessionNotFound {
+                        session_id: session_id.to_string(),
+                    })?
                     .clone();
                 return Ok(StepResult::Paused(PausedReport {
                     session_state,
@@ -685,10 +637,13 @@ impl AppRunner {
         }
 
         // Take ownership of session state for execution (eliminates full clone)
+        // SAFETY: We verified session existence above with the same session_id.
         let mut session_state = self
             .sessions
             .remove(session_id)
-            .expect("session exists after initial lookup");
+            .ok_or_else(|| RunnerError::SessionNotFound {
+                session_id: session_id.to_string(),
+            })?;
 
         // Execute one superstep; on error, emit an ErrorEvent and rethrow
         let step_report = match self.run_one_superstep(&mut session_state).await {
@@ -697,6 +652,19 @@ impl AppRunner {
                 // Build error event
                 let event = match &e {
                     RunnerError::Scheduler(source) => match source {
+                        crate::schedulers::SchedulerError::NodeNotFound { kind, step } => {
+                            ErrorEvent {
+                                when: chrono::Utc::now(),
+                                scope: ErrorScope::Scheduler {
+                                    step: *step,
+                                },
+                                error: LadderError::msg(format!("node {:?} not found in registry", kind)),
+                                tags: vec!["scheduler".into(), "node_not_found".into()],
+                                context: serde_json::json!({
+                                    "kind": kind.encode()
+                                }),
+                            }
+                        }
                         crate::schedulers::SchedulerError::NodeRun { kind, step, source } => {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
@@ -1228,32 +1196,11 @@ impl AppRunner {
     }
 
     fn finalize_event_stream(&mut self, session_id: &str, reason: StreamEndReason) {
-        let message = match reason {
-            StreamEndReason::Completed { step } => {
-                format!("session={session_id} status=completed step={step}")
-            }
-            StreamEndReason::Error { step, error } => step
-                .map(|s| format!("session={session_id} status=error step={s} error={error}"))
-                .unwrap_or_else(|| format!("session={session_id} status=error error={error}")),
-        };
-
-        if let Err(err) = self
-            .event_bus
-            .get_emitter()
-            .emit(Event::diagnostic(STREAM_END_SCOPE, message.clone()))
-        {
-            tracing::debug!(
-                session = %session_id,
-                scope = STREAM_END_SCOPE,
-                completion_message = %message,
-                error = ?err,
-                "failed to emit stream termination event"
-            );
-        }
-
-        if self.event_stream_taken {
-            self.event_bus.close_channel();
-            self.event_stream_taken = false;
-        }
+        finalize_event_stream(
+            &self.event_bus,
+            session_id,
+            reason,
+            &mut self.event_stream_taken,
+        );
     }
 }

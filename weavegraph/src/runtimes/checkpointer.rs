@@ -31,7 +31,7 @@ use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    runtimes::runner::SessionState, schedulers::SchedulerState, state::VersionedState,
+    runtimes::session::SessionState, schedulers::SchedulerState, state::VersionedState,
     types::NodeKind,
 };
 
@@ -127,7 +127,7 @@ impl Checkpoint {
     pub fn from_step_report(
         session_id: &str,
         session_state: &SessionState,
-        step_report: &crate::runtimes::runner::StepReport,
+        step_report: &crate::runtimes::execution::StepReport,
     ) -> Self {
         Self {
             session_id: session_id.to_string(),

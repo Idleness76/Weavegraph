@@ -204,6 +204,10 @@ pub struct Scheduler {
 ///
 /// fn handle_scheduler_error(error: SchedulerError) {
 ///     match error {
+///         SchedulerError::NodeNotFound { kind, step } => {
+///             eprintln!("Node {:?} not found at step {}", kind, step);
+///             // Handle missing node (graph consistency issue)
+///         }
 ///         SchedulerError::NodeRun { kind, step, source } => {
 ///             eprintln!("Node {:?} failed at step {}: {}", kind, step, source);
 ///             // Handle node-specific failure
@@ -217,6 +221,18 @@ pub struct Scheduler {
 /// ```
 #[derive(Debug, Error, Diagnostic)]
 pub enum SchedulerError {
+    /// A node in the frontier was not found in the registry.
+    ///
+    /// This error indicates a graph consistency issue where the frontier
+    /// contains a node that doesn't exist in the node registry. This should
+    /// not occur with properly compiled graphs.
+    #[error("node {kind:?} in frontier not found in registry at step {step}")]
+    #[diagnostic(
+        code(weavegraph::scheduler::node_not_found),
+        help("Ensure all nodes in the graph are registered before execution.")
+    )]
+    NodeNotFound { kind: NodeKind, step: u64 },
+
     /// A node failed during execution.
     ///
     /// This error occurs when a node's `run` method returns an error.
@@ -538,15 +554,26 @@ impl Scheduler {
 
         // Build tasks for the nodes to run.
         let to_run_ids: Vec<String> = to_run.iter().map(|k| format!("{:?}", k)).collect();
+        
+        // Pre-validate all nodes exist in registry before creating tasks.
+        // This allows us to return early with a proper error rather than
+        // encountering issues mid-execution.
+        for kind in &to_run {
+            if !nodes.contains_key(kind) {
+                return Err(SchedulerError::NodeNotFound {
+                    kind: kind.clone(),
+                    step,
+                });
+            }
+        }
+
         let tasks = to_run_ids
             .iter()
             .cloned()
             .zip(to_run.clone().into_iter())
             .map(|(id_str, kind)| {
-                let node = nodes
-                    .get(&kind)
-                    .expect("node in frontier not found")
-                    .clone();
+                // SAFETY: We validated all nodes exist above, so this unwrap is safe.
+                let node = nodes.get(&kind).unwrap().clone();
                 let event_emitter = Arc::clone(&event_emitter);
                 let ctx = NodeContext {
                     node_id: id_str.clone(),
