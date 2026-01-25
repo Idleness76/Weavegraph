@@ -45,7 +45,7 @@ async fn test_conditional_edge_routing() {
         .add_edge(NodeKind::Custom("N".into()), NodeKind::End)
         .add_conditional_edge(NodeKind::Custom("Root".into()), pred.clone());
     let app = gb.compile().unwrap();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let mut state = state_with_user("hi");
     state
         .extra
@@ -93,7 +93,7 @@ async fn test_conditional_edge_routing() {
 #[tokio::test]
 async fn runner_event_stream_only_once() {
     let app = make_test_app();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
 
     let stream = runner
         .event_stream()
@@ -110,7 +110,7 @@ async fn runner_event_stream_only_once() {
 #[tokio::test]
 async fn test_create_session() {
     let app = make_test_app();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = state_with_user("hello");
 
     let result = runner
@@ -124,7 +124,7 @@ async fn test_create_session() {
 #[tokio::test]
 async fn test_run_step_basic() {
     let app = make_test_app();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = state_with_user("hello");
 
     assert_eq!(
@@ -157,7 +157,7 @@ async fn test_run_step_basic() {
 #[tokio::test]
 async fn test_run_until_complete() {
     let app = make_test_app();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = VersionedState::new_with_user_message("hello");
 
     assert_eq!(
@@ -219,7 +219,7 @@ async fn test_frontier_command_replace_routes_nodes() {
         .compile()
         .unwrap();
 
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = state_with_user("control");
 
     runner
@@ -271,7 +271,7 @@ async fn test_frontier_command_replace_routes_nodes() {
 #[tokio::test]
 async fn test_interrupt_before() {
     let app = make_test_app();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = state_with_user("hello");
 
     assert_eq!(
@@ -300,7 +300,7 @@ async fn test_interrupt_before() {
 #[tokio::test]
 async fn test_interrupt_after() {
     let app = make_test_app();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = state_with_user("hello");
 
     assert_eq!(
@@ -345,7 +345,7 @@ async fn test_resume_from_checkpoint() {
         .compile()
         .unwrap();
 
-    let mut runner1 = AppRunner::new(app.clone(), CheckpointerType::SQLite).await;
+    let mut runner1 = AppRunner::builder().app(app.clone()).checkpointer(CheckpointerType::SQLite).build().await;
     let initial_state = state_with_user("hello from checkpoint test");
 
     let session_id = "checkpoint_test_session";
@@ -372,7 +372,7 @@ async fn test_resume_from_checkpoint() {
     assert_eq!(session_after_step1.step, 1);
     drop(runner1);
 
-    let mut runner2 = AppRunner::new(app, CheckpointerType::SQLite).await;
+    let mut runner2 = AppRunner::builder().app(app).checkpointer(CheckpointerType::SQLite).build().await;
     let resume_result = runner2
         .create_session(session_id.into(), initial_state)
         .await
@@ -419,7 +419,7 @@ async fn test_multi_target_conditional_edge() {
         .add_conditional_edge(NodeKind::Custom("Root".into()), multi_pred);
 
     let app = gb.compile().unwrap();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
 
     let mut state = state_with_user("test");
     state
@@ -486,7 +486,7 @@ async fn test_conditional_edge_with_invalid_targets() {
         .add_conditional_edge(NodeKind::Custom("Root".into()), mixed_pred);
 
     let app = gb.compile().unwrap();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
 
     let state = state_with_user("test");
     runner
@@ -524,7 +524,7 @@ async fn test_error_event_appended_on_failure() {
     gb = gb.add_edge(NodeKind::Custom("X".into()), NodeKind::End);
 
     let app = gb.compile().unwrap();
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
     let initial_state = state_with_user("hello");
 
     assert!(matches!(

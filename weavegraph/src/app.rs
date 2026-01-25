@@ -437,8 +437,7 @@ impl App {
     /// # }
     /// ```
     ///
-    /// See `examples/streaming_events.rs` for a CLI integration and
-    /// `examples/demo7_axum_sse.rs` for an Axum streaming server that reacts to client cancellation.
+    /// See `examples/streaming_events.rs` for a complete integration example.
     pub async fn invoke_streaming(
         &self,
         initial_state: VersionedState,

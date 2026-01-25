@@ -45,7 +45,7 @@ app.invoke_with_sinks(
 
 ### Web Servers (SSE/WebSockets)
 
-Use `App::invoke_streaming` to run a workflow while streaming events to clients. See `examples/demo7_axum_sse.rs` and [STREAMING_QUICKSTART.md](../weavegraph/examples/STREAMING_QUICKSTART.md) for full details.
+Use `App::invoke_streaming` to run a workflow while streaming events to clients. See [STREAMING_QUICKSTART.md](../weavegraph/examples/STREAMING_QUICKSTART.md) for full details.
 
 ### Sink Diagnostics
 
@@ -85,17 +85,21 @@ RUST_LOG=error,weavegraph=debug cargo run --example advanced_patterns
 
 ## Persistence {#persistence}
 
-Weavegraph supports SQLite checkpointing and in-memory state for workflows.
+Weavegraph supports SQLite and PostgreSQL checkpointing, as well as in-memory state for workflows.
 
 ### SQLite Checkpointing
 
 Automatic state persistence with configurable database location:
 
 ```rust
-use weavegraph::runtimes::SQLiteCheckpointer;
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
 
-let checkpointer = SQLiteCheckpointer::new("sqlite://workflow.db").await?;
-let runner = AppRunner::new(app, CheckpointerType::SQLite).await;
+// Using the builder pattern (recommended)
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::Sqlite("sqlite://workflow.db".into()))
+    .build()
+    .await?;
 ```
 
 **Database URL resolution order:**
@@ -104,12 +108,52 @@ let runner = AppRunner::new(app, CheckpointerType::SQLite).await;
 3. `SQLITE_DB_NAME` environment variable (filename only)
 4. Default: `sqlite://weavegraph.db`
 
+### PostgreSQL Checkpointing
+
+For production deployments requiring horizontal scaling or shared state:
+
+```rust
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+
+// Using the builder pattern
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::Postgres("postgres://user:pass@host/db".into()))
+    .build()
+    .await?;
+```
+
+**Database URL resolution order:**
+1. `WEAVEGRAPH_POSTGRES_URL` environment variable
+2. Explicit URL in code
+3. `DATABASE_URL` environment variable (common convention)
+
+**PostgreSQL vs SQLite:**
+
+| Aspect | SQLite | PostgreSQL |
+|--------|--------|------------|
+| **Deployment** | Single-file, embedded | Server-based |
+| **Concurrency** | Single-writer | Multi-writer |
+| **Scaling** | Single instance | Horizontal scaling |
+| **Best for** | Development, single-instance | Production, distributed |
+
+**Migrations:** PostgreSQL migrations are in `migrations/postgres/`. Run with:
+
+```bash
+# Using sqlx-cli
+sqlx migrate run --source migrations/postgres
+```
+
 ### In-Memory Mode
 
 For testing and ephemeral workflows:
 
 ```rust
-let runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .build()
+    .await?;
 ```
 
 ### Storage Management

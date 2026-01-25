@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use weavegraph::event_bus::{Event, EventBus, EventEmitter, MemorySink};
+use weavegraph::event_bus::{Event, EventBus, MemorySink};
 use weavegraph::graphs::GraphBuilder;
 use weavegraph::message::Message;
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -40,7 +40,7 @@ impl BurstEmitterNode {
 impl Node for BurstEmitterNode {
     async fn run(&self, _: StateSnapshot, ctx: NodeContext) -> Result<NodePartial, NodeError> {
         for i in 0..self.event_count {
-            ctx.emit("burst", &format!("event_{i}")).ok();
+            ctx.emit("burst", format!("event_{i}")).ok();
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
         Ok(NodePartial::new().with_messages(vec![Message::assistant("burst complete")]))
@@ -71,7 +71,7 @@ async fn test_high_volume_event_emission() {
     let event_count = 1000;
     for i in 0..event_count {
         emitter
-            .emit(Event::node_message("stress", &format!("event_{i}")))
+            .emit(Event::node_message("stress", format!("event_{i}")))
             .unwrap();
     }
 
@@ -93,7 +93,7 @@ async fn test_high_volume_event_emission() {
 async fn test_burst_node_emission() {
     let counter = Arc::new(AtomicUsize::new(0));
     let app = make_burst_app(100, counter.clone());
-    let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
 
     runner
         .create_session("burst".into(), state_with_user("trigger"))
@@ -127,7 +127,7 @@ async fn test_multiple_sinks() {
     let emitter = bus.get_emitter();
     for i in 0..10 {
         emitter
-            .emit(Event::node_message("multi", &format!("msg_{i}")))
+            .emit(Event::node_message("multi", format!("msg_{i}")))
             .unwrap();
     }
 
@@ -190,7 +190,7 @@ async fn test_event_ordering() {
     // Emit numbered events
     for i in 0..20 {
         emitter
-            .emit(Event::node_message("order", &format!("{i}")))
+            .emit(Event::node_message("order", format!("{i}")))
             .unwrap();
     }
 

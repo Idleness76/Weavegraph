@@ -275,7 +275,7 @@ barrier synchronization.
     See [Messages](GUIDE.md#messages) and [State](GUIDE.md#state).
   * `demo3.rs`, `demo4.rs`, `demo6_agent_mcp.rs` integrate LLM providers (Ollama/MCP),
     leveraging the `llm` feature.
-  * `streaming_events.rs`, `convenience_streaming.rs`, `demo7_axum_sse.rs` demonstrate the
+  * `streaming_events.rs`, `convenience_streaming.rs` demonstrate the
     broadcast event bus and web-friendly streaming patterns.
     See [Event Streaming](OPERATIONS.md#event-streaming).
   * `demo5_rag.rs` ties into `wg-ragsmith` to orchestrate a RAG pipeline end-to-end.

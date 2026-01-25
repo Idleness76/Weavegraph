@@ -117,26 +117,6 @@ llm = ["rig-core", "rmcp"]
 examples = ["reqwest", "scraper"]
 petgraph-compat = ["petgraph"]
 
-[[example]]
-name = "demo3"
-required-features = ["llm"]
-
-[[example]]
-name = "demo4"
-required-features = ["llm"]
-
-[[example]]
-name = "demo5_rag"
-required-features = ["llm", "examples"]
-
-[[example]]
-name = "cap_demo"
-required-features = ["llm"]
-
-[[example]]
-name = "demo6_agent_mcp"
-required-features = ["llm"]
-
 [[bench]]
 name = "event_bus_throughput"
 harness = false

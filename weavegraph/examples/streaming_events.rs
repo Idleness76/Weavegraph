@@ -31,7 +31,7 @@
 //! ## Web Integration
 //!
 //! For Axum/HTTP integration, convert the `EventStream` returned by
-//! `invoke_streaming` into SSE frames (see `demo7_axum_sse.rs`).
+//! `invoke_streaming` into SSE frames.
 //!
 //! ```ignore
 //! use axum::response::sse::{Event as SseEvent, Sse};

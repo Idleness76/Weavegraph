@@ -76,7 +76,7 @@ proptest! {
             gb = gb.add_conditional_edge(NodeKind::Custom("Root".into()), predicate);
 
             let app = gb.compile().unwrap();
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             let initial = state_with_user("seed");
             match runner.create_session("sess_valid".into(), initial).await.unwrap() {
                 SessionInit::Fresh => {}
@@ -130,7 +130,7 @@ proptest! {
             gb = gb.add_conditional_edge(NodeKind::Custom("Root".into()), predicate);
 
             let app = gb.compile().unwrap();
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             match runner.create_session("sess_mix".into(), state_with_user("x")).await.unwrap() {
                 SessionInit::Fresh => {}, _ => panic!("fresh")
             }
@@ -170,7 +170,7 @@ proptest! {
             gb = gb.add_conditional_edge(NodeKind::Custom("Root".into()), predicate);
 
             let app = gb.compile().unwrap();
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             match runner.create_session("sess_fan".into(), state_with_user("y")).await.unwrap() {
                 SessionInit::Fresh => {}, _ => panic!("fresh")
             }
@@ -209,13 +209,11 @@ proptest! {
             // Create predicate that routes based on extra data comparison
             let key_clone = key.clone();
             let predicate: EdgePredicate = Arc::new(move |snap: StateSnapshot| {
-                if let Some(val) = snap.extra.get(&key_clone) {
-                    if let Some(num) = val.as_i64() {
-                        if num >= threshold {
+                if let Some(val) = snap.extra.get(&key_clone)
+                    && let Some(num) = val.as_i64()
+                        && num >= threshold {
                             return vec!["HighPath".to_string()];
                         }
-                    }
-                }
                 vec!["LowPath".to_string()]
             });
 
@@ -231,7 +229,7 @@ proptest! {
                 .compile()
                 .unwrap();
 
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             let mut state = state_with_user("test");
             state.extra.get_mut().insert(key.clone(), serde_json::json!(value));
 
@@ -296,7 +294,7 @@ proptest! {
             gb = gb.add_conditional_edge(NodeKind::Custom("Root".into()), pred_b);
 
             let app = gb.compile().unwrap();
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             runner.create_session("sess_multi".into(), state_with_user("x")).await.unwrap();
 
             let rep = match runner.run_step("sess_multi", StepOptions::default()).await.unwrap() {
@@ -344,7 +342,7 @@ proptest! {
             gb = gb.add_conditional_edge(NodeKind::Custom("Root".into()), pred);
 
             let app = gb.compile().unwrap();
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             runner.create_session("sess_empty".into(), state_with_user("x")).await.unwrap();
 
             let rep = match runner.run_step("sess_empty", StepOptions::default()).await.unwrap() {
@@ -392,7 +390,7 @@ proptest! {
             gb = gb.add_conditional_edge(NodeKind::Custom("Root".into()), pred);
 
             let app = gb.compile().unwrap();
-            let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
+            let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
             runner.create_session("sess_end".into(), state_with_user("x")).await.unwrap();
 
             let rep = match runner.run_step("sess_end", StepOptions::default()).await.unwrap() {
