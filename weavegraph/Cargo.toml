@@ -89,6 +89,9 @@ sqlx = { version = "0.8", features = [
 # Configuration
 dotenvy = "0.15"
 
+# Graph algorithms (optional)
+petgraph = { version = "0.7", optional = true }
+
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "gzip",
@@ -112,6 +115,7 @@ postgres-migrations = ["postgres"]
 postgres = ["sqlx"]
 llm = ["rig-core", "rmcp"]
 examples = ["reqwest", "scraper"]
+petgraph-compat = ["petgraph"]
 
 [[example]]
 name = "demo3"
@@ -132,6 +136,14 @@ required-features = ["llm"]
 [[example]]
 name = "demo6_agent_mcp"
 required-features = ["llm"]
+
+[[bench]]
+name = "event_bus_throughput"
+harness = false
+
+[[bench]]
+name = "graph_compile"
+harness = false
 
 # Clippy configuration to enforce Message API best practices
 [lints.clippy]
