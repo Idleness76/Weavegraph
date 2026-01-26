@@ -1,6 +1,6 @@
 use chrono::Utc;
 use futures_util::{StreamExt, pin_mut};
-use parking_lot::Mutex as ParkingMutex;
+use std::sync::Mutex;
 use proptest::prelude::*;
 use rustc_hash::FxHashMap;
 use serde_json::{Number, Value, json};
@@ -490,29 +490,29 @@ fn event_bus_metrics_expose_capacity() {
 
 #[derive(Default)]
 struct RecordingEmitter {
-    events: Arc<ParkingMutex<Vec<Event>>>,
+    events: Arc<Mutex<Vec<Event>>>,
 }
 
 impl RecordingEmitter {
     fn new() -> Self {
         Self {
-            events: Arc::new(ParkingMutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     fn record(&self, event: Event) {
-        self.events.lock().push(event);
+        self.events.lock().expect("RecordingEmitter mutex poisoned").push(event);
     }
 
     fn snapshot(&self) -> Vec<Event> {
-        self.events.lock().clone()
+        self.events.lock().expect("RecordingEmitter mutex poisoned").clone()
     }
 }
 
 impl fmt::Debug for RecordingEmitter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecordingEmitter")
-            .field("event_count", &self.events.lock().len())
+            .field("event_count", &self.events.lock().expect("RecordingEmitter mutex poisoned").len())
             .finish()
     }
 }
@@ -686,15 +686,15 @@ proptest! {
 // ============================================================================
 
 // Helper for shared writer in tests
-struct SharedWriter(Arc<ParkingMutex<std::io::Cursor<Vec<u8>>>>);
+struct SharedWriter(Arc<Mutex<std::io::Cursor<Vec<u8>>>>);
 
 impl std::io::Write for SharedWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().write(buf)
+        self.0.lock().expect("SharedWriter mutex poisoned").write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.0.lock().flush()
+        self.0.lock().expect("SharedWriter mutex poisoned").flush()
     }
 }
 
@@ -832,7 +832,7 @@ async fn test_jsonlines_sink_stdout() {
     use std::io::Cursor;
 
     // Create in-memory buffer to capture output
-    let buffer = Arc::new(ParkingMutex::new(Cursor::new(Vec::new())));
+    let buffer = Arc::new(Mutex::new(Cursor::new(Vec::new())));
     let buffer_clone = buffer.clone();
 
     let mut sink = JsonLinesSink::new(Box::new(SharedWriter(buffer)));
@@ -844,7 +844,7 @@ async fn test_jsonlines_sink_stdout() {
     sink.handle(&event2).unwrap();
 
     // Extract buffer contents
-    let locked = buffer_clone.lock();
+    let locked = buffer_clone.lock().expect("test buffer mutex poisoned");
     let output = String::from_utf8(locked.get_ref().clone()).unwrap();
     let lines: Vec<&str> = output.lines().collect();
 
@@ -867,7 +867,7 @@ async fn test_jsonlines_sink_stdout() {
 async fn test_jsonlines_sink_pretty_print() {
     use std::io::Cursor;
 
-    let buffer = Arc::new(ParkingMutex::new(Cursor::new(Vec::new())));
+    let buffer = Arc::new(Mutex::new(Cursor::new(Vec::new())));
     let buffer_clone = buffer.clone();
 
     let mut sink = JsonLinesSink::with_pretty_print(Box::new(SharedWriter(buffer)));
@@ -875,7 +875,7 @@ async fn test_jsonlines_sink_pretty_print() {
     let event = Event::diagnostic("pretty_test", "formatted output");
     sink.handle(&event).unwrap();
 
-    let locked = buffer_clone.lock();
+    let locked = buffer_clone.lock().expect("test buffer mutex poisoned");
     let output = String::from_utf8(locked.get_ref().clone()).unwrap();
 
     // Pretty printed JSON should have indentation
@@ -923,7 +923,7 @@ async fn test_jsonlines_sink_file_output() {
 async fn test_jsonlines_sink_flush_behavior() {
     use std::io::Cursor;
 
-    let buffer = Arc::new(ParkingMutex::new(Cursor::new(Vec::new())));
+    let buffer = Arc::new(Mutex::new(Cursor::new(Vec::new())));
     let buffer_clone = buffer.clone();
 
     let mut sink = JsonLinesSink::new(Box::new(SharedWriter(buffer)));
@@ -933,7 +933,7 @@ async fn test_jsonlines_sink_flush_behavior() {
 
     // After single handle() call, buffer should already contain the event
     // because EventSink::handle flushes after each event
-    let locked = buffer_clone.lock();
+    let locked = buffer_clone.lock().expect("test buffer mutex poisoned");
     let output = String::from_utf8(locked.get_ref().clone()).unwrap();
 
     assert!(output.contains("\"message\":\"should be flushed immediately\""));
@@ -941,7 +941,7 @@ async fn test_jsonlines_sink_flush_behavior() {
 
 #[tokio::test]
 async fn test_jsonlines_sink_with_eventbus() {
-    let buffer = Arc::new(ParkingMutex::new(std::io::Cursor::new(Vec::new())));
+    let buffer = Arc::new(Mutex::new(std::io::Cursor::new(Vec::new())));
     let buffer_clone = buffer.clone();
 
     // Create sink with shared buffer
@@ -961,7 +961,7 @@ async fn test_jsonlines_sink_with_eventbus() {
     bus.stop_listener().await;
 
     // Extract and verify output
-    let locked = buffer_clone.lock();
+    let locked = buffer_clone.lock().expect("test buffer mutex poisoned");
     let output = String::from_utf8(locked.get_ref().clone()).unwrap();
     let lines: Vec<&str> = output.lines().collect();
 

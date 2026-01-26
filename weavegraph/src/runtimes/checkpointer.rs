@@ -27,7 +27,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use parking_lot::RwLock;
+use std::sync::RwLock;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -327,7 +327,7 @@ pub trait Checkpointer: Send + Sync {
 /// Characteristics:
 /// - Volatile: process‑local only
 /// - Retention: last checkpoint per session (no historical steps)
-/// - Concurrency: `parking_lot::RwLock` for fast synchronous access (no async overhead)
+/// - Concurrency: `std::sync::RwLock` for fast synchronous access (no async overhead)
 /// - Observability: `#[instrument]` on public trait methods
 ///
 /// Enable debug tracing to inspect operations:
@@ -357,20 +357,20 @@ impl InMemoryCheckpointer {
 impl Checkpointer for InMemoryCheckpointer {
     #[tracing::instrument(skip(self), fields(session_id = %checkpoint.session_id, step = checkpoint.step))]
     async fn save(&self, checkpoint: Checkpoint) -> Result<()> {
-        let mut map = self.inner.write();
+        let mut map = self.inner.write().expect("InMemoryCheckpointer RwLock poisoned");
         map.insert(checkpoint.session_id.clone(), checkpoint);
         Ok(())
     }
 
     #[tracing::instrument(skip(self), fields(session_id = %session_id))]
     async fn load_latest(&self, session_id: &str) -> Result<Option<Checkpoint>> {
-        let map = self.inner.read();
+        let map = self.inner.read().expect("InMemoryCheckpointer RwLock poisoned");
         Ok(map.get(session_id).cloned())
     }
 
     #[tracing::instrument(skip(self))]
     async fn list_sessions(&self) -> Result<Vec<String>> {
-        let map = self.inner.read();
+        let map = self.inner.read().expect("InMemoryCheckpointer RwLock poisoned");
         Ok(map.keys().cloned().collect())
     }
 }

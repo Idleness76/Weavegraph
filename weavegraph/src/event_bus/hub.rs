@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures_util::stream::{self, BoxStream, StreamExt};
-use parking_lot::RwLock;
+use std::sync::RwLock;
 use tokio::sync::{
     broadcast::{self, Receiver, Sender},
     watch,
@@ -102,11 +102,11 @@ impl EventHub {
 
     /// Close the hub and signal all subscribers that no further events will arrive.
     pub fn close(&self) {
-        let _ = self.sender.write().take();
+        let _ = self.sender.write().expect("EventHub sender RwLock poisoned").take();
     }
 
     fn current_sender(&self) -> Option<Sender<Event>> {
-        self.sender.read().clone()
+        self.sender.read().expect("EventHub sender RwLock poisoned").clone()
     }
 
     fn record_lag(&self, missed: u64) {

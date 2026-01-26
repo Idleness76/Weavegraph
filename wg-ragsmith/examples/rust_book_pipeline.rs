@@ -1,4 +1,4 @@
-use parking_lot::Once;
+use std::sync::Once;
 use reqwest::Client;
 use rig::embeddings::embedding::{Embedding, EmbeddingError, EmbeddingModel};
 use scraper::{Html, Selector};

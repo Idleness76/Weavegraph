@@ -1,7 +1,7 @@
 //! Demonstrates querying chunks and embeddings from a SQLite vector database.
 //!
 //! This example shows how to:
-//! - Register the sqlite-vec extension using parking_lot::Mutex for thread-safe caching
+//! - Register the sqlite-vec extension using std::sync::OnceLock for one-time init
 //! - Query chunk documents from a SQLite database
 //! - Query vector embeddings using vec0 virtual tables
 //! - Use sqlite-vec functions like vec_to_json()
@@ -13,7 +13,7 @@
 //! cargo run --example query_chunks
 //! ```
 
-use parking_lot::Mutex;
+use std::sync::OnceLock;
 use std::mem::transmute;
 use std::os::raw::c_char;
 use tokio_rusqlite::{Connection, Result, ffi};
@@ -172,31 +172,26 @@ async fn main() -> Result<()> {
 }
 
 fn register_sqlite_vec() {
-    static REGISTERED: Mutex<bool> = Mutex::new(false);
+    static REGISTERED: OnceLock<()> = OnceLock::new();
 
-    let mut registered = REGISTERED.lock();
-    if *registered {
-        return;
-    }
+    REGISTERED.get_or_init(|| {
+        unsafe {
+            type SqliteExtensionInit = unsafe extern "C" fn(
+                *mut ffi::sqlite3,
+                *mut *mut c_char,
+                *const ffi::sqlite3_api_routines,
+            ) -> i32;
 
-    unsafe {
-        type SqliteExtensionInit = unsafe extern "C" fn(
-            *mut ffi::sqlite3,
-            *mut *mut c_char,
-            *const ffi::sqlite3_api_routines,
-        ) -> i32;
-
-        let init: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
-        let init_fn: SqliteExtensionInit = transmute::<_, SqliteExtensionInit>(init);
-        let rc = ffi::sqlite3_auto_extension(Some(init_fn));
-        // Panic on error instead of returning Result
-        // registration failure is a fatal initialization error that should fail fast
-        if rc != ffi::SQLITE_OK {
-            panic!("failed to register sqlite-vec extension (code {rc})");
+            let init: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
+            let init_fn: SqliteExtensionInit = transmute::<_, SqliteExtensionInit>(init);
+            let rc = ffi::sqlite3_auto_extension(Some(init_fn));
+            // Panic on error instead of returning Result
+            // registration failure is a fatal initialization error that should fail fast
+            if rc != ffi::SQLITE_OK {
+                panic!("failed to register sqlite-vec extension (code {rc})");
+            }
         }
-    }
-
-    *registered = true;
+    });
 }
 
 async fn setup_test_database(conn: &Connection) -> Result<()> {

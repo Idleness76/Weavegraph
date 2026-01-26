@@ -1,4 +1,4 @@
-use parking_lot::Mutex;
+use std::sync::Once;
 use rig::OneOrMany;
 use rig::embeddings::{Embedding, EmbeddingModel};
 use rig_sqlite::{
@@ -153,33 +153,38 @@ where
     }
 
     fn register_sqlite_vec() -> Result<(), RagError> {
-        static REGISTERED: Mutex<bool> = Mutex::new(false);
+        use std::sync::Mutex;
+        
+        static INIT: Once = Once::new();
+        static INIT_RESULT: Mutex<Option<Result<(), String>>> = Mutex::new(None);
 
-        let mut registered = REGISTERED.lock();
-        if *registered {
-            return Ok(());
-        }
+        INIT.call_once(|| {
+            let result = unsafe {
+                type SqliteExtensionInit = unsafe extern "C" fn(
+                    *mut ffi::sqlite3,
+                    *mut *mut c_char,
+                    *const ffi::sqlite3_api_routines,
+                ) -> i32;
 
-        unsafe {
-            type SqliteExtensionInit = unsafe extern "C" fn(
-                *mut ffi::sqlite3,
-                *mut *mut c_char,
-                *const ffi::sqlite3_api_routines,
-            ) -> i32;
+                let init: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
+                let init_fn: SqliteExtensionInit =
+                    transmute::<unsafe extern "C" fn(), SqliteExtensionInit>(init);
+                let rc = ffi::sqlite3_auto_extension(Some(init_fn));
+                if rc != 0 {
+                    Err(format!("failed to register sqlite-vec extension (code {rc})"))
+                } else {
+                    Ok(())
+                }
+            };
+            *INIT_RESULT.lock().expect("init result mutex poisoned") = Some(result);
+        });
 
-            let init: unsafe extern "C" fn() = sqlite_vec::sqlite3_vec_init;
-            let init_fn: SqliteExtensionInit =
-                transmute::<unsafe extern "C" fn(), SqliteExtensionInit>(init);
-            let rc = ffi::sqlite3_auto_extension(Some(init_fn));
-            if rc != 0 {
-                return Err(RagError::Storage(format!(
-                    "failed to register sqlite-vec extension (code {rc})"
-                )));
-            }
-        }
-
-        *registered = true;
-        Ok(())
+        INIT_RESULT
+            .lock()
+            .expect("init result mutex poisoned")
+            .clone()
+            .expect("init was called but result not set")
+            .map_err(RagError::Storage)
     }
 
     pub fn index(&self, model: E) -> SqliteVectorIndex<E, ChunkDocument> {

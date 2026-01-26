@@ -1,6 +1,6 @@
-use parking_lot::Mutex as ParkingMutex;
 use std::io;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::{broadcast, oneshot};
 use tokio::task;
@@ -154,7 +154,7 @@ use chrono::Utc;
 const DEFAULT_BUFFER_CAPACITY: usize = 1024;
 
 pub struct EventBus {
-    sinks: Arc<ParkingMutex<Vec<SinkEntry>>>,
+    sinks: Arc<Mutex<Vec<SinkEntry>>>,
     hub: Arc<EventHub>,
     started: AtomicBool,
     /// Generation counter tracking listener restarts so stale workers exit.
@@ -162,7 +162,7 @@ pub struct EventBus {
     /// Diagnostics broadcast channel for sink errors.
     diagnostics_tx: broadcast::Sender<SinkDiagnostic>,
     /// In-memory health tracking per sink name.
-    health: Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
+    health: Arc<Mutex<std::collections::HashMap<String, HealthState>>>,
     diagnostics_enabled: bool,
     diagnostics_emit_to_events: bool,
 }
@@ -206,12 +206,12 @@ impl EventBus {
             broadcast::channel(1)
         };
         Self {
-            sinks: Arc::new(ParkingMutex::new(entries)),
+            sinks: Arc::new(Mutex::new(entries)),
             hub,
             started: AtomicBool::new(false),
             generation: Arc::new(AtomicU64::new(0)),
             diagnostics_tx,
-            health: Arc::new(ParkingMutex::new(std::collections::HashMap::new())),
+            health: Arc::new(Mutex::new(std::collections::HashMap::new())),
             diagnostics_enabled,
             diagnostics_emit_to_events,
         }
@@ -223,7 +223,7 @@ impl EventBus {
 
     /// Attach a new sink to the hub, starting a worker immediately if the bus is live.
     pub fn add_boxed_sink(&self, sink: Box<dyn EventSink>) {
-        let mut sinks_guard = self.sinks.lock();
+        let mut sinks_guard = self.sinks.lock().expect("EventBus sinks mutex poisoned");
         let mut entry = SinkEntry::new(sink);
         if self.started.load(Ordering::SeqCst) {
             let generation = self.generation.load(Ordering::SeqCst);
@@ -265,7 +265,7 @@ impl EventBus {
 
     /// Return a snapshot of per-sink health counters and last error details.
     pub fn sink_health(&self) -> Vec<SinkHealth> {
-        let health = self.health.lock();
+        let health = self.health.lock().expect("EventBus health mutex poisoned");
         health
             .iter()
             .map(|(sink, state)| SinkHealth {
@@ -282,7 +282,7 @@ impl EventBus {
         if self.started.swap(true, Ordering::SeqCst) {
             return;
         }
-        let mut sinks = self.sinks.lock();
+        let mut sinks = self.sinks.lock().expect("EventBus sinks mutex poisoned");
         let generation = self.generation.load(Ordering::SeqCst);
         for entry in sinks.iter_mut() {
             entry.spawn_worker(
@@ -304,7 +304,7 @@ impl EventBus {
         }
         self.generation.fetch_add(1, Ordering::SeqCst);
         let workers = {
-            let mut sinks = self.sinks.lock();
+            let mut sinks = self.sinks.lock().expect("EventBus sinks mutex poisoned");
             let mut collected = Vec::with_capacity(sinks.len());
             for entry in sinks.iter_mut() {
                 if let Some(worker) = entry.worker.take() {
@@ -329,7 +329,7 @@ impl Drop for EventBus {
     fn drop(&mut self) {
         self.hub.close();
         if self.started.load(Ordering::SeqCst) {
-            let mut sinks = self.sinks.lock();
+            let mut sinks = self.sinks.lock().expect("EventBus sinks mutex poisoned");
             for entry in sinks.iter_mut() {
                 entry.abort_worker();
             }
@@ -338,7 +338,7 @@ impl Drop for EventBus {
 }
 
 struct SinkEntry {
-    sink: Arc<ParkingMutex<Box<dyn EventSink>>>,
+    sink: Arc<Mutex<Box<dyn EventSink>>>,
     /// Resolved once at registration to avoid recomputing on error paths.
     name: String,
     worker: Option<SinkWorker>,
@@ -355,7 +355,7 @@ impl SinkEntry {
             candidate
         };
         Self {
-            sink: Arc::new(ParkingMutex::new(sink)),
+            sink: Arc::new(Mutex::new(sink)),
             name,
             worker: None,
         }
@@ -368,7 +368,7 @@ impl SinkEntry {
         generation_state: Arc<AtomicU64>,
         active_generation: u64,
         diagnostics_tx: broadcast::Sender<SinkDiagnostic>,
-        health: Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
+        health: Arc<Mutex<std::collections::HashMap<String, HealthState>>>,
         diagnostics_enabled: bool,
         diagnostics_emit_to_events: bool,
     ) {
@@ -386,14 +386,14 @@ impl SinkEntry {
         let hub_clone = Arc::clone(&hub);
         let handle = task::spawn(async move {
             fn record_sink_error(
-                health: &Arc<ParkingMutex<std::collections::HashMap<String, HealthState>>>,
+                health: &Arc<Mutex<std::collections::HashMap<String, HealthState>>>,
                 diagnostics_tx: &broadcast::Sender<SinkDiagnostic>,
                 sink_name: &str,
                 err_msg: &str,
                 diagnostics_enabled: bool,
             ) {
                 if diagnostics_enabled {
-                    let mut map = health.lock();
+                    let mut map = health.lock().expect("health mutex poisoned");
                     let entry = map.entry(sink_name.to_string()).or_default();
                     entry.error_count = entry.error_count.saturating_add(1);
                     entry.last_error = Some(err_msg.to_string());
@@ -427,7 +427,7 @@ impl SinkEntry {
                             // Dispatch potentially blocking sink logic onto the dedicated
                             // blocking pool so we never park the async runtime thread.
                             let dispatch = task::spawn_blocking(move || -> io::Result<()> {
-                                let mut guard = sink.lock();
+                                let mut guard = sink.lock().expect("sink mutex poisoned");
                                 guard.handle(&event)
                             });
                             match dispatch.await {
