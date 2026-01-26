@@ -3,7 +3,8 @@
 //! The `AppRunner` is the central coordinator that brings together:
 //! - Session state management (from [`session`](super::session))
 //! - Step execution logic (from [`execution`](super::execution))
-//! - Event stream handling (from [`streaming`](super::streaming))
+//! - Event stream handling (see [`App::event_stream`](crate::app::App::event_stream) and
+//!   [`App::invoke_streaming`](crate::app::App::invoke_streaming))
 //!
 //! For most use cases, interact with `AppRunner` directly rather than
 //! the constituent modules.
@@ -15,8 +16,10 @@ use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
-use crate::runtimes::execution::{SchedulerOutcome, StepReport, StepResult, StepOptions, PausedReport, PausedReason};
-use crate::runtimes::session::{SessionState, SessionInit, StateVersions};
+use crate::runtimes::execution::{
+    PausedReason, PausedReport, SchedulerOutcome, StepOptions, StepReport, StepResult,
+};
+use crate::runtimes::session::{SessionInit, SessionState, StateVersions};
 use crate::runtimes::streaming::{StreamEndReason, finalize_event_stream};
 use crate::runtimes::{
     Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer, restore_session_state,
@@ -239,7 +242,7 @@ pub enum RunnerError {
 /// # }
 /// ```
 ///
-/// ## Using Arc<App> for shared workflows
+/// ## Using `Arc<App>` for shared workflows
 ///
 /// ```rust,no_run
 /// # use weavegraph::app::App;
@@ -455,14 +458,20 @@ impl AppRunner {
     /// - [`builder()`](Self::builder) - **Preferred**: Fluent builder API
     /// - [`with_options_and_bus()`](Self::with_options_and_bus) - For custom EventBus
     /// - [`App::invoke()`](crate::app::App::invoke) - Higher-level API using this internally
-    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app(app).checkpointer(type).build().await instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app(app).checkpointer(type).build().await instead"
+    )]
     #[must_use]
     #[allow(deprecated)]
     pub async fn new(app: App, checkpointer_type: CheckpointerType) -> Self {
         Self::with_options(app, checkpointer_type, true).await
     }
 
-    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app_arc(app).checkpointer(type).build().await instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).build().await instead"
+    )]
     #[must_use]
     #[allow(deprecated)]
     pub async fn from_arc(app: Arc<App>, checkpointer_type: CheckpointerType) -> Self {
@@ -474,7 +483,9 @@ impl AppRunner {
         sqlite_db_name: Option<String>,
     ) -> Option<Arc<dyn Checkpointer>> {
         match checkpointer_type {
-            CheckpointerType::InMemory => Some(Arc::new(InMemoryCheckpointer::new()) as Arc<dyn Checkpointer>),
+            CheckpointerType::InMemory => {
+                Some(Arc::new(InMemoryCheckpointer::new()) as Arc<dyn Checkpointer>)
+            }
             #[cfg(feature = "sqlite")]
             CheckpointerType::SQLite => {
                 let db_url = std::env::var("WEAVEGRAPH_SQLITE_URL")
@@ -540,7 +551,10 @@ impl AppRunner {
     }
 
     /// Create with explicit checkpointer + autosave toggle
-    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).build().await instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).build().await instead"
+    )]
     pub async fn with_options(
         app: App,
         checkpointer_type: CheckpointerType,
@@ -551,7 +565,10 @@ impl AppRunner {
         Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
-    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).build().await instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).build().await instead"
+    )]
     pub async fn with_options_arc(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
@@ -691,7 +708,10 @@ impl AppRunner {
     /// - [`EventBus::with_sinks()`](crate::event_bus::EventBus::with_sinks) - Create EventBus with custom sinks
     /// - [`ChannelSink`](crate::event_bus::ChannelSink) - Stream events to async channels
     /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
-    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead"
+    )]
     pub async fn with_options_and_bus(
         app: App,
         checkpointer_type: CheckpointerType,
@@ -711,7 +731,10 @@ impl AppRunner {
     ///
     /// See [`with_options_and_bus()`](Self::with_options_and_bus) for detailed
     /// documentation and examples.
-    #[deprecated(since = "0.2.0", note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead"
+    )]
     pub async fn with_options_arc_and_bus(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
@@ -871,12 +894,12 @@ impl AppRunner {
 
         // Take ownership of session state for execution (eliminates full clone)
         // SAFETY: We verified session existence above with the same session_id.
-        let mut session_state = self
-            .sessions
-            .remove(session_id)
-            .ok_or_else(|| RunnerError::SessionNotFound {
-                session_id: session_id.to_string(),
-            })?;
+        let mut session_state =
+            self.sessions
+                .remove(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
 
         // Execute one superstep; on error, emit an ErrorEvent and rethrow
         let step_report = match self.run_one_superstep(&mut session_state).await {
@@ -888,10 +911,11 @@ impl AppRunner {
                         crate::schedulers::SchedulerError::NodeNotFound { kind, step } => {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
-                                scope: ErrorScope::Scheduler {
-                                    step: *step,
-                                },
-                                error: LadderError::msg(format!("node {:?} not found in registry", kind)),
+                                scope: ErrorScope::Scheduler { step: *step },
+                                error: LadderError::msg(format!(
+                                    "node {:?} not found in registry",
+                                    kind
+                                )),
                                 tags: vec!["scheduler".into(), "node_not_found".into()],
                                 context: serde_json::json!({
                                     "kind": kind.encode()

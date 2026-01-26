@@ -30,14 +30,14 @@ cargo run --example streaming_events
 ```
 
 **Key Concepts:**
-- ✅ Using `AppRunner::with_options_and_bus()` instead of `App.invoke()`
+- ✅ Using `AppRunner::builder().event_bus(...)` instead of `App.invoke()`
 - ✅ Creating custom `EventBus` with `ChannelSink`
 - ✅ Per-request event isolation in web servers
 - ✅ HTTP streaming integration patterns (Axum JSON lines)
 
 **Documentation:**
 - See `STREAMING_QUICKSTART.md` for a quick guide
-- See API docs: `AppRunner::with_options_and_bus()`
+- See API docs: `AppRunner::builder()`
 - See API docs: `ChannelSink`
 
 ### ⚠️ Important: Event Streaming Pattern
@@ -52,7 +52,14 @@ app.invoke(state).await;  // ❌ Creates its own EventBus!
 **Do this instead**:
 ```rust
 let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .autosave(false)
+    .start_listener(true)
+    .build()
+    .await;
 runner.run_until_complete(&session_id).await;  // ✅ Uses your EventBus
 ```
 
@@ -168,13 +175,14 @@ let bus = EventBus::with_sinks(vec![
 ]);
 
 // Use AppRunner with custom EventBus
-let mut runner = AppRunner::with_options_and_bus(
-    app,
-    CheckpointerType::InMemory,
-    false,
-    bus,
-    true,
-).await;
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .autosave(false)
+    .start_listener(true)
+    .build()
+    .await;
 
 runner.create_session(session_id.clone(), initial_state).await?;
 runner.run_until_complete(&session_id).await?;
@@ -189,8 +197,8 @@ runner.run_until_complete(&session_id).await?;
 | Simple script | `invoke()` | No streaming needed |
 | CLI with progress | `invoke_with_channel()` ⭐NEW | Simple, one-shot streaming |
 | Multiple sinks | `invoke_with_sinks()` ⭐NEW | Need stdout + channel + file |
-| Web server (streaming) | `AppRunner::with_options_and_bus()` | Per-request isolation required |
-| Shared app, many clients | `AppRunner::with_options_and_bus()` | One App, many runners |
+| Web server (streaming) | `AppRunner::builder()` ⭐RECOMMENDED | Per-request isolation + clearer config |
+| Shared app, many clients | `AppRunner::builder()` ⭐RECOMMENDED | Use `.app_arc(Arc<App>)` |
 
 ### Per-Request Isolation (Web Server)
 
@@ -200,13 +208,14 @@ async fn handle_request(app: Arc<App>) -> Result<Stream> {
     let (tx, rx) = flume::unbounded();
     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
     
-    let mut runner = AppRunner::with_options_and_bus(
-        Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()),
-        CheckpointerType::InMemory,
-        false,
-        bus,
-        true,
-    ).await;
+    let mut runner = AppRunner::builder()
+        .app_arc(app.clone())
+        .checkpointer(CheckpointerType::InMemory)
+        .event_bus(bus)
+        .autosave(false)
+        .start_listener(true)
+        .build()
+        .await;
     
     // Run workflow - events isolated to this request
     tokio::spawn(async move {

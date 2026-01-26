@@ -19,11 +19,10 @@ let system_msg = Message::system("You are a helpful assistant.");
 // Custom roles
 let function_msg = Message::new("function", "Processing complete");
 
-// Builder pattern for advanced cases
-let complex_msg = Message::builder()
-    .role("custom_agent")
-    .content("Task completed successfully")
-    .build();
+// Typed role helpers
+use weavegraph::message::Role;
+let tool_msg = Message::with_role(Role::Tool, "Tool output");
+assert!(tool_msg.is_role(Role::Tool));
 ```
 
 ## State Management {#state}

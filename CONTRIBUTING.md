@@ -1,6 +1,6 @@
 # Contributing to Weavegraph
 
-Thank you for your interest in contributing to Weavegraph! This project welcomes contributions from developers of all skill levels. As an early beta framework (v0.1.x), we're actively evolving APIs and architecture based on real-world usage and community feedback.
+Thank you for your interest in contributing to Weavegraph! This project welcomes contributions from developers of all skill levels. As an early beta framework (targeting v0.2.x), we're actively evolving APIs and architecture based on real-world usage and community feedback.
 
 ## 🚀 Getting Started
 
@@ -39,7 +39,8 @@ Thank you for your interest in contributing to Weavegraph! This project welcomes
 4. **Set up Ollama for LLM demos** (optional):
    ```bash
    docker-compose up -d ollama
-   cargo run --example demo3
+   # LLM-focused demos were removed during the 0.2.0 refactor; start from streaming patterns instead
+   cargo run --example streaming_events
    ```
 
 ## 🎯 How to Contribute

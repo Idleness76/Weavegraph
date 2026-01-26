@@ -27,7 +27,11 @@
 //! # use weavegraph::app::App;
 //! # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
 //!
-//! let mut runner = AppRunner::new(app, CheckpointerType::SQLite).await;
+//! let mut runner = AppRunner::builder()
+//!     .app(app)
+//!     .checkpointer(CheckpointerType::InMemory)
+//!     .build()
+//!     .await;
 //! let initial_state = VersionedState::new_with_user_message("Hello");
 //!
 //! // Create session and run to completion

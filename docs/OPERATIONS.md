@@ -97,16 +97,17 @@ use weavegraph::runtimes::{AppRunner, CheckpointerType};
 // Using the builder pattern (recommended)
 let runner = AppRunner::builder()
     .app(app)
-    .checkpointer(CheckpointerType::Sqlite("sqlite://workflow.db".into()))
+    .checkpointer(CheckpointerType::SQLite)
     .build()
-    .await?;
+    .await;
 ```
 
-**Database URL resolution order:**
-1. `WEAVEGRAPH_SQLITE_URL` environment variable
-2. Explicit URL in code
-3. `SQLITE_DB_NAME` environment variable (filename only)
-4. Default: `sqlite://weavegraph.db`
+**SQLite URL resolution order (when `CheckpointerType::SQLite` is selected):**
+1. `WEAVEGRAPH_SQLITE_URL` environment variable (full URL)
+2. `SQLITE_DB_NAME` environment variable (filename only; used as `sqlite://{name}`)
+3. Default: `sqlite://weavegraph.db`
+
+Tip: `RuntimeConfig` also loads `.env` automatically (via `dotenvy`) for local dev.
 
 ### PostgreSQL Checkpointing
 
@@ -118,15 +119,15 @@ use weavegraph::runtimes::{AppRunner, CheckpointerType};
 // Using the builder pattern
 let runner = AppRunner::builder()
     .app(app)
-    .checkpointer(CheckpointerType::Postgres("postgres://user:pass@host/db".into()))
+    .checkpointer(CheckpointerType::Postgres)
     .build()
-    .await?;
+    .await;
 ```
 
 **Database URL resolution order:**
 1. `WEAVEGRAPH_POSTGRES_URL` environment variable
-2. Explicit URL in code
-3. `DATABASE_URL` environment variable (common convention)
+2. `DATABASE_URL` environment variable (common convention)
+3. Fallback: `postgresql://localhost/weavegraph`
 
 **PostgreSQL vs SQLite:**
 
@@ -234,14 +235,32 @@ Use `MemorySink` for synchronous event capture:
 
 ```rust
 use weavegraph::event_bus::{EventBus, MemorySink};
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+use weavegraph::state::VersionedState;
 
+# async fn example(app: weavegraph::app::App) -> Result<(), Box<dyn std::error::Error>> {
 let sink = MemorySink::new();
 let event_bus = EventBus::with_sink(sink.clone());
-let runner = AppRunner::with_bus(graph, event_bus);
 
-// After execution
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(event_bus)
+    .autosave(false)
+    .start_listener(true)
+    .build()
+    .await;
+
+let session_id = "test-session".to_string();
+runner
+    .create_session(session_id.clone(), VersionedState::new_with_user_message("Hi"))
+    .await?;
+runner.run_until_complete(&session_id).await?;
+
 let events = sink.snapshot();
-assert_eq!(events.len(), 5);
+assert!(!events.is_empty());
+# Ok(())
+# }
 ```
 
 ### Property-Based Testing
@@ -327,13 +346,14 @@ use weavegraph::runtimes::{AppRunner, CheckpointerType};
 let (tx, rx) = flume::unbounded();
 let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 
-let mut runner = AppRunner::with_options_and_bus(
-    app.clone(),
-    CheckpointerType::InMemory,
-    true,  // autosave
-    bus,
-    true   // start event listener
-).await;
+let mut runner = AppRunner::builder()
+    .app(app.clone())
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .autosave(true)
+    .start_listener(true)
+    .build()
+    .await;
 ```
 
 See also: [Developer Guide](GUIDE.md), [Architecture](ARCHITECTURE.md)

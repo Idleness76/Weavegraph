@@ -126,7 +126,7 @@ Makefile                  → Developer/CI task runner (fmt, clippy, test, doc, 
 ARCHITECTURE.md           → This document.
 ```
 
-The workspace targets Rust 1.91 as the minimum supported version and enables 2024 edition
+The workspace targets Rust 1.89 as the minimum supported version and enables 2024 edition
 features across both crates.
 
 ---
@@ -264,7 +264,7 @@ barrier synchronization.
 
 * `llm` – Enables Rig-based LLM support (Ollama/MCP integrations).
 * `sqlite-migrations` – Turns on SQLite-backed persistence (default).
-* `examples` – Pulls in `wg-ragsmith`, `reqwest`, and `scraper` for richer demos.
+* `examples` – Pulls in extra dependencies used by a subset of examples (e.g. `reqwest`, `scraper`).
 
 ### Tests & Examples
 
@@ -273,12 +273,12 @@ barrier synchronization.
 * `weavegraph/examples/` – Progressive walkthroughs:
   * `basic_nodes.rs`, `demo1.rs`, `demo2.rs` show core messaging and state channels.
     See [Messages](GUIDE.md#messages) and [State](GUIDE.md#state).
-  * `demo3.rs`, `demo4.rs`, `demo6_agent_mcp.rs` integrate LLM providers (Ollama/MCP),
-    leveraging the `llm` feature.
+  * `advanced_patterns.rs` covers conditional routing and control-flow helpers.
   * `streaming_events.rs`, `convenience_streaming.rs` demonstrate the
     broadcast event bus and web-friendly streaming patterns.
     See [Event Streaming](OPERATIONS.md#event-streaming).
-  * `demo5_rag.rs` ties into `wg-ragsmith` to orchestrate a RAG pipeline end-to-end.
+  * `event_backpressure.rs`, `json_serialization.rs`, `errors_pretty.rs` cover production-facing
+    concerns like lag handling, JSON sinks, and pretty diagnostics.
 
 ---
 
@@ -436,26 +436,27 @@ use weavegraph::graphs::GraphBuilder;
 use weavegraph::types::NodeKind;
 
 // Build workflow with Weavegraph
-let app = GraphBuilder::new()
+let builder = GraphBuilder::new()
     .add_node(NodeKind::Custom("analyze".into()), AnalyzeNode)
     .add_node(NodeKind::Custom("summarize".into()), SummarizeNode)
     .add_edge(NodeKind::Start, NodeKind::Custom("analyze".into()))
     .add_edge(NodeKind::Custom("analyze".into()), NodeKind::Custom("summarize".into()))
-    .add_edge(NodeKind::Custom("summarize".into()), NodeKind::End)
-    .compile()?;
+  .add_edge(NodeKind::Custom("summarize".into()), NodeKind::End);
 
 // Convert to petgraph for analysis (feature-gated)
 #[cfg(feature = "petgraph-compat")]
 {
-    let pg: petgraph::Graph<_, _> = app.graph().into();
+  use weavegraph::graphs::PetgraphConversion;
+  let pg = builder.to_petgraph();
     
     // Use petgraph algorithms
-    let topo_order = petgraph::algo::toposort(&pg, None)?;
-    let dot = petgraph::dot::Dot::new(&pg);
+    let topo_order = petgraph::algo::toposort(&pg.graph, None)?;
+    let dot = petgraph::dot::Dot::new(&pg.graph);
     println!("DOT output:\n{:?}", dot);
 }
 
 // Execute with Weavegraph
+  let app = builder.compile()?;
 let result = app.invoke(initial_state).await?;
 ```
 

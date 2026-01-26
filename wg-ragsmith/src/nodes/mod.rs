@@ -1,6 +1,6 @@
 //! Weavegraph node implementations for RAG pipelines.
 //!
-//! This module provides ready-to-use [`Node`] implementations that integrate
+//! This module provides ready-to-use [`weavegraph::node::Node`] implementations that integrate
 //! wg-ragsmith's chunking and embedding capabilities into weavegraph workflows.
 //!
 //! # Feature Flag
@@ -19,7 +19,8 @@
 //! # Usage Example
 //!
 //! ```rust,ignore
-//! use weavegraph::app::GraphBuilder;
+//! use weavegraph::graphs::GraphBuilder;
+//! use weavegraph::types::NodeKind;
 //! use wg_ragsmith::nodes::ChunkingNode;
 //! use wg_ragsmith::service::ChunkSource;
 //!
@@ -29,10 +30,10 @@
 //!     .output_key("chunks")
 //!     .build();
 //!
-//! let mut builder = GraphBuilder::new();
-//! builder.add_node("chunker", chunking_node);
-//! builder.add_edge("Start", "chunker");
-//! builder.add_edge("chunker", "End");
+//! let builder = GraphBuilder::new()
+//!     .add_node(NodeKind::Custom("chunker".into()), chunking_node)
+//!     .add_edge(NodeKind::Start, NodeKind::Custom("chunker".into()))
+//!     .add_edge(NodeKind::Custom("chunker".into()), NodeKind::End);
 //! ```
 
 mod chunking;

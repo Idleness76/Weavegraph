@@ -495,7 +495,7 @@ impl GraphBuilder {
     /// Exports the graph to DOT format for visualization.
     ///
     /// The output can be rendered using Graphviz (`dot -Tpng graph.dot -o graph.png`)
-    /// or online tools like https://dreampuf.github.io/GraphvizOnline/.
+    /// or online tools like <https://dreampuf.github.io/GraphvizOnline/>.
     ///
     /// # Feature Gate
     ///

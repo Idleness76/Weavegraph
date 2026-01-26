@@ -9,10 +9,12 @@ migration guidance for upgrading your code.
 
 ### Breaking Changes
 
-#### 1. Message Role Enum (High Impact)
+#### 1. Message Role Helpers + `Role` Enum (High Impact)
 
 **What changed:**  
-The `Message.role` field changed from `String` to the new `Role` enum.
+Weavegraph introduced a typed [`Role`](weavegraph::message::Role) enum and helper APIs.
+
+For backward compatibility, `Message.role` remains a `String` (it still serializes cleanly to JSON), but you should treat roles as typed via `Role`, `Message::with_role`, `Message::role_type()`, and `Message::is_role()`.
 
 **Before (v0.1.x):**
 ```rust
@@ -34,26 +36,20 @@ use weavegraph::message::{Message, Role};
 // New: use Role enum variants
 let msg = Message::user("Hello");
 
-// Or construct manually with the enum
-let msg = Message {
-    role: Role::User,
-    content: "Hello".to_string(),
-    ..Default::default()
-};
+// Or construct explicitly with a typed Role
+let msg = Message::with_role(Role::User, "Hello");
 
-// Checking roles
-if msg.role == Role::User { ... }
-// Or use the matches helper
-if msg.role.matches("user") { ... }
+// Checking roles (type-safe)
+if msg.is_role(Role::User) {
+    // ...
+}
 ```
 
 **Migration steps:**
-1. Replace `role: "user".to_string()` with `role: Role::User`
-2. Replace `role: "assistant".to_string()` with `role: Role::Assistant`
-3. Replace `role: "system".to_string()` with `role: Role::System`
-4. Replace `role: "tool".to_string()` with `role: Role::Tool`
-5. For custom roles: `role: Role::Custom("my_role".to_string())`
-6. Replace string comparisons with enum comparisons or `role.matches("...")`
+1. Prefer `Message::user/assistant/system/tool(...)` and `Message::with_role(Role::..., ...)`
+2. Replace string comparisons like `msg.role == "user"` with `msg.is_role(Role::User)`
+3. For custom roles, prefer `Message::with_role(Role::Custom("my_role".into()), ...)`
+4. If you must keep string roles (interop), use `msg.role_type()` when branching
 
 **Convenience constructors (recommended):**
 ```rust
@@ -76,7 +72,7 @@ Multiple `AppRunner` constructors have been consolidated into a builder pattern.
 // Various constructors
 let runner = AppRunner::new(app, CheckpointerType::InMemory).await;
 let runner = AppRunner::with_options(app, checkpointer, event_bus).await;
-let runner = AppRunner::with_arc_and_bus(app_arc, checkpointer, bus).await;
+let runner = AppRunner::with_options_and_bus(app, checkpointer, event_bus).await;
 ```
 
 **After (v0.2.0):**
@@ -91,8 +87,8 @@ let runner = AppRunner::builder()
 // With event bus
 let runner = AppRunner::builder()
     .app(app)
-    .checkpointer(CheckpointerType::Sqlite(path))
-    .event_sink(my_sink)
+    .checkpointer(CheckpointerType::SQLite)
+    .event_bus(bus)
     .autosave(true)
     .build()
     .await;
@@ -150,10 +146,9 @@ The following items are deprecated and will be removed in v0.3.0:
 
 | Deprecated | Replacement |
 |-----------|-------------|
-| `ROLE_USER` constant | `Role::User` enum variant |
-| `ROLE_ASSISTANT` constant | `Role::Assistant` enum variant |
-| `ROLE_SYSTEM` constant | `Role::System` enum variant |
-| `ROLE_TOOL` constant | `Role::Tool` enum variant |
+| `Message::USER` constant | `Role::User` + `Message::user(...)` |
+| `Message::ASSISTANT` constant | `Role::Assistant` + `Message::assistant(...)` |
+| `Message::SYSTEM` constant | `Role::System` + `Message::system(...)` |
 | `AppRunner::new()` | `AppRunner::builder()...build()` |
 | `AppRunner::with_options()` | `AppRunner::builder()...build()` |
 
@@ -180,30 +175,33 @@ More flexible and self-documenting runner construction:
 ```rust
 let runner = AppRunner::builder()
     .app(app)
-    .checkpointer(CheckpointerType::Sqlite("./data/checkpoints.db".into()))
-    .event_sink(JsonLinesSink::new(file))
+    .checkpointer(CheckpointerType::SQLite)
+    .event_bus(EventBus::with_sinks(vec![Box::new(JsonLinesSink::new(file))]))
     .autosave(true)
-    .max_concurrent_nodes(4)
     .build()
-    .await?;
+    .await;
 ```
 
 #### Graph API Enhancements
 New iteration methods inspired by petgraph:
 ```rust
-// Iterate over all nodes
-for node_kind in app.graph().nodes() {
-    println!("Node: {:?}", node_kind);
+let builder = GraphBuilder::new()
+    .add_node(NodeKind::Custom("A".into()), MyNode)
+    .add_node(NodeKind::Custom("B".into()), MyNode)
+    .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    .add_edge(NodeKind::Custom("A".into()), NodeKind::Custom("B".into()))
+    .add_edge(NodeKind::Custom("B".into()), NodeKind::End);
+
+for node_kind in builder.nodes() {
+    println!("Node: {node_kind}");
 }
 
-// Iterate over all edges
-for (from, to) in app.graph().edges() {
-    println!("Edge: {:?} -> {:?}", from, to);
+for (from, to) in builder.edges() {
+    println!("Edge: {from} -> {to}");
 }
 
-// Topological ordering for deterministic traversal
-for node in app.graph().topological_sort()? {
-    println!("Order: {:?}", node);
+for node in builder.topological_sort() {
+    println!("Topo: {node}");
 }
 ```
 
