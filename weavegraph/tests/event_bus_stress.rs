@@ -5,8 +5,8 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -93,7 +93,11 @@ async fn test_high_volume_event_emission() {
 async fn test_burst_node_emission() {
     let counter = Arc::new(AtomicUsize::new(0));
     let app = make_burst_app(100, counter.clone());
-    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 
     runner
         .create_session("burst".into(), state_with_user("trigger"))
@@ -203,12 +207,7 @@ async fn test_event_ordering() {
     let mut prev = -1i32;
     for entry in &entries {
         if let Ok(num) = entry.message().parse::<i32>() {
-            assert!(
-                num > prev,
-                "events out of order: {} followed {}",
-                num,
-                prev
-            );
+            assert!(num > prev, "events out of order: {} followed {}", num, prev);
             prev = num;
         }
     }

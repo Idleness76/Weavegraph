@@ -13,9 +13,9 @@
 //! cargo run --example query_chunks
 //! ```
 
-use std::sync::OnceLock;
 use std::mem::transmute;
 use std::os::raw::c_char;
+use std::sync::OnceLock;
 use tokio_rusqlite::{Connection, Result, ffi};
 
 #[tokio::main]

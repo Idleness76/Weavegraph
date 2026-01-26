@@ -102,11 +102,18 @@ impl EventHub {
 
     /// Close the hub and signal all subscribers that no further events will arrive.
     pub fn close(&self) {
-        let _ = self.sender.write().expect("EventHub sender RwLock poisoned").take();
+        let _ = self
+            .sender
+            .write()
+            .expect("EventHub sender RwLock poisoned")
+            .take();
     }
 
     fn current_sender(&self) -> Option<Sender<Event>> {
-        self.sender.read().expect("EventHub sender RwLock poisoned").clone()
+        self.sender
+            .read()
+            .expect("EventHub sender RwLock poisoned")
+            .clone()
     }
 
     fn record_lag(&self, missed: u64) {

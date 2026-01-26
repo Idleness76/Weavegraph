@@ -554,7 +554,7 @@ impl Scheduler {
 
         // Build tasks for the nodes to run.
         let to_run_ids: Vec<String> = to_run.iter().map(|k| format!("{:?}", k)).collect();
-        
+
         // Pre-validate all nodes exist in registry before creating tasks.
         // This allows us to return early with a proper error rather than
         // encountering issues mid-execution.

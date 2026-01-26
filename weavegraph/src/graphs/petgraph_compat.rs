@@ -122,14 +122,12 @@ pub(super) fn to_petgraph(edges: &FxHashMap<NodeKind, Vec<NodeKind>>) -> Petgrap
     }
 
     // Sort for deterministic node indices (Start first, End last, custom alphabetically)
-    all_nodes.sort_by(|a, b| {
-        match (a, b) {
-            (NodeKind::Start, _) => std::cmp::Ordering::Less,
-            (_, NodeKind::Start) => std::cmp::Ordering::Greater,
-            (NodeKind::End, _) => std::cmp::Ordering::Greater,
-            (_, NodeKind::End) => std::cmp::Ordering::Less,
-            (NodeKind::Custom(a_name), NodeKind::Custom(b_name)) => a_name.cmp(b_name),
-        }
+    all_nodes.sort_by(|a, b| match (a, b) {
+        (NodeKind::Start, _) => std::cmp::Ordering::Less,
+        (_, NodeKind::Start) => std::cmp::Ordering::Greater,
+        (NodeKind::End, _) => std::cmp::Ordering::Greater,
+        (_, NodeKind::End) => std::cmp::Ordering::Less,
+        (NodeKind::Custom(a_name), NodeKind::Custom(b_name)) => a_name.cmp(b_name),
     });
 
     // Add nodes to graph and update index map

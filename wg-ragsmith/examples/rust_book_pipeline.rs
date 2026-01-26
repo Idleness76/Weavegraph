@@ -1,10 +1,10 @@
-use std::sync::Once;
 use reqwest::Client;
 use rig::embeddings::embedding::{Embedding, EmbeddingError, EmbeddingModel};
 use scraper::{Html, Selector};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Once;
 use std::time::{Duration, Instant};
 use tokio::fs;
 use tracing_subscriber::FmtSubscriber;

@@ -103,8 +103,10 @@ fn build_diamond_graph(depth: usize, width: usize) -> GraphBuilder {
     // Connect last layer to End
     let last_layer = depth.saturating_sub(1);
     for node in 0..width {
-        builder =
-            builder.add_edge(NodeKind::Custom(format!("L{last_layer}_N{node}")), NodeKind::End);
+        builder = builder.add_edge(
+            NodeKind::Custom(format!("L{last_layer}_N{node}")),
+            NodeKind::End,
+        );
     }
 
     builder

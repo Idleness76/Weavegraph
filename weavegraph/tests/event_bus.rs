@@ -1,11 +1,11 @@
 use chrono::Utc;
 use futures_util::{StreamExt, pin_mut};
-use std::sync::Mutex;
 use proptest::prelude::*;
 use rustc_hash::FxHashMap;
 use serde_json::{Number, Value, json};
 use std::fmt;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use weavegraph::channels::Channel;
 use weavegraph::event_bus::{
@@ -501,18 +501,31 @@ impl RecordingEmitter {
     }
 
     fn record(&self, event: Event) {
-        self.events.lock().expect("RecordingEmitter mutex poisoned").push(event);
+        self.events
+            .lock()
+            .expect("RecordingEmitter mutex poisoned")
+            .push(event);
     }
 
     fn snapshot(&self) -> Vec<Event> {
-        self.events.lock().expect("RecordingEmitter mutex poisoned").clone()
+        self.events
+            .lock()
+            .expect("RecordingEmitter mutex poisoned")
+            .clone()
     }
 }
 
 impl fmt::Debug for RecordingEmitter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecordingEmitter")
-            .field("event_count", &self.events.lock().expect("RecordingEmitter mutex poisoned").len())
+            .field(
+                "event_count",
+                &self
+                    .events
+                    .lock()
+                    .expect("RecordingEmitter mutex poisoned")
+                    .len(),
+            )
             .finish()
     }
 }
@@ -690,7 +703,10 @@ struct SharedWriter(Arc<Mutex<std::io::Cursor<Vec<u8>>>>);
 
 impl std::io::Write for SharedWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().expect("SharedWriter mutex poisoned").write(buf)
+        self.0
+            .lock()
+            .expect("SharedWriter mutex poisoned")
+            .write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

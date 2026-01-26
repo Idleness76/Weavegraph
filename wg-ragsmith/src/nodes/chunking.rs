@@ -80,12 +80,11 @@ impl ChunkingNode {
     }
 
     fn parse_input(&self, snapshot: &StateSnapshot) -> Result<ChunkSource, ChunkingNodeError> {
-        let value = snapshot
-            .extra
-            .get(&self.input_key)
-            .ok_or_else(|| ChunkingNodeError::InputNotFound {
+        let value = snapshot.extra.get(&self.input_key).ok_or_else(|| {
+            ChunkingNodeError::InputNotFound {
                 key: self.input_key.clone(),
-            })?;
+            }
+        })?;
 
         // Try to interpret the input as different source types
         match value {
@@ -116,7 +115,10 @@ impl Node for ChunkingNode {
     ) -> Result<NodePartial, NodeError> {
         // Emit start event
         if self.emit_events {
-            let _ = ctx.emit("chunking", format!("Starting chunking from key '{}'", self.input_key));
+            let _ = ctx.emit(
+                "chunking",
+                format!("Starting chunking from key '{}'", self.input_key),
+            );
         }
 
         // Parse input from state
@@ -160,8 +162,8 @@ impl Node for ChunkingNode {
         extra.insert(self.output_key.clone(), chunks_json);
 
         // Also include telemetry metadata
-        let telemetry_json = serde_json::to_value(&response.telemetry)
-            .unwrap_or(serde_json::Value::Null);
+        let telemetry_json =
+            serde_json::to_value(&response.telemetry).unwrap_or(serde_json::Value::Null);
         extra.insert(format!("{}_telemetry", self.output_key), telemetry_json);
 
         Ok(NodePartial::new().with_extra(extra))
@@ -230,7 +232,9 @@ impl ChunkingNodeBuilder {
     /// Panics if [`service()`](Self::service) was not called.
     pub fn build(self) -> ChunkingNode {
         ChunkingNode {
-            service: self.service.expect("ChunkingNodeBuilder requires a service"),
+            service: self
+                .service
+                .expect("ChunkingNodeBuilder requires a service"),
             input_key: self.input_key.unwrap_or_else(|| "document".to_string()),
             output_key: self.output_key.unwrap_or_else(|| "chunks".to_string()),
             emit_events: self.emit_events,

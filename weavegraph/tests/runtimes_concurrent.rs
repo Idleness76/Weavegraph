@@ -5,8 +5,8 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -96,7 +96,11 @@ fn make_marker_app(marker: &str) -> weavegraph::app::App {
 async fn test_multiple_sessions_same_runner() {
     let counter = Arc::new(AtomicUsize::new(0));
     let app = make_counting_app(counter.clone(), 0);
-    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 
     let session_count = 5;
 
@@ -130,8 +134,16 @@ async fn test_session_isolation() {
     let app1 = make_marker_app("session_A_marker");
     let app2 = make_marker_app("session_B_marker");
 
-    let mut runner1 = AppRunner::builder().app(app1).checkpointer(CheckpointerType::InMemory).build().await;
-    let mut runner2 = AppRunner::builder().app(app2).checkpointer(CheckpointerType::InMemory).build().await;
+    let mut runner1 = AppRunner::builder()
+        .app(app1)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    let mut runner2 = AppRunner::builder()
+        .app(app2)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 
     // Create and run both sessions
     runner1
@@ -168,7 +180,11 @@ async fn test_session_state_independence() {
     // Create a single app but multiple sessions to verify state is isolated
     let counter = Arc::new(AtomicUsize::new(0));
     let app = make_counting_app(counter.clone(), 0);
-    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 
     // Create sessions with different initial states
     runner
@@ -204,7 +220,11 @@ async fn test_session_state_independence() {
 async fn test_high_session_count() {
     let counter = Arc::new(AtomicUsize::new(0));
     let app = make_counting_app(counter.clone(), 1); // 1ms delay
-    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 
     let session_count = 50;
 
@@ -235,7 +255,11 @@ async fn test_high_session_count() {
 async fn test_session_resume_different_order() {
     let counter = Arc::new(AtomicUsize::new(0));
     let app = make_counting_app(counter.clone(), 0);
-    let mut runner = AppRunner::builder().app(app).checkpointer(CheckpointerType::InMemory).build().await;
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 
     // Create sessions
     runner

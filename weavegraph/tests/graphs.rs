@@ -343,7 +343,7 @@ fn test_nodes_iterator() {
 
     let nodes: Vec<_> = builder.nodes().collect();
     assert_eq!(nodes.len(), 3);
-    
+
     // Should contain all custom nodes
     assert!(nodes.contains(&&NodeKind::Custom("A".into())));
     assert!(nodes.contains(&&NodeKind::Custom("B".into())));
@@ -359,7 +359,7 @@ fn test_edges_iterator() {
 
     let edges: Vec<_> = builder.edges().collect();
     assert_eq!(edges.len(), 2);
-    
+
     // Check edge existence
     assert!(edges.contains(&(&NodeKind::Start, &NodeKind::Custom("A".into()))));
     assert!(edges.contains(&(&NodeKind::Custom("A".into()), &NodeKind::End)));
@@ -391,15 +391,24 @@ fn test_topological_sort_basic() {
         .add_edge(NodeKind::Custom("C".into()), NodeKind::End);
 
     let sorted = builder.topological_sort();
-    
+
     // Start should be first, End should be last
     assert_eq!(sorted[0], NodeKind::Start);
     assert_eq!(sorted[sorted.len() - 1], NodeKind::End);
-    
+
     // A -> B -> C ordering
-    let a_pos = sorted.iter().position(|n| n == &NodeKind::Custom("A".into())).unwrap();
-    let b_pos = sorted.iter().position(|n| n == &NodeKind::Custom("B".into())).unwrap();
-    let c_pos = sorted.iter().position(|n| n == &NodeKind::Custom("C".into())).unwrap();
+    let a_pos = sorted
+        .iter()
+        .position(|n| n == &NodeKind::Custom("A".into()))
+        .unwrap();
+    let b_pos = sorted
+        .iter()
+        .position(|n| n == &NodeKind::Custom("B".into()))
+        .unwrap();
+    let c_pos = sorted
+        .iter()
+        .position(|n| n == &NodeKind::Custom("C".into()))
+        .unwrap();
     assert!(a_pos < b_pos);
     assert!(b_pos < c_pos);
 }
@@ -418,22 +427,31 @@ fn test_topological_sort_fan_out() {
         .add_edge(NodeKind::Custom("C".into()), NodeKind::End);
 
     let sorted = builder.topological_sort();
-    
+
     // Start first, End last
     assert_eq!(sorted[0], NodeKind::Start);
     assert_eq!(sorted[sorted.len() - 1], NodeKind::End);
-    
+
     // All custom nodes should come between Start and End
     let start_pos = sorted.iter().position(|n| n == &NodeKind::Start).unwrap();
     let end_pos = sorted.iter().position(|n| n == &NodeKind::End).unwrap();
-    let a_pos = sorted.iter().position(|n| n == &NodeKind::Custom("A".into())).unwrap();
-    let b_pos = sorted.iter().position(|n| n == &NodeKind::Custom("B".into())).unwrap();
-    let c_pos = sorted.iter().position(|n| n == &NodeKind::Custom("C".into())).unwrap();
-    
+    let a_pos = sorted
+        .iter()
+        .position(|n| n == &NodeKind::Custom("A".into()))
+        .unwrap();
+    let b_pos = sorted
+        .iter()
+        .position(|n| n == &NodeKind::Custom("B".into()))
+        .unwrap();
+    let c_pos = sorted
+        .iter()
+        .position(|n| n == &NodeKind::Custom("C".into()))
+        .unwrap();
+
     assert!(start_pos < a_pos && a_pos < end_pos);
     assert!(start_pos < b_pos && b_pos < end_pos);
     assert!(start_pos < c_pos && c_pos < end_pos);
-    
+
     // Lexicographic ordering: A < B < C
     assert!(a_pos < b_pos);
     assert!(b_pos < c_pos);
@@ -455,13 +473,22 @@ fn test_topological_sort_deterministic() {
     // Multiple runs should produce same order
     let sorted1 = builder.topological_sort();
     let sorted2 = builder.topological_sort();
-    
+
     assert_eq!(sorted1, sorted2);
-    
+
     // Lexicographic order: X < Y < Z
-    let x_pos = sorted1.iter().position(|n| n == &NodeKind::Custom("X".into())).unwrap();
-    let y_pos = sorted1.iter().position(|n| n == &NodeKind::Custom("Y".into())).unwrap();
-    let z_pos = sorted1.iter().position(|n| n == &NodeKind::Custom("Z".into())).unwrap();
+    let x_pos = sorted1
+        .iter()
+        .position(|n| n == &NodeKind::Custom("X".into()))
+        .unwrap();
+    let y_pos = sorted1
+        .iter()
+        .position(|n| n == &NodeKind::Custom("Y".into()))
+        .unwrap();
+    let z_pos = sorted1
+        .iter()
+        .position(|n| n == &NodeKind::Custom("Z".into()))
+        .unwrap();
     assert!(x_pos < y_pos);
     assert!(y_pos < z_pos);
 }

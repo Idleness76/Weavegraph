@@ -71,18 +71,27 @@ impl MemorySink {
     /// Get a snapshot of all captured events. Clones the internal buffer so callers
     /// can inspect state without holding the mutex.
     pub fn snapshot(&self) -> Vec<Event> {
-        self.entries.lock().expect("MemorySink mutex poisoned").clone()
+        self.entries
+            .lock()
+            .expect("MemorySink mutex poisoned")
+            .clone()
     }
 
     /// Clear all captured events.
     pub fn clear(&self) {
-        self.entries.lock().expect("MemorySink mutex poisoned").clear();
+        self.entries
+            .lock()
+            .expect("MemorySink mutex poisoned")
+            .clear();
     }
 }
 
 impl EventSink for MemorySink {
     fn handle(&mut self, event: &Event) -> IoResult<()> {
-        self.entries.lock().expect("MemorySink mutex poisoned").push(event.clone());
+        self.entries
+            .lock()
+            .expect("MemorySink mutex poisoned")
+            .push(event.clone());
         Ok(())
     }
 }

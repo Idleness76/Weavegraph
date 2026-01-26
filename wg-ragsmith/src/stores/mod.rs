@@ -216,13 +216,21 @@ pub trait TransactionalBackend: Backend {
         Self: 'a;
 
     /// Begin a new transaction.
-    fn begin_transaction(&self) -> impl Future<Output = Result<Self::Transaction<'_>, RagError>> + Send;
+    fn begin_transaction(
+        &self,
+    ) -> impl Future<Output = Result<Self::Transaction<'_>, RagError>> + Send;
 
     /// Commit a transaction.
-    fn commit_transaction(&self, tx: Self::Transaction<'_>) -> impl Future<Output = Result<(), RagError>> + Send;
+    fn commit_transaction(
+        &self,
+        tx: Self::Transaction<'_>,
+    ) -> impl Future<Output = Result<(), RagError>> + Send;
 
     /// Rollback a transaction.
-    fn rollback_transaction(&self, tx: Self::Transaction<'_>) -> impl Future<Output = Result<(), RagError>> + Send;
+    fn rollback_transaction(
+        &self,
+        tx: Self::Transaction<'_>,
+    ) -> impl Future<Output = Result<(), RagError>> + Send;
 }
 
 // Future backend implementations:

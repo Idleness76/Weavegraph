@@ -1,4 +1,3 @@
-use std::sync::Once;
 use rig::OneOrMany;
 use rig::embeddings::{Embedding, EmbeddingModel};
 use rig_sqlite::{
@@ -9,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::mem::transmute;
 use std::os::raw::c_char;
 use std::path::Path;
-use tokio_rusqlite::{Connection, ffi, OptionalExtension};
+use std::sync::Once;
+use tokio_rusqlite::{Connection, OptionalExtension, ffi};
 
 use crate::types::RagError;
 
@@ -123,7 +123,7 @@ where
         let store = SqliteVectorStore::new(conn, model)
             .await
             .map_err(|err| RagError::Storage(err.to_string()))?;
-        Ok(Self { 
+        Ok(Self {
             inner: store,
             conn: conn_for_queries,
         })
@@ -154,7 +154,7 @@ where
 
     fn register_sqlite_vec() -> Result<(), RagError> {
         use std::sync::Mutex;
-        
+
         static INIT: Once = Once::new();
         static INIT_RESULT: Mutex<Option<Result<(), String>>> = Mutex::new(None);
 
@@ -171,7 +171,9 @@ where
                     transmute::<unsafe extern "C" fn(), SqliteExtensionInit>(init);
                 let rc = ffi::sqlite3_auto_extension(Some(init_fn));
                 if rc != 0 {
-                    Err(format!("failed to register sqlite-vec extension (code {rc})"))
+                    Err(format!(
+                        "failed to register sqlite-vec extension (code {rc})"
+                    ))
                 } else {
                     Ok(())
                 }
@@ -345,7 +347,8 @@ where
                         heading: row.get(2)?,
                         chunk_index: row.get::<_, String>(3)?.parse().unwrap_or(0),
                         content: row.get(4)?,
-                        metadata: row.get::<_, String>(5)
+                        metadata: row
+                            .get::<_, String>(5)
                             .map(|s| serde_json::from_str(&s).unwrap_or_default())
                             .unwrap_or_default(),
                     };

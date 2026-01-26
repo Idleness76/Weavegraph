@@ -85,7 +85,10 @@ async fn test_html_chunking_with_mock_embeddings() {
 
     // Verify chunk structure
     for chunk in &response.outcome.chunks {
-        assert!(!chunk.content.is_empty(), "chunk content should not be empty");
+        assert!(
+            !chunk.content.is_empty(),
+            "chunk content should not be empty"
+        );
     }
 
     // Telemetry should be populated
@@ -168,10 +171,7 @@ async fn test_chunking_with_custom_config() {
     let response = service.chunk_document(request).await.unwrap();
 
     // With smaller max_tokens, should produce chunks
-    assert!(
-        !response.outcome.chunks.is_empty(),
-        "should produce chunks"
-    );
+    assert!(!response.outcome.chunks.is_empty(), "should produce chunks");
 }
 
 #[tokio::test]
@@ -188,7 +188,10 @@ async fn test_mock_embedding_provider_determinism() {
     let embeddings2 = provider.embed_batch(&inputs).await.unwrap();
 
     // Same inputs should produce same embeddings
-    assert_eq!(embeddings1, embeddings2, "mock embeddings should be deterministic");
+    assert_eq!(
+        embeddings1, embeddings2,
+        "mock embeddings should be deterministic"
+    );
 
     // Same text should produce same embedding
     assert_eq!(
@@ -250,7 +253,8 @@ async fn test_large_document_chunking() {
             "<p>This is paragraph {} with content about topic {}. \
             It contains multiple sentences to ensure there's enough text \
             for meaningful semantic analysis and chunking.</p>",
-            i, i % 5
+            i,
+            i % 5
         ));
     }
 

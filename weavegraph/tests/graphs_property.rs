@@ -243,7 +243,7 @@ proptest! {
 
             // Verify routing matches expectation (use assert! instead of prop_assert! in async)
             if value >= threshold {
-                assert!(nf.contains(&NodeKind::Custom("HighPath".into())), 
+                assert!(nf.contains(&NodeKind::Custom("HighPath".into())),
                     "expected HighPath when value {} >= threshold {}", value, threshold);
                 assert!(!nf.contains(&NodeKind::Custom("LowPath".into())),
                     "unexpected LowPath when value {} >= threshold {}", value, threshold);
@@ -306,7 +306,7 @@ proptest! {
 
             // Both sets of targets should appear in the frontier (use assert! in async)
             for n in &targets_a {
-                assert!(nf.contains(&NodeKind::Custom(n.clone())), 
+                assert!(nf.contains(&NodeKind::Custom(n.clone())),
                     "expected target_a node {} in frontier", n);
             }
             for n in &targets_b {

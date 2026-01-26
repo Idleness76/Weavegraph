@@ -3,11 +3,11 @@ use chrono::Utc;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use weavegraph::channels::Channel;
+use weavegraph::runtimes::SessionState;
 use weavegraph::runtimes::checkpointer::{
     Checkpoint, Checkpointer, InMemoryCheckpointer, restore_session_state,
 };
 use weavegraph::runtimes::checkpointer_sqlite::{SQLiteCheckpointer, StepQuery};
-use weavegraph::runtimes::SessionState;
 use weavegraph::schedulers::{Scheduler, SchedulerState};
 use weavegraph::state::VersionedState;
 use weavegraph::types::NodeKind;

@@ -448,9 +448,9 @@ impl App {
         // SAFETY: We just created the event handle via event_stream(), so the stream
         // is guaranteed to be unconsumed. If this somehow fails, it indicates a bug
         // in the AppEventStream implementation.
-        let (event_bus, event_stream) = event_handle
-            .split()
-            .unwrap_or_else(|_| unreachable!("fresh App::event_stream() always yields unused stream"));
+        let (event_bus, event_stream) = event_handle.split().unwrap_or_else(|_| {
+            unreachable!("fresh App::event_stream() always yields unused stream")
+        });
 
         #[allow(deprecated)]
         let runner =

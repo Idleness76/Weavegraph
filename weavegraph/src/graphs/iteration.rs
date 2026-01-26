@@ -88,7 +88,11 @@ pub struct NodesIter<'a> {
 
 impl<'a> NodesIter<'a> {
     pub(super) fn new(
-        inner: std::collections::hash_map::Keys<'a, NodeKind, std::sync::Arc<dyn crate::node::Node>>,
+        inner: std::collections::hash_map::Keys<
+            'a,
+            NodeKind,
+            std::sync::Arc<dyn crate::node::Node>,
+        >,
     ) -> Self {
         Self { inner }
     }
@@ -187,9 +191,7 @@ impl<'a> Iterator for EdgesIter<'a> {
 /// This function assumes the graph is acyclic. If called on a graph with
 /// cycles, it will return a partial ordering that excludes cycle members.
 /// Use [`GraphBuilder::compile`] to validate acyclicity before calling.
-pub(super) fn topological_sort(
-    edges: &FxHashMap<NodeKind, Vec<NodeKind>>,
-) -> Vec<NodeKind> {
+pub(super) fn topological_sort(edges: &FxHashMap<NodeKind, Vec<NodeKind>>) -> Vec<NodeKind> {
     // Build in-degree map and collect all nodes
     let mut in_degree: FxHashMap<NodeKind, usize> = FxHashMap::default();
     let mut all_nodes: FxHashSet<NodeKind> = FxHashSet::default();
@@ -212,18 +214,16 @@ pub(super) fn topological_sort(
         .filter(|entry| *entry.1 == 0)
         .map(|(node, _)| node.clone())
         .collect();
-    
+
     // Sort for deterministic ordering - Start always first
-    zero_in_degree.sort_by(|a, b| {
-        match (a, b) {
-            (NodeKind::Start, _) => std::cmp::Ordering::Less,
-            (_, NodeKind::Start) => std::cmp::Ordering::Greater,
-            (NodeKind::End, _) => std::cmp::Ordering::Greater,
-            (_, NodeKind::End) => std::cmp::Ordering::Less,
-            (NodeKind::Custom(a_name), NodeKind::Custom(b_name)) => a_name.cmp(b_name),
-        }
+    zero_in_degree.sort_by(|a, b| match (a, b) {
+        (NodeKind::Start, _) => std::cmp::Ordering::Less,
+        (_, NodeKind::Start) => std::cmp::Ordering::Greater,
+        (NodeKind::End, _) => std::cmp::Ordering::Greater,
+        (_, NodeKind::End) => std::cmp::Ordering::Less,
+        (NodeKind::Custom(a_name), NodeKind::Custom(b_name)) => a_name.cmp(b_name),
     });
-    
+
     queue.extend(zero_in_degree);
 
     let mut result: Vec<NodeKind> = Vec::with_capacity(all_nodes.len());
@@ -243,14 +243,12 @@ pub(super) fn topological_sort(
                 }
             }
             // Sort new zero-degree nodes for determinism
-            new_zero.sort_by(|a, b| {
-                match (a, b) {
-                    (NodeKind::Start, _) => std::cmp::Ordering::Less,
-                    (_, NodeKind::Start) => std::cmp::Ordering::Greater,
-                    (NodeKind::End, _) => std::cmp::Ordering::Greater,
-                    (_, NodeKind::End) => std::cmp::Ordering::Less,
-                    (NodeKind::Custom(a_name), NodeKind::Custom(b_name)) => a_name.cmp(b_name),
-                }
+            new_zero.sort_by(|a, b| match (a, b) {
+                (NodeKind::Start, _) => std::cmp::Ordering::Less,
+                (_, NodeKind::Start) => std::cmp::Ordering::Greater,
+                (NodeKind::End, _) => std::cmp::Ordering::Greater,
+                (_, NodeKind::End) => std::cmp::Ordering::Less,
+                (NodeKind::Custom(a_name), NodeKind::Custom(b_name)) => a_name.cmp(b_name),
             });
             queue.extend(new_zero);
         }
@@ -266,28 +264,28 @@ mod tests {
     #[test]
     fn test_topological_sort_linear() {
         let mut edges: FxHashMap<NodeKind, Vec<NodeKind>> = FxHashMap::default();
-        edges.insert(
-            NodeKind::Start,
-            vec![NodeKind::Custom("A".into())],
-        );
+        edges.insert(NodeKind::Start, vec![NodeKind::Custom("A".into())]);
         edges.insert(
             NodeKind::Custom("A".into()),
             vec![NodeKind::Custom("B".into())],
         );
-        edges.insert(
-            NodeKind::Custom("B".into()),
-            vec![NodeKind::End],
-        );
+        edges.insert(NodeKind::Custom("B".into()), vec![NodeKind::End]);
 
         let sorted = topological_sort(&edges);
-        
+
         // Start should be first, End should be last
         assert_eq!(sorted[0], NodeKind::Start);
         assert_eq!(sorted[sorted.len() - 1], NodeKind::End);
-        
+
         // A should come before B
-        let a_pos = sorted.iter().position(|n| n == &NodeKind::Custom("A".into())).unwrap();
-        let b_pos = sorted.iter().position(|n| n == &NodeKind::Custom("B".into())).unwrap();
+        let a_pos = sorted
+            .iter()
+            .position(|n| n == &NodeKind::Custom("A".into()))
+            .unwrap();
+        let b_pos = sorted
+            .iter()
+            .position(|n| n == &NodeKind::Custom("B".into()))
+            .unwrap();
         assert!(a_pos < b_pos);
     }
 
@@ -307,23 +305,29 @@ mod tests {
             NodeKind::Custom("B".into()),
             vec![NodeKind::Custom("C".into())],
         );
-        edges.insert(
-            NodeKind::Custom("C".into()),
-            vec![NodeKind::End],
-        );
+        edges.insert(NodeKind::Custom("C".into()), vec![NodeKind::End]);
 
         let sorted = topological_sort(&edges);
-        
+
         assert_eq!(sorted[0], NodeKind::Start);
         assert_eq!(sorted[sorted.len() - 1], NodeKind::End);
-        
+
         // A and B should both come before C
-        let a_pos = sorted.iter().position(|n| n == &NodeKind::Custom("A".into())).unwrap();
-        let b_pos = sorted.iter().position(|n| n == &NodeKind::Custom("B".into())).unwrap();
-        let c_pos = sorted.iter().position(|n| n == &NodeKind::Custom("C".into())).unwrap();
+        let a_pos = sorted
+            .iter()
+            .position(|n| n == &NodeKind::Custom("A".into()))
+            .unwrap();
+        let b_pos = sorted
+            .iter()
+            .position(|n| n == &NodeKind::Custom("B".into()))
+            .unwrap();
+        let c_pos = sorted
+            .iter()
+            .position(|n| n == &NodeKind::Custom("C".into()))
+            .unwrap();
         assert!(a_pos < c_pos);
         assert!(b_pos < c_pos);
-        
+
         // A should come before B due to lexicographic ordering
         assert!(a_pos < b_pos);
     }
@@ -334,7 +338,11 @@ mod tests {
         let mut edges: FxHashMap<NodeKind, Vec<NodeKind>> = FxHashMap::default();
         edges.insert(
             NodeKind::Start,
-            vec![NodeKind::Custom("X".into()), NodeKind::Custom("Y".into()), NodeKind::Custom("Z".into())],
+            vec![
+                NodeKind::Custom("X".into()),
+                NodeKind::Custom("Y".into()),
+                NodeKind::Custom("Z".into()),
+            ],
         );
         edges.insert(NodeKind::Custom("X".into()), vec![NodeKind::End]);
         edges.insert(NodeKind::Custom("Y".into()), vec![NodeKind::End]);
@@ -342,7 +350,7 @@ mod tests {
 
         let sorted1 = topological_sort(&edges);
         let sorted2 = topological_sort(&edges);
-        
+
         assert_eq!(sorted1, sorted2);
     }
 }
