@@ -1,3 +1,5 @@
+// miette::Diagnostic derive triggers unused_assignments on Rust 1.93+.
+#![allow(unused_assignments)]
 //! Frontier-based scheduler with version gating and bounded concurrency.
 //!
 //! This module provides the core scheduling logic for the Weavegraph workflow framework.

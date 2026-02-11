@@ -50,7 +50,7 @@ tiktoken-rs = { version = "0.9", optional = true }
 rust-bert = { version = "0.23", default-features = false, optional = true }
 
 # Weavegraph integration (optional)
-weavegraph = { path = "../weavegraph", optional = true }
+weavegraph = { version = "0.2.0", path = "../weavegraph", optional = true }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
