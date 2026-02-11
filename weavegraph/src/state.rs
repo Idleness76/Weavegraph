@@ -40,7 +40,7 @@ use serde_json::Value;
 
 use crate::{
     channels::{Channel, ErrorsChannel, ExtrasChannel, MessagesChannel},
-    message::Message,
+    message::{Message, Role},
 };
 
 /// The main state container for workflow execution.
@@ -59,7 +59,7 @@ use crate::{
 ///
 /// ```rust
 /// use weavegraph::state::VersionedState;
-/// use weavegraph::message::Message;
+/// use weavegraph::message::{Message, Role};
 /// use weavegraph::channels::Channel;
 /// use serde_json::json;
 ///
@@ -71,10 +71,10 @@ use crate::{
 /// state.extra.get_mut().insert("priority".to_string(), json!("high"));
 ///
 /// // Add assistant response
-/// state.messages.get_mut().push(Message {
-///     role: "assistant".to_string(),
-///     content: "Processing your request...".to_string(),
-/// });
+/// state
+///     .messages
+///     .get_mut()
+///     .push(Message::with_role(Role::Assistant, "Processing your request..."));
 ///
 /// // Take snapshot
 /// let snapshot = state.snapshot();
@@ -150,7 +150,6 @@ impl VersionedState {
     /// Creates a new versioned state initialized with a user message.
     ///
     /// This is the primary constructor for starting workflow execution.
-    /// It initializes all channels with version 1 and adds the provided
     /// text as the first user message.
     ///
     /// # Parameters
@@ -179,10 +178,7 @@ impl VersionedState {
     /// assert!(snapshot.extra.is_empty());
     /// ```
     pub fn new_with_user_message(user_text: &str) -> Self {
-        let messages = vec![Message {
-            role: "user".into(),
-            content: user_text.into(),
-        }];
+        let messages = vec![Message::with_role(Role::User, user_text)];
         Self {
             messages: MessagesChannel::new(messages, 1),
             extra: ExtrasChannel::default(),
@@ -209,16 +205,14 @@ impl VersionedState {
     ///
     /// ```rust
     /// use weavegraph::state::VersionedState;
-    /// use weavegraph::message::Message;
+    /// use weavegraph::message::{Message, Role};
     ///
-    /// let messages = vec![Message {
-    ///    role: "user".into(),
-    ///    content: "Explain error handling in Rust".into(),
-    /// },
-    /// Message {
-    ///    role: "assistant".into(),
-    ///    content: "Just wait until the machine uprising, you damn dirty ape".into(),
-    /// }
+    /// let messages = vec![
+    ///     Message::with_role(Role::User, "Explain error handling in Rust"),
+    ///     Message::with_role(
+    ///         Role::Assistant,
+    ///         "Use Result and the ? operator to propagate errors cleanly.",
+    ///     ),
     /// ];
     /// let state = VersionedState::new_with_messages(messages);
     /// let snapshot = state.snapshot();
@@ -279,7 +273,10 @@ impl VersionedState {
     /// use weavegraph::state::VersionedState;
     ///
     /// let mut state = VersionedState::new_with_user_message("Initial message");
-    /// state.add_message("assistant", "I understand your request.");
+    /// state.add_message(
+    ///     weavegraph::message::Role::Assistant.as_str(),
+    ///     "I understand your request.",
+    /// );
     ///
     /// let snapshot = state.snapshot();
     /// assert_eq!(snapshot.messages.len(), 2);
@@ -287,10 +284,9 @@ impl VersionedState {
     /// ```
     #[must_use = "consider using the returned self for method chaining"]
     pub fn add_message(&mut self, role: &str, content: &str) -> &mut Self {
-        self.messages.get_mut().push(Message {
-            role: role.to_string(),
-            content: content.to_string(),
-        });
+        self.messages
+            .get_mut()
+            .push(Message::with_role(Role::from(role), content));
         self
     }
 
@@ -427,10 +423,7 @@ impl VersionedStateBuilder {
     ///     .build();
     /// ```
     pub fn with_user_message(mut self, content: &str) -> Self {
-        self.messages.push(Message {
-            role: "user".to_string(),
-            content: content.to_string(),
-        });
+        self.messages.push(Message::with_role(Role::User, content));
         self
     }
 
@@ -451,10 +444,8 @@ impl VersionedStateBuilder {
     ///     .build();
     /// ```
     pub fn with_assistant_message(mut self, content: &str) -> Self {
-        self.messages.push(Message {
-            role: "assistant".to_string(),
-            content: content.to_string(),
-        });
+        self.messages
+            .push(Message::with_role(Role::Assistant, content));
         self
     }
 
@@ -475,10 +466,8 @@ impl VersionedStateBuilder {
     ///     .build();
     /// ```
     pub fn with_system_message(mut self, content: &str) -> Self {
-        self.messages.push(Message {
-            role: "system".to_string(),
-            content: content.to_string(),
-        });
+        self.messages
+            .push(Message::with_role(Role::System, content));
         self
     }
 
@@ -499,10 +488,8 @@ impl VersionedStateBuilder {
     ///     .build();
     /// ```
     pub fn with_message(mut self, role: &str, content: &str) -> Self {
-        self.messages.push(Message {
-            role: role.to_string(),
-            content: content.to_string(),
-        });
+        self.messages
+            .push(Message::with_role(Role::from(role), content));
         self
     }
 

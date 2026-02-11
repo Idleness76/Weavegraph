@@ -27,7 +27,11 @@
 //! # use weavegraph::app::App;
 //! # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
 //!
-//! let mut runner = AppRunner::new(app, CheckpointerType::SQLite).await;
+//! let mut runner = AppRunner::builder()
+//!     .app(app)
+//!     .checkpointer(CheckpointerType::InMemory)
+//!     .build()
+//!     .await;
 //! let initial_state = VersionedState::new_with_user_message("Hello");
 //!
 //! // Create session and run to completion
@@ -46,9 +50,12 @@ mod checkpointer_postgres_helpers;
 pub mod checkpointer_sqlite;
 #[cfg(feature = "sqlite")]
 mod checkpointer_sqlite_helpers;
+pub mod execution;
 pub mod persistence;
 pub mod runner;
 pub mod runtime_config;
+pub mod session;
+mod streaming;
 pub mod types;
 
 pub use checkpointer::{
@@ -62,10 +69,15 @@ pub use checkpointer_postgres::{
 };
 #[cfg(feature = "sqlite")]
 pub use checkpointer_sqlite::{PageInfo, SQLiteCheckpointer, StepQuery, StepQueryResult};
-pub use runner::{
-    AppRunner, PausedReason, PausedReport, SessionInit, SessionState, StateVersions, StepOptions,
-    StepReport, StepResult,
-};
+
+// Re-export execution types
+pub use execution::{PausedReason, PausedReport, StepOptions, StepReport, StepResult};
+
+// Re-export session types
+pub use session::{SessionInit, SessionState, StateVersions};
+
+// Re-export runner
+pub use runner::{AppRunner, AppRunnerBuilder};
 
 pub use runtime_config::{EventBusConfig, RuntimeConfig, SinkConfig};
 pub use types::{SessionId, StepNumber};

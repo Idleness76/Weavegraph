@@ -14,29 +14,21 @@
 //! # Examples
 //!
 //! ```rust
+//! use weavegraph::channels::Channel;
 //! use weavegraph::schedulers::{Scheduler, SchedulerState};
-//! use weavegraph::state::StateSnapshot;
-//! use weavegraph::types::NodeKind;
-//! use weavegraph::event_bus::EventBus;
-//! use rustc_hash::FxHashMap;
-//! use std::sync::Arc;
+//! use weavegraph::state::VersionedState;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create scheduler with concurrency limit
 //! let scheduler = Scheduler::new(4);
-//! let mut state = SchedulerState::default();
+//! let mut sched_state = SchedulerState::default();
 //!
 //! // Check if a node should run based on version changes
-//! let snapshot = StateSnapshot {
-//!     messages: vec![],
-//!     messages_version: 2,
-//!     extra: FxHashMap::default(),
-//!     extra_version: 1,
-//!     errors: vec![],
-//!     errors_version: 1,
-//! };
+//! let mut state = VersionedState::builder().build();
+//! state.messages.set_version(2);
+//! let snapshot = state.snapshot();
 //!
-//! let should_run = scheduler.should_run(&state, "node_id", &snapshot);
+//! let should_run = scheduler.should_run(&sched_state, "node_id", &snapshot);
 //! if should_run {
 //!     println!("Node should run - state has changed");
 //! }
@@ -113,28 +105,23 @@ pub struct StepRunResult {
 /// # Examples
 ///
 /// ```rust
+/// use weavegraph::channels::Channel;
 /// use weavegraph::schedulers::{Scheduler, SchedulerState};
-/// use weavegraph::state::StateSnapshot;
-/// use rustc_hash::FxHashMap;
+/// use weavegraph::state::VersionedState;
 ///
-/// let mut state = SchedulerState::default();
+/// let mut sched_state = SchedulerState::default();
 /// let scheduler = Scheduler::new(2);
 ///
 /// // Simulate a snapshot with version changes
-/// let snapshot = StateSnapshot {
-///     messages: vec![],
-///     messages_version: 3,
-///     extra: FxHashMap::default(),
-///     extra_version: 1,
-///     errors: vec![],
-///     errors_version: 1,
-/// };
+/// let mut state = VersionedState::builder().build();
+/// state.messages.set_version(3);
+/// let snapshot = state.snapshot();
 ///
 /// // Record that a node has seen these versions
-/// scheduler.record_seen(&mut state, "node_a", &snapshot);
+/// scheduler.record_seen(&mut sched_state, "node_a", &snapshot);
 ///
 /// // Later checks will use this information for gating
-/// assert!(!scheduler.should_run(&state, "node_a", &snapshot));
+/// assert!(!scheduler.should_run(&sched_state, "node_a", &snapshot));
 /// ```
 #[derive(Debug, Default, Clone)]
 pub struct SchedulerState {
@@ -204,6 +191,10 @@ pub struct Scheduler {
 ///
 /// fn handle_scheduler_error(error: SchedulerError) {
 ///     match error {
+///         SchedulerError::NodeNotFound { kind, step } => {
+///             eprintln!("Node {:?} not found at step {}", kind, step);
+///             // Handle missing node (graph consistency issue)
+///         }
 ///         SchedulerError::NodeRun { kind, step, source } => {
 ///             eprintln!("Node {:?} failed at step {}: {}", kind, step, source);
 ///             // Handle node-specific failure
@@ -217,6 +208,18 @@ pub struct Scheduler {
 /// ```
 #[derive(Debug, Error, Diagnostic)]
 pub enum SchedulerError {
+    /// A node in the frontier was not found in the registry.
+    ///
+    /// This error indicates a graph consistency issue where the frontier
+    /// contains a node that doesn't exist in the node registry. This should
+    /// not occur with properly compiled graphs.
+    #[error("node {kind:?} in frontier not found in registry at step {step}")]
+    #[diagnostic(
+        code(weavegraph::scheduler::node_not_found),
+        help("Ensure all nodes in the graph are registered before execution.")
+    )]
+    NodeNotFound { kind: NodeKind, step: u64 },
+
     /// A node failed during execution.
     ///
     /// This error occurs when a node's `run` method returns an error.
@@ -350,21 +353,17 @@ impl Scheduler {
     /// # Examples
     ///
     /// ```rust
+    /// use weavegraph::channels::Channel;
     /// use weavegraph::schedulers::{Scheduler, SchedulerState};
-    /// use weavegraph::state::StateSnapshot;
-    /// use rustc_hash::FxHashMap;
+    /// use weavegraph::state::VersionedState;
     ///
     /// let scheduler = Scheduler::new(2);
     /// let mut state = SchedulerState::default();
     ///
-    /// let snapshot = StateSnapshot {
-    ///     messages: vec![],
-    ///     messages_version: 5,
-    ///     extra: FxHashMap::default(),
-    ///     extra_version: 3,
-    ///     errors: vec![],
-    ///     errors_version: 1,
-    /// };
+    /// let mut snapshot_state = VersionedState::builder().build();
+    /// snapshot_state.messages.set_version(5);
+    /// snapshot_state.extra.set_version(3);
+    /// let snapshot = snapshot_state.snapshot();
     ///
     /// // Record that node_a has processed versions 5 and 3
     /// scheduler.record_seen(&mut state, "node_a", &snapshot);
@@ -463,10 +462,11 @@ impl Scheduler {
     /// # Examples
     ///
     /// ```rust
-    /// use weavegraph::schedulers::{Scheduler, SchedulerState};
-    /// use weavegraph::state::StateSnapshot;
-    /// use weavegraph::types::NodeKind;
+    /// use weavegraph::channels::Channel;
     /// use weavegraph::event_bus::EventBus;
+    /// use weavegraph::schedulers::{Scheduler, SchedulerState};
+    /// use weavegraph::state::VersionedState;
+    /// use weavegraph::types::NodeKind;
     /// use rustc_hash::FxHashMap;
     /// use std::sync::Arc;
     ///
@@ -477,14 +477,7 @@ impl Scheduler {
     /// let event_bus = EventBus::default();
     ///
     /// let frontier = vec![NodeKind::Start, NodeKind::Custom("process".into())];
-    /// let snapshot = StateSnapshot {
-    ///     messages: vec![], // initial messages
-    ///     messages_version: 1,
-    ///     extra: FxHashMap::default(),
-    ///     extra_version: 1,
-    ///     errors: vec![],
-    ///     errors_version: 1,
-    /// };
+    /// let snapshot = VersionedState::builder().build().snapshot();
     ///
     /// let result = scheduler.superstep(
     ///     &mut state,
@@ -538,15 +531,26 @@ impl Scheduler {
 
         // Build tasks for the nodes to run.
         let to_run_ids: Vec<String> = to_run.iter().map(|k| format!("{:?}", k)).collect();
+
+        // Pre-validate all nodes exist in registry before creating tasks.
+        // This allows us to return early with a proper error rather than
+        // encountering issues mid-execution.
+        for kind in &to_run {
+            if !nodes.contains_key(kind) {
+                return Err(SchedulerError::NodeNotFound {
+                    kind: kind.clone(),
+                    step,
+                });
+            }
+        }
+
         let tasks = to_run_ids
             .iter()
             .cloned()
             .zip(to_run.clone().into_iter())
             .map(|(id_str, kind)| {
-                let node = nodes
-                    .get(&kind)
-                    .expect("node in frontier not found")
-                    .clone();
+                // SAFETY: We validated all nodes exist above, so this unwrap is safe.
+                let node = nodes.get(&kind).unwrap().clone();
                 let event_emitter = Arc::clone(&event_emitter);
                 let ctx = NodeContext {
                     node_id: id_str.clone(),

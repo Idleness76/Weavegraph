@@ -1,8 +1,7 @@
-use parking_lot::{Mutex, MutexGuard};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque, hash_map::Entry};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Snapshot of cache interactions, useful for telemetry.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -13,7 +12,7 @@ pub struct CacheMetrics {
 
 /// Shared handle that coordinates cache configuration across chunkers.
 ///
-/// Uses `parking_lot::Mutex` for non-poisoning, low-overhead synchronous access;
+/// Uses `std::sync::Mutex` for synchronous access;
 /// guards are never held across await points.
 #[derive(Clone, Default)]
 pub struct CacheHandle {
@@ -55,12 +54,12 @@ impl CacheHandle {
     }
 
     pub fn capacity(&self) -> Option<usize> {
-        let guard = self.inner.lock();
+        let guard = self.inner.lock().expect("CacheHandle mutex poisoned");
         guard.as_ref().and_then(|cache| cache.capacity())
     }
 
     pub fn metrics(&self) -> Option<CacheMetrics> {
-        let guard = self.inner.lock();
+        let guard = self.inner.lock().expect("CacheHandle mutex poisoned");
         guard.as_ref().map(|cache| cache.metrics())
     }
 
@@ -69,7 +68,7 @@ impl CacheHandle {
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Option<EmbeddingCache>> {
-        self.inner.lock()
+        self.inner.lock().expect("CacheHandle mutex poisoned")
     }
 }
 

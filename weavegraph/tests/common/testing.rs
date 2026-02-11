@@ -5,9 +5,9 @@ use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
-use weavegraph::state::StateSnapshot;
+use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 
 #[derive(Debug, Clone)]
@@ -29,14 +29,7 @@ mod tests {
             step: 1,
             event_emitter: bus.get_emitter(),
         };
-        let snapshot = StateSnapshot {
-            messages: vec![],
-            messages_version: 1,
-            extra: FxHashMap::default(),
-            extra_version: 1,
-            errors: vec![],
-            errors_version: 1,
-        };
+        let snapshot = VersionedState::builder().build().snapshot();
         let result = node.run(snapshot, ctx).await;
         assert!(result.is_ok());
     }
@@ -49,15 +42,10 @@ impl Node for TestNode {
         _snapshot: StateSnapshot,
         ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        Ok(NodePartial {
-            messages: Some(vec![Message::assistant(&format!(
-                "ran:{}:step:{}",
-                self.name, ctx.step
-            ))]),
-            extra: None,
-            errors: None,
-            frontier: None,
-        })
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
+            &format!("ran:{}:step:{}", self.name, ctx.step),
+        )]))
     }
 }
 
@@ -75,15 +63,10 @@ impl Node for DelayedNode {
         ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
         sleep(Duration::from_millis(self.delay_ms)).await;
-        Ok(NodePartial {
-            messages: Some(vec![Message::assistant(&format!(
-                "ran:{}:step:{}",
-                self.name, ctx.step
-            ))]),
-            extra: None,
-            errors: None,
-            frontier: None,
-        })
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
+            &format!("ran:{}:step:{}", self.name, ctx.step),
+        )]))
     }
 }
 
@@ -126,10 +109,10 @@ impl Node for RichNode {
         _snapshot: StateSnapshot,
         ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        let messages = Some(vec![Message::assistant(&format!(
-            "{}:step:{}",
-            self.name, ctx.step
-        ))]);
+        let messages = Some(vec![Message::with_role(
+            Role::Assistant,
+            &format!("{}:step:{}", self.name, ctx.step),
+        )]);
 
         let extra = if self.produce_extra {
             let mut map = FxHashMap::default();
@@ -140,12 +123,14 @@ impl Node for RichNode {
             None
         };
 
-        Ok(NodePartial {
-            messages,
-            extra,
-            errors: None,
-            frontier: None,
-        })
+        let mut partial = NodePartial::new();
+        if let Some(messages) = messages {
+            partial = partial.with_messages(messages);
+        }
+        if let Some(extra) = extra {
+            partial = partial.with_extra(extra);
+        }
+        Ok(partial)
     }
 }
 

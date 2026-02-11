@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use async_trait::async_trait;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::StateSnapshot;
 
@@ -23,7 +23,7 @@ impl Node for SimpleMessageNode {
         _snapshot: StateSnapshot,
         _ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        Ok(NodePartial::new().with_messages(vec![Message::assistant(self.msg)]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, self.msg)]))
     }
 }
 
@@ -54,7 +54,8 @@ impl Node for EmitterNode {
         ctx.emit("test", "First event")?;
         ctx.emit("test", "Second event")?;
         ctx.emit("test", "Third event")?;
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("Done emitting")]))
+        Ok(NodePartial::new()
+            .with_messages(vec![Message::with_role(Role::Assistant, "Done emitting")]))
     }
 }
 

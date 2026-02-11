@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use rig::embeddings::EmbeddingModel;
+use serde::Serialize;
 use serde_json::Value;
 use tokio::fs;
 use tracing::{field, info_span};
@@ -357,7 +358,7 @@ pub struct ChunkDocumentResponse {
     pub telemetry: ChunkTelemetry,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChunkTelemetry {
     pub embedder: String,
     pub source: String,

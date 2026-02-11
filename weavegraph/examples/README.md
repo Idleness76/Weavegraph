@@ -8,33 +8,15 @@ This directory contains examples demonstrating various Weavegraph features and p
 |---------|---------|--------------|
 | `basic_nodes.rs` | Simple node implementation | Node trait, basic graphs |
 | `demo1.rs` | Basic workflow | Message passing, state management |
-| `demo2.rs` | State channels | Extra data, channel updates |
-| `demo3.rs` | Conditional routing | Edge predicates, dynamic graphs |
-| `demo4.rs` | Advanced patterns | Complex workflows |
-| `demo5_rag.rs` | RAG pipeline | Document processing, retrieval |
-| `demo6_agent_mcp.rs` | LLM agent with MCP | Tool calling, streaming responses |
-| `demo7_axum_sse.rs` | SSE streaming | Axum SSE streaming with cancellation hooks |
-| `streaming_events.rs` | **Event streaming** | **ChannelSink, AppRunner, web integration** |
-| `convenience_streaming.rs` | **Simple streaming** | **NEW: invoke_with_channel(), invoke_with_sinks()** |
-| `cap_demo.rs` | CAP framework | Structured outputs |
-| `advanced_patterns.rs` | Advanced techniques | Multiple patterns |
+| `demo2.rs` | Scheduler patterns | Dependency resolution, concurrency |
+| `streaming_events.rs` | Event streaming | ChannelSink, AppRunner, web integration |
+| `convenience_streaming.rs` | Simple streaming | invoke_with_channel(), invoke_with_sinks() |
+| `advanced_patterns.rs` | Advanced techniques | Error handling, retry logic, routing |
 | `errors_pretty.rs` | Error handling | Error formatting, diagnostics |
+| `event_backpressure.rs` | Backpressure handling | Lag detection, buffer management |
+| `json_serialization.rs` | JSON events | Event serialization, JsonLinesSink |
 
-**Note:** Some examples require specific Cargo features to be enabled:
-
-**LLM Examples** (require `--features llm`):
-- `demo3.rs`: Conditional routing with LLM integration
-- `demo4.rs`: Advanced patterns with LLM
-- `cap_demo.rs`: CAP framework with LLM
-- `demo6_agent_mcp.rs`: LLM agent with MCP
-
-**RAG Examples** (require `--features llm,examples`):
-- `demo5_rag.rs`: Document processing and retrieval pipeline
-
-**Basic Examples** (no special features required):
-- `basic_nodes.rs`, `demo1.rs`, `demo2.rs`, `streaming_events.rs`, `convenience_streaming.rs`, `advanced_patterns.rs`, `errors_pretty.rs`
-
-For DB-less builds, SQLite features are excluded by default but can be re-enabled with `--features sqlite-migrations`.
+**All examples work without special features.** For DB-less builds, use `--no-default-features`.
 
 ## Event Streaming (New!)
 
@@ -48,14 +30,14 @@ cargo run --example streaming_events
 ```
 
 **Key Concepts:**
-- ✅ Using `AppRunner::with_options_and_bus()` instead of `App.invoke()`
+- ✅ Using `AppRunner::builder().event_bus(...)` instead of `App.invoke()`
 - ✅ Creating custom `EventBus` with `ChannelSink`
 - ✅ Per-request event isolation in web servers
 - ✅ HTTP streaming integration patterns (Axum JSON lines)
 
 **Documentation:**
 - See `STREAMING_QUICKSTART.md` for a quick guide
-- See API docs: `AppRunner::with_options_and_bus()`
+- See API docs: `AppRunner::builder()`
 - See API docs: `ChannelSink`
 
 ### ⚠️ Important: Event Streaming Pattern
@@ -70,7 +52,14 @@ app.invoke(state).await;  // ❌ Creates its own EventBus!
 **Do this instead**:
 ```rust
 let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .autosave(false)
+    .start_listener(true)
+    .build()
+    .await;
 runner.run_until_complete(&session_id).await;  // ✅ Uses your EventBus
 ```
 
@@ -94,21 +83,21 @@ cargo run --example demo1
 
 See how state flows through workflow nodes with message passing.
 
-### 3. Try Conditional Routing
+### 3. Try Advanced Patterns
 
 ```bash
-cargo run --example demo3
+cargo run --example advanced_patterns
 ```
 
-Learn how to create dynamic workflows that route based on state.
+Learn error handling, retry logic, and conditional routing patterns.
 
-### 4. Stream Events (Simple) ⭐ NEW
+### 4. Stream Events (Simple)
 
 ```bash
 cargo run --example convenience_streaming
 ```
 
-Learn the new convenience methods for event streaming in CLI tools.
+Learn the convenience methods for event streaming in CLI tools.
 
 ### 5. Stream Events to Clients
 
@@ -117,14 +106,6 @@ cargo run --example streaming_events
 ```
 
 Learn how to stream workflow events to web clients in real-time.
-
-### 6. Build an LLM Agent
-
-```bash
-cargo run --example demo6_agent_mcp
-```
-
-See a complete LLM agent with tool calling and streaming responses.
 
 ## Common Patterns
 
@@ -194,13 +175,14 @@ let bus = EventBus::with_sinks(vec![
 ]);
 
 // Use AppRunner with custom EventBus
-let mut runner = AppRunner::with_options_and_bus(
-    app,
-    CheckpointerType::InMemory,
-    false,
-    bus,
-    true,
-).await;
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .autosave(false)
+    .start_listener(true)
+    .build()
+    .await;
 
 runner.create_session(session_id.clone(), initial_state).await?;
 runner.run_until_complete(&session_id).await?;
@@ -215,8 +197,8 @@ runner.run_until_complete(&session_id).await?;
 | Simple script | `invoke()` | No streaming needed |
 | CLI with progress | `invoke_with_channel()` ⭐NEW | Simple, one-shot streaming |
 | Multiple sinks | `invoke_with_sinks()` ⭐NEW | Need stdout + channel + file |
-| Web server (streaming) | `AppRunner::with_options_and_bus()` | Per-request isolation required |
-| Shared app, many clients | `AppRunner::with_options_and_bus()` | One App, many runners |
+| Web server (streaming) | `AppRunner::builder()` ⭐RECOMMENDED | Per-request isolation + clearer config |
+| Shared app, many clients | `AppRunner::builder()` ⭐RECOMMENDED | Use `.app_arc(Arc<App>)` |
 
 ### Per-Request Isolation (Web Server)
 
@@ -226,13 +208,14 @@ async fn handle_request(app: Arc<App>) -> Result<Stream> {
     let (tx, rx) = flume::unbounded();
     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
     
-    let mut runner = AppRunner::with_options_and_bus(
-        Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()),
-        CheckpointerType::InMemory,
-        false,
-        bus,
-        true,
-    ).await;
+    let mut runner = AppRunner::builder()
+        .app_arc(app.clone())
+        .checkpointer(CheckpointerType::InMemory)
+        .event_bus(bus)
+        .autosave(false)
+        .start_listener(true)
+        .build()
+        .await;
     
     // Run workflow - events isolated to this request
     tokio::spawn(async move {

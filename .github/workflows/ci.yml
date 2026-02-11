@@ -23,7 +23,7 @@ jobs:
         with:
           prefix-key: fmt
       - name: cargo fmt --check
-        run: make fmt-check
+        run: cargo fmt --all -- --check
 
   clippy:
     name: clippy (${{ matrix.toolchain }})
@@ -92,7 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: deny
-      - run: make deny
+      - run: cargo deny check
 
   machete:
     name: cargo machete
@@ -109,4 +109,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: machete
-      - run: make machete
+      - run: cargo machete --with-metadata
+
+  benchmarks:
+    name: benchmark regression
+    runs-on: ubuntu-latest
+    # Only run on pushes to main to establish baselines and detect regressions
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bench
+      - name: Run benchmarks
+        run: cargo bench --workspace -- --noplot
+      - name: Store benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: target/criterion
+          retention-days: 30

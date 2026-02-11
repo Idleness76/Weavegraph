@@ -26,10 +26,11 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+use weavegraph::channels::Channel;
 use weavegraph::event_bus::EventBus;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
-use weavegraph::state::StateSnapshot;
+use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::utils::collections::new_extra_map;
 
 use miette::Result;
@@ -106,10 +107,10 @@ impl Node for ApiCallNode {
                 );
 
                 let partial = NodePartial::new()
-                    .with_messages(vec![Message {
-                        role: "system".to_string(),
-                        content: format!("{} API call completed successfully", self.service_name),
-                    }])
+                    .with_messages(vec![Message::with_role(
+                        Role::System,
+                        &format!("{} API call completed successfully", self.service_name),
+                    )])
                     .with_extra(extra);
 
                 return Ok(partial);
@@ -200,10 +201,10 @@ impl Node for ConditionalRouterNode {
         );
 
         Ok(NodePartial::new()
-            .with_messages(vec![Message {
-                role: "system".to_string(),
-                content: format!("Routed to: {}", selected_route),
-            }])
+            .with_messages(vec![Message::with_role(
+                Role::System,
+                &format!("Routed to: {}", selected_route),
+            )])
             .with_extra(extra))
     }
 }
@@ -329,10 +330,10 @@ impl Node for DataTransformerNode {
         extra.insert("transformation_log".to_string(), json!(transformation_log));
 
         Ok(NodePartial::new()
-            .with_messages(vec![Message {
-                role: "assistant".to_string(),
-                content: format!("Applied {} transformations", transformation_log.len()),
-            }])
+            .with_messages(vec![Message::with_role(
+                Role::Assistant,
+                &format!("Applied {} transformations", transformation_log.len()),
+            )])
             .with_extra(extra))
     }
 }
@@ -381,27 +382,19 @@ async fn main() -> Result<()> {
     info!("\n🔧 Running Advanced Node Examples...");
 
     // Initial state with more complex data
-    let mut state = StateSnapshot {
-        messages: vec![Message {
-            role: "user".to_string(),
-            content: "Process this data through the advanced pipeline".to_string(),
-        }],
-        messages_version: 1,
-        extra: {
-            let mut extra = new_extra_map();
-            extra.insert("service_type".to_string(), json!("premium"));
-            extra.insert("user_data".to_string(), json!("Hello World"));
-            extra.insert("priority".to_string(), json!(5));
-            extra
-        },
-        extra_version: 1,
-        errors: vec![],
-        errors_version: 1,
-    };
+    let mut state = VersionedState::builder()
+        .with_user_message("Process this data through the advanced pipeline")
+        .with_extra("service_type", json!("premium"))
+        .with_extra("user_data", json!("Hello World"))
+        .with_extra("priority", json!(5))
+        .build();
 
     info!("\n📊 Initial State:");
-    info!("  Messages: {}", state.messages.len());
-    info!("  Extra keys: {:?}", state.extra.keys().collect::<Vec<_>>());
+    info!("  Messages: {}", state.messages.snapshot().len());
+    info!(
+        "  Extra keys: {:?}",
+        state.extra.snapshot().keys().collect::<Vec<_>>()
+    );
 
     // Create and run API node with potential failures
     info!("\n1️⃣ Running API Call Node (with failure simulation)...");
@@ -420,14 +413,14 @@ async fn main() -> Result<()> {
     };
 
     // Demonstrate both success and failure scenarios
-    match api_node.run(state.clone(), ctx1).await {
+    match api_node.run(state.snapshot(), ctx1).await {
         Ok(result) => {
             info!("  ✅ API call succeeded");
             if let Some(messages) = result.messages {
-                state.messages.extend(messages);
+                state.messages.get_mut().extend(messages);
             }
             if let Some(extra) = result.extra {
-                state.extra.extend(extra);
+                state.extra.get_mut().extend(extra);
             }
         }
         Err(e) => {
@@ -446,13 +439,12 @@ async fn main() -> Result<()> {
                     "data": "Fallback data used due to service failure"
                 }),
             );
-            state.extra.extend(extra);
+            state.extra.get_mut().extend(extra);
 
-            state.messages.push(Message {
-                role: "system".to_string(),
-                content: "Using fallback data due to API failure - workflow continues gracefully"
-                    .to_string(),
-            });
+            state.messages.get_mut().push(Message::with_role(
+                Role::System,
+                "Using fallback data due to API failure - workflow continues gracefully",
+            ));
         }
     }
 
@@ -470,11 +462,11 @@ async fn main() -> Result<()> {
         event_emitter: Arc::clone(&emitter),
     };
 
-    match failing_api_node.run(state.clone(), ctx1_1).await {
+    match failing_api_node.run(state.snapshot(), ctx1_1).await {
         Ok(result) => {
             info!("  ✅ Metrics API call succeeded (lucky!)");
             if let Some(extra) = result.extra {
-                state.extra.extend(extra);
+                state.extra.get_mut().extend(extra);
             }
         }
         Err(e) => {
@@ -485,7 +477,7 @@ async fn main() -> Result<()> {
             let mut extra = new_extra_map();
             extra.insert("metrics_status".to_string(), json!("unavailable"));
             extra.insert("error_handled".to_string(), json!(true));
-            state.extra.extend(extra);
+            state.extra.get_mut().extend(extra);
         }
     }
 
@@ -508,12 +500,12 @@ async fn main() -> Result<()> {
         event_emitter: Arc::clone(&emitter),
     };
 
-    let result2 = router_node.run(state.clone(), ctx2).await?;
+    let result2 = router_node.run(state.snapshot(), ctx2).await?;
     if let Some(messages) = result2.messages {
-        state.messages.extend(messages);
+        state.messages.get_mut().extend(messages);
     }
     if let Some(extra) = result2.extra {
-        state.extra.extend(extra);
+        state.extra.get_mut().extend(extra);
     }
     info!("  ✅ Routing completed");
 
@@ -550,12 +542,12 @@ async fn main() -> Result<()> {
         event_emitter: Arc::clone(&emitter),
     };
 
-    let result3 = transformer_node.run(state.clone(), ctx3).await?;
+    let result3 = transformer_node.run(state.snapshot(), ctx3).await?;
     if let Some(messages) = result3.messages {
-        state.messages.extend(messages);
+        state.messages.get_mut().extend(messages);
     }
     if let Some(extra) = result3.extra {
-        state.extra.extend(extra);
+        state.extra.get_mut().extend(extra);
     }
     info!("  ✅ Transformation completed");
 
@@ -563,19 +555,21 @@ async fn main() -> Result<()> {
     info!("\n📋 Final Pipeline Results:");
     info!("==========================================");
 
-    info!("\n💬 Messages ({} total):", state.messages.len());
-    for (i, msg) in state.messages.iter().enumerate() {
+    let final_snapshot = state.snapshot();
+
+    info!("\n💬 Messages ({} total):", final_snapshot.messages.len());
+    for (i, msg) in final_snapshot.messages.iter().enumerate() {
         info!("  {}: [{}] {}", i + 1, msg.role, msg.content);
     }
 
-    info!("\n📊 State Data ({} keys):", state.extra.len());
-    for (key, value) in &state.extra {
+    info!("\n📊 State Data ({} keys):", final_snapshot.extra.len());
+    for (key, value) in &final_snapshot.extra {
         info!("  {}: {}", key, value);
     }
 
     // Show transformations specifically
     info!("\n🔄 Transformations Applied:");
-    if let Some(log) = state.extra.get("transformation_log")
+    if let Some(log) = final_snapshot.extra.get("transformation_log")
         && let Some(log_array) = log.as_array()
     {
         for (i, entry) in log_array.iter().enumerate() {
@@ -585,7 +579,7 @@ async fn main() -> Result<()> {
 
     // Show routing decision
     info!("\n🛤️  Routing Decision:");
-    if let Some(routing) = state.extra.get("routing_decision") {
+    if let Some(routing) = final_snapshot.extra.get("routing_decision") {
         info!("  {}", routing);
     }
 

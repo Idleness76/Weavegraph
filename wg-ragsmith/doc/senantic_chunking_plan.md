@@ -185,7 +185,7 @@ Also integrate with `EventBus` for streaming chunking progress.
   - Persist chunk `id`/`prev_ids`/`next_ids` to support navigation when reconstructing context windows.
   - Wrap each page ingestion in a tracing span (`tracing::info_span!("rust_book_chapter", url)`) and propagate telemetry counters to the event bus.
 
-### Run Demo5 Implementation Plan (2025-10-01T18:12:00Z)
+### Demo5 RAG example plan (historical notes) (2025-10-01T18:12:00Z)
 1. **Module scaffolding**
    - `src/rag/mod.rs` re-export helpers; add `rag::ingest::mod` with `rust_book.rs` implementing scraping + chunking orchestrator.
    - Introduce `rag::store::sqlite.rs` thin wrapper over `rig_sqlite::VectorStore` (open/connect, upsert chunks, basic retrieval helper).
@@ -200,19 +200,19 @@ Also integrate with `EventBus` for streaming chunking progress.
 4. **Vector store integration**
    - Connect to SQLite DB (create if missing); upsert chunks via `vector_store.upsert(&id, embedding, metadata_json)`.
    - Maintain mapping table for chapter URL -> chunk ids to support deletion/resume; simple table using `rusqlite` or store in metadata.
-5. **Example entrypoint (`run_demo5.rs`)**
+5. **Example entrypoint (`demo5_rag.rs`)**
    - CLI args via `clap` (feature optional) or manual parsing: base URL, DB path, concurrency, resume flag, query prompt.
    - Ingest pipeline streams diagnostics to stdout via graft’s event bus while populating DB.
    - After ingest, build `VectorStoreRetriever` and run a sample query (embedding the question) to print top hits with snippet context.
 6. **Testing**
    - Unit: mock HTTP server (two chapter fixtures) verifying that ingest writes expected rows and retrieval returns chunk from fixture.
-   - Integration: run `run_demo5` against cached fixtures in CI (feature gated) to avoid hitting network.
+   - Integration: run `demo5_rag` against cached fixtures in CI (feature gated) to avoid hitting network.
 7. **Documentation & telemetry**
-   - Update README or demo docs referencing `run_demo5` usage.
+   - Update README or demo docs referencing `demo5_rag` usage.
    - Add progress log entries as implementation proceeds; capture telemetry counters in ingest summary.
 
 Progress Log Addendum:
-- 2025-10-01T18:12:47: Scoped run_demo5 ingestion pipeline (scraper + chunker + vector store) and planned module layout/tests for end-to-end example.
+- 2025-10-01T18:12:47: Scoped demo5_rag ingestion pipeline (scraper + chunker + vector store) and planned module layout/tests for end-to-end example.
 
 ## Progress Log
 - 2025-10-01T10:02:13: Initial review of module plan; validated structure, flagged dependency strategy (tiktoken-rs for tokens, scraper for DOM, optional rust-bert feature for sentence splitting) and noted need to revisit breakpoint heuristics once richer signals available.
@@ -246,9 +246,9 @@ Progress Log Addendum:
 - 2025-10-01T16:47:17: Re-read LangGraph port, event bus, and error handling docs to anchor runtime/telemetry integration scope; outlined initial needs for service API, config propagation, and structured traces.
 - 2025-10-01T16:55:42: Surveyed semantic chunking modules, runtime runner, telemetry/event bus plumbing; sketched service orchestration points (embedder registry, cache toggles, tracing spans, bus diagnostics) in integration notes section.
 - 2025-10-01T17:44:46: Implemented `SemanticChunkingService` (JSON/HTML dispatch, RIG adapter, cache metrics, tracing span + event bus emission) with unit coverage for embeddings, caching reuse, file ingestion, and diagnostics.
-- 2025-10-01T18:35:12: Added `rag` module scaffolding (SQLite chunk store + Rust Book ingestor), hooked service + vector store wiring, and drafted run_demo5 pipeline for scraping, chunking, and retrieval.
-- 2025-10-01T19:12:05: Refactored `run_demo5` into multi-node graph (scrape → chunk → store → retrieve) with ctx.emit telemetry, filesystem handoff between nodes, and SQLite-backed retriever answer flow.
+- 2025-10-01T18:35:12: Added `rag` module scaffolding (SQLite chunk store + Rust Book ingestor), hooked service + vector store wiring, and drafted demo5_rag pipeline for scraping, chunking, and retrieval.
+- 2025-10-01T19:12:05: Refactored demo5_rag into multi-node graph (scrape → chunk → store → retrieve) with ctx.emit telemetry, filesystem handoff between nodes, and SQLite-backed retriever answer flow.
 - 2025-10-01T16:32:21Z: Kicking off follow-up iteration — planning concurrency/backoff for scraping, fixture-driven ingest tests, and richer metadata persistence for retrieval responses.
 - 2025-10-01T17:00:06Z: Added bounded concurrency + retry/backoff to scraping node, introduced mock-server ingestion test harness with custom embedding model, and enriched retrieval to persist structured match metadata with vector-search fallback.
 - 2025-10-01T19:51:38Z: Instrumented `SemanticChunkingService` to emit per-run diagnostics (stats, chunk previews, breakpoint traces) over the shared event bus so node progress logs surface grouping rationale without extra listeners.
-- 2025-10-01T20:39:26Z: Ensured `run_demo5` loads `.env` via `dotenvy::dotenv()` before initializing Gemini client so environment-backed embedding configuration matches demo4 behavior.
+- 2025-10-01T20:39:26Z: Ensured demo5_rag loads `.env` via `dotenvy::dotenv()` before initializing Gemini client so environment-backed embedding configuration matches the prior demo behavior.

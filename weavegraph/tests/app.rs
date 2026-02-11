@@ -5,7 +5,7 @@ use serde_json::Value;
 use weavegraph::channels::Channel;
 use weavegraph::event_bus::STREAM_END_SCOPE;
 use weavegraph::graphs::GraphBuilder;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::VersionedState;
 use weavegraph::types::NodeKind;
@@ -26,15 +26,8 @@ async fn test_apply_barrier_messages_update() {
     let app = make_app();
     let state = &mut state_with_user("hi");
     let run_ids = vec![NodeKind::Start];
-    let partial = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "foo".into(),
-        }]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let partial =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "foo")]);
     let outcome = app
         .apply_barrier(state, &run_ids, vec![partial])
         .await
@@ -51,12 +44,7 @@ async fn test_apply_barrier_no_update() {
     let app = make_app();
     let state = &mut state_with_user("hi");
     let run_ids = vec![NodeKind::Start];
-    let partial = NodePartial {
-        messages: None,
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new();
     let outcome = app
         .apply_barrier(state, &run_ids, vec![partial])
         .await
@@ -73,15 +61,7 @@ async fn test_apply_barrier_saturating_version() {
     let state = &mut state_with_user("hi");
     // push messages version to max to verify saturating add behavior
     state.messages.set_version(u32::MAX);
-    let partial = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "x".into(),
-        }]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "x")]);
     app.apply_barrier(state, &[NodeKind::Start], vec![partial])
         .await
         .unwrap();
@@ -96,7 +76,8 @@ async fn test_apply_barrier_preserves_updated_channel_order() {
     let state = &mut state_with_user("hi");
     let run_ids = vec![NodeKind::Start];
 
-    let partial_a = NodePartial::new().with_messages(vec![Message::assistant("a")]);
+    let partial_a =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "a")]);
     let partial_b = NodePartial::new().with_extra({
         let mut map = FxHashMap::default();
         map.insert("z".into(), Value::String("1".into()));
@@ -178,24 +159,10 @@ async fn invoke_streaming_closes_stream() {
 async fn test_apply_barrier_multiple_updates() {
     let app = make_app();
     let state = &mut state_with_user("hi");
-    let partial1 = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "foo".into(),
-        }]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
-    let partial2 = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "bar".into(),
-        }]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let partial1 =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "foo")]);
+    let partial2 =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "bar")]);
     let outcome = app
         .apply_barrier(
             state,
@@ -216,19 +183,9 @@ async fn test_apply_barrier_empty_vectors_and_maps() {
     let app = make_app();
     let state = &mut state_with_user("hi");
     // Empty messages vector -> Some(vec![]) should be treated as no-op by guard
-    let empty_msgs = NodePartial {
-        messages: Some(vec![]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let empty_msgs = NodePartial::new().with_messages(vec![]);
     // Empty extra map -> Some(empty) should be treated as no-op by guard
-    let empty_extra = NodePartial {
-        messages: None,
-        extra: Some(FxHashMap::default()),
-        errors: None,
-        frontier: None,
-    };
+    let empty_extra = NodePartial::new().with_extra(FxHashMap::default());
     let outcome = app
         .apply_barrier(
             state,
@@ -254,18 +211,8 @@ async fn test_apply_barrier_extra_merge_and_version() {
     // Overwrite k1 in second partial to test key overwrite still counts as change
     m2.insert("k1".into(), Value::String("v3".into()));
 
-    let p1 = NodePartial {
-        messages: None,
-        extra: Some(m1),
-        errors: None,
-        frontier: None,
-    };
-    let p2 = NodePartial {
-        messages: None,
-        extra: Some(m2),
-        errors: None,
-        frontier: None,
-    };
+    let p1 = NodePartial::new().with_extra(m1);
+    let p2 = NodePartial::new().with_extra(m2);
 
     let outcome = app
         .apply_barrier(state, &[NodeKind::Start, NodeKind::End], vec![p1, p2])
@@ -285,12 +232,7 @@ async fn test_apply_barrier_collects_errors() {
     let app = make_app();
     let state = &mut state_with_user("hi");
     let run_ids = vec![NodeKind::Start];
-    let partial = NodePartial {
-        messages: None,
-        extra: None,
-        errors: Some(vec![ErrorEvent::default()]),
-        frontier: None,
-    };
+    let partial = NodePartial::new().with_errors(vec![ErrorEvent::default()]);
 
     let outcome = app
         .apply_barrier(state, &run_ids, vec![partial])

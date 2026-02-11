@@ -5,7 +5,7 @@
 //! randomness is required but consistency is needed.
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use std::collections::HashMap;
 
 /// Deterministic random number generator wrapping rand::StdRng.

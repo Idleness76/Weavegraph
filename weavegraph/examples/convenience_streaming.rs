@@ -35,7 +35,7 @@ use weavegraph::{
     channels::Channel,
     event_bus::{ChannelSink, StdOutSink},
     graphs::GraphBuilder,
-    message::Message,
+    message::{Message, Role},
     node::{Node, NodeContext, NodeError, NodePartial},
     state::{StateSnapshot, VersionedState},
     types::NodeKind,
@@ -69,7 +69,10 @@ impl Node for ProgressNode {
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("Complete!")]))
+        Ok(
+            NodePartial::new()
+                .with_messages(vec![Message::with_role(Role::Assistant, "Complete!")]),
+        )
     }
 }
 

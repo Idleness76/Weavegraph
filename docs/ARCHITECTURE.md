@@ -122,11 +122,10 @@ wg-ragsmith/              → RAG utilities crate (library + examples + tests).
 data/                     → Local development databases (ignored in version control).
 external/                 → Vendor snapshots (RAGatouille, raptor) kept outside the workspace.
 .github/workflows/        → Continuous integration pipelines.
-Makefile                  → Developer/CI task runner (fmt, clippy, test, doc, deny, machete, migrations).
 ARCHITECTURE.md           → This document.
 ```
 
-The workspace targets Rust 1.91 as the minimum supported version and enables 2024 edition
+The workspace targets Rust 1.89 as the minimum supported version and enables 2024 edition
 features across both crates.
 
 ---
@@ -158,7 +157,7 @@ Weavegraph applications revolve around three building blocks: nodes, state, and 
 ```rust
 use weavegraph::{
     graphs::GraphBuilder,
-    message::Message,
+    message::{Message, Role},
     node::{Node, NodeContext, NodePartial},
     state::VersionedState,
     types::NodeKind,
@@ -175,7 +174,10 @@ impl Node for GreetingNode {
         ctx: NodeContext,
     ) -> Result<NodePartial, weavegraph::node::NodeError> {
         ctx.emit("greeting", "Saying hi!")?;
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("Hello!")]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+          Role::Assistant,
+          "Hello!",
+        )]))
     }
 }
 
@@ -191,7 +193,7 @@ let result = app.invoke(initial).await?;
 
 **Key practices:**
 
-- Prefer the convenience constructors on `Message` (`Message::user`, `Message::assistant`, etc.) - see [Messages](GUIDE.md#messages)
+- Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](GUIDE.md#messages)
 - Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](GUIDE.md#state)
 - Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout
 - Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
@@ -264,7 +266,7 @@ barrier synchronization.
 
 * `llm` – Enables Rig-based LLM support (Ollama/MCP integrations).
 * `sqlite-migrations` – Turns on SQLite-backed persistence (default).
-* `examples` – Pulls in `wg-ragsmith`, `reqwest`, and `scraper` for richer demos.
+* `examples` – Pulls in extra dependencies used by a subset of examples (e.g. `reqwest`, `scraper`).
 
 ### Tests & Examples
 
@@ -273,12 +275,12 @@ barrier synchronization.
 * `weavegraph/examples/` – Progressive walkthroughs:
   * `basic_nodes.rs`, `demo1.rs`, `demo2.rs` show core messaging and state channels.
     See [Messages](GUIDE.md#messages) and [State](GUIDE.md#state).
-  * `demo3.rs`, `demo4.rs`, `demo6_agent_mcp.rs` integrate LLM providers (Ollama/MCP),
-    leveraging the `llm` feature.
-  * `streaming_events.rs`, `convenience_streaming.rs`, `demo7_axum_sse.rs` demonstrate the
+  * `advanced_patterns.rs` covers conditional routing and control-flow helpers.
+  * `streaming_events.rs`, `convenience_streaming.rs` demonstrate the
     broadcast event bus and web-friendly streaming patterns.
     See [Event Streaming](OPERATIONS.md#event-streaming).
-  * `demo5_rag.rs` ties into `wg-ragsmith` to orchestrate a RAG pipeline end-to-end.
+  * `event_backpressure.rs`, `json_serialization.rs`, `errors_pretty.rs` cover production-facing
+    concerns like lag handling, JSON sinks, and pretty diagnostics.
 
 ---
 
@@ -329,15 +331,134 @@ These examples share environment variables with the weavegraph RAG demo (see `.e
 
 ## Shared Operational Pieces
 
-* **Tooling** – The top-level `Makefile` standardises `cargo fmt`, `cargo clippy`,
-  `cargo test`, `cargo doc`, `cargo deny`, `cargo machete`, and `sqlx` migrations so that
-  local developers and CI run identical commands.
-* **CI/CD** – `.github/workflows/ci.yml` runs the Makefile/`cargo` commands across three
-  toolchains (`1.91.0`, current stable, nightly) and per workspace member to guard API evolution.
+* **Tooling** – Standard Rust tooling (`cargo fmt`, `cargo clippy`, `cargo test`, `cargo doc`,
+  `cargo deny`, `cargo machete`) plus `sqlx` migrations keep local workflows and CI aligned.
+* **CI/CD** – `.github/workflows/ci.yml` runs the cargo commands across two toolchains
+  (`1.89.0` and current stable) and per workspace member to guard API evolution.
 * **Migrations** – `weavegraph/migrations` houses the `sqlx` migration set for the SQLite
-  checkpointer. The Makefile’s `migrate*` targets wrap `sqlx` CLI calls.
+  checkpointer. Use `sqlx migrate` to apply or rollback changes.
 * **Docs** – `docs/` captures forward-looking design documents (event bus refactor,
   control-flow commands, hybrid RAG pipeline) and the production readiness plan. Use
   this architecture document as the entry point.
+
+---
+## petgraph Comparison
+
+Weavegraph's graph implementation was designed with workflow execution in mind, making different
+tradeoffs than the general-purpose [petgraph](https://github.com/petgraph/petgraph) crate.
+This section documents the architectural differences and integration opportunities.
+
+### Architecture Comparison
+
+| Aspect | Weavegraph | petgraph |
+|--------|-----------|----------|
+| **Primary Use Case** | Workflow orchestration with async node execution | General graph algorithms and data structures |
+| **Graph Type** | Custom `FxHashMap<NodeKind, Vec<NodeKind>>` adjacency | `Graph`, `StableGraph`, `GraphMap`, `MatrixGraph` |
+| **Node Identity** | `NodeKind` enum (Start/End/Custom) | `NodeIndex` (u32 handle) |
+| **Node Data** | Nodes carry `Arc<dyn Node>` trait objects | Generic node weight type `N` |
+| **Edge Storage** | HashMap adjacency list with conditional predicates | Compact edge list with indices |
+| **Edge Data** | Unconditional or `EdgePredicate` closures | Generic edge weight type `E` |
+| **Cycle Detection** | Custom DFS with three-color marking | `petgraph::algo::is_cyclic_directed` |
+| **Reachability** | Custom BFS from Start | `petgraph::algo::has_path_connecting` |
+| **Algorithms** | Validation-focused (cycles, reachability, deadends) | Rich library (Dijkstra, MST, SCC, isomorphism, max flow) |
+| **Async Support** | First-class (nodes are async) | None (pure data structure) |
+| **Serialization** | Custom JSON via serde | `serde-1` feature |
+
+### Key Differences Explained
+
+**Why Weavegraph uses a custom graph:**
+
+1. **Domain-Specific Semantics** — `NodeKind::Start` and `NodeKind::End` are virtual structural
+   endpoints that cannot be registered as executable nodes. This enables clear workflow boundaries
+   without special-casing in user code.
+
+2. **Conditional Edges** — petgraph edges are static data. Weavegraph edges can be runtime
+   predicates (`EdgePredicate`) that inspect state to determine routing. This is fundamental to
+   agent decision-making workflows.
+
+3. **Execution Context** — Nodes aren't just data; they're async executables with access to
+   `NodeContext` for event emission and metadata. petgraph's node weights are passive data.
+
+4. **Validation Errors** — Compilation produces domain-specific errors like `UnknownNode`,
+   `CycleDetected { path }`, `UnreachableFromStart`, and `DeadendNode` with actionable context.
+
+**petgraph advantages:**
+
+1. **Battle-tested** — 3.7k+ GitHub stars, 144 contributors, extensive production usage
+2. **Memory-efficient** — Compact edge storage, cache-friendly node indices
+3. **Algorithm library** — Dijkstra, topological sort, strongly connected components, etc.
+4. **Index stability** — `StableGraph` maintains valid indices through mutations
+
+### Integration Approach
+
+Weavegraph takes a **selective adoption** approach rather than replacing its core graph:
+
+```rust
+// Feature-gated behind `petgraph-compat`
+#[cfg(feature = "petgraph-compat")]
+impl From<&CompiledGraph> for petgraph::Graph<NodeKind, ()> {
+    fn from(graph: &CompiledGraph) -> Self {
+        // Convert for visualization or analysis
+    }
+}
+```
+
+**Current integrations:**
+
+- **Graph iteration API** — `Graph::nodes()` and `Graph::edges()` iterators mirror petgraph idioms
+- **Topological sort** — `Graph::topological_sort()` for deterministic node ordering
+- **DOT export** — Optional petgraph-based visualization via `dot` format
+
+**Future opportunities:**
+
+- **Advanced routing** — Use petgraph's shortest path for "fastest path to End" analysis
+- **Cycle detection fallback** — Validate against petgraph's implementation
+- **Graph visualization** — Generate DOT/GraphViz output for debugging
+
+### When to Use petgraph Directly
+
+Use petgraph when you need:
+- Pure graph algorithms without execution semantics
+- Memory-optimal large graph storage
+- Pre-built algorithms (MST, max flow, isomorphism)
+- Static graph analysis tooling
+
+Use Weavegraph when you need:
+- Async node execution with state management
+- Conditional runtime routing based on state
+- Event streaming and observability
+- Checkpoint/resume workflow persistence
+- LLM agent orchestration patterns
+
+### Code Example: Hybrid Usage
+
+```rust
+use weavegraph::graphs::GraphBuilder;
+use weavegraph::types::NodeKind;
+
+// Build workflow with Weavegraph
+let builder = GraphBuilder::new()
+    .add_node(NodeKind::Custom("analyze".into()), AnalyzeNode)
+    .add_node(NodeKind::Custom("summarize".into()), SummarizeNode)
+    .add_edge(NodeKind::Start, NodeKind::Custom("analyze".into()))
+    .add_edge(NodeKind::Custom("analyze".into()), NodeKind::Custom("summarize".into()))
+  .add_edge(NodeKind::Custom("summarize".into()), NodeKind::End);
+
+// Convert to petgraph for analysis (feature-gated)
+#[cfg(feature = "petgraph-compat")]
+{
+  use weavegraph::graphs::PetgraphConversion;
+  let pg = builder.to_petgraph();
+    
+    // Use petgraph algorithms
+    let topo_order = petgraph::algo::toposort(&pg.graph, None)?;
+    let dot = petgraph::dot::Dot::new(&pg.graph);
+    println!("DOT output:\n{:?}", dot);
+}
+
+// Execute with Weavegraph
+  let app = builder.compile()?;
+let result = app.invoke(initial_state).await?;
+```
 
 ---

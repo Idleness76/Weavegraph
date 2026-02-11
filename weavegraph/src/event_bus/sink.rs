@@ -1,10 +1,9 @@
 use flume;
-use parking_lot::Mutex as ParkingMutex;
 use std::any::type_name;
 use std::fs::File;
 use std::io::{self, Result as IoResult, Stdout, Write};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::event::Event;
 use crate::telemetry::{PlainFormatter, TelemetryFormatter};
@@ -61,7 +60,7 @@ impl<F: TelemetryFormatter> EventSink for StdOutSink<F> {
 /// In-memory sink for testing and snapshots.
 #[derive(Clone, Default)]
 pub struct MemorySink {
-    entries: Arc<ParkingMutex<Vec<Event>>>,
+    entries: Arc<Mutex<Vec<Event>>>,
 }
 
 impl MemorySink {
@@ -72,18 +71,27 @@ impl MemorySink {
     /// Get a snapshot of all captured events. Clones the internal buffer so callers
     /// can inspect state without holding the mutex.
     pub fn snapshot(&self) -> Vec<Event> {
-        self.entries.lock().clone()
+        self.entries
+            .lock()
+            .expect("MemorySink mutex poisoned")
+            .clone()
     }
 
     /// Clear all captured events.
     pub fn clear(&self) {
-        self.entries.lock().clear();
+        self.entries
+            .lock()
+            .expect("MemorySink mutex poisoned")
+            .clear();
     }
 }
 
 impl EventSink for MemorySink {
     fn handle(&mut self, event: &Event) -> IoResult<()> {
-        self.entries.lock().push(event.clone());
+        self.entries
+            .lock()
+            .expect("MemorySink mutex poisoned")
+            .push(event.clone());
         Ok(())
     }
 }

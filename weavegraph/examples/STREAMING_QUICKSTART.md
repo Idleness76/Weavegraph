@@ -8,8 +8,8 @@ This guide shows you how to stream workflow events to web clients using Weavegra
 |----------|-----|-------------------|-------|---------|
 | CLI / scripts | `App::invoke_with_channel` | flume receiver | Simplest to wire progress bars, returns `(Result, Receiver)` | `examples/convenience_streaming.rs` |
 | CLI with multiple sinks | `App::invoke_with_sinks` | sinks + optional channel | Inject stdout/file sinks without touching `AppRunner` | same as above |
-| Web servers / SSE/WebSocket | `App::invoke_streaming` | `EventStream` (async/iter/poll) | Preferred for live streaming; emits `STREAM_END_SCOPE` sentinel when finished | `examples/demo7_axum_sse.rs` |
-| Full control | `AppRunner::with_options_and_bus` | custom `EventBus` | Use when you need per-request isolation or reuse a runner | `examples/streaming_events.rs` |
+| Web servers / SSE/WebSocket | `App::invoke_streaming` | `EventStream` (async/iter/poll) | Preferred for live streaming; emits `STREAM_END_SCOPE` sentinel when finished | `examples/streaming_events.rs` |
+| Full control | `AppRunner::builder()` | custom `EventBus` | Use when you need per-request isolation or reuse a runner | `examples/streaming_events.rs` |
 
 ### ⭐ Simple Patterns (Convenience Methods)
 
@@ -83,7 +83,7 @@ response
 
 **When to use:** SSE/WebSocket transports (or as a base for similar streaming adapters). The stream closes automatically when the sentinel diagnostic with scope `STREAM_END_SCOPE` arrives.
 
-**Example:** `cargo run --example demo7_axum_sse`
+**Example:** `cargo run --example streaming_events`
 
 ---
 
@@ -278,7 +278,7 @@ curl -N http://localhost:3000/stream
 ## Further Reading
 
 - **`streaming_events.rs`** - Self-contained example (no web framework)
-- **`demo6_agent_mcp.rs`** - Real-world LLM streaming example
+- (Legacy) Older LLM streaming demos were removed during the 0.2.0 refactor; use `examples/streaming_events.rs` as the canonical streaming pattern.
 - **EventBus source**: `weavegraph/src/event_bus/`
 - **AppRunner source**: `weavegraph/src/runtimes/runner.rs`
 
@@ -288,14 +288,21 @@ curl -N http://localhost:3000/stream
 
 **Problem**: Workflow runs but no events in channel.
 
-**Solution**: Ensure you're using `AppRunner::with_options_and_bus()` to inject your custom EventBus:
+**Solution**: Ensure you're injecting your custom `EventBus` into the runner (prefer `AppRunner::builder()`):
 
 ```rust
 // ✓ CORRECT: Custom EventBus
-let mut runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .autosave(false)
+    .start_listener(true)
+    .build()
+    .await;
 
 // ✗ WRONG: Default EventBus (events go nowhere)
-let mut runner = AppRunner::new(app).await;
+let final_state = app.invoke(state).await?;
 ```
 
 ### Stream Ends Immediately

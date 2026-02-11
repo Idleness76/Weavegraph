@@ -313,6 +313,236 @@ impl GraphBuilder {
         self
     }
 
+    // =========================================================================
+    // Iterators (petgraph-style API)
+    // =========================================================================
+
+    /// Returns an iterator over all registered nodes in the graph.
+    ///
+    /// This iterates over custom nodes only; virtual `Start` and `End` nodes
+    /// are not included as they are not stored in the registry.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use weavegraph::types::NodeKind;
+    ///
+    /// # struct MyNode;
+    /// # #[async_trait::async_trait]
+    /// # impl weavegraph::node::Node for MyNode {
+    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
+    /// #         Ok(weavegraph::node::NodePartial::default())
+    /// #     }
+    /// # }
+    ///
+    /// let builder = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("A".into()), MyNode)
+    ///     .add_node(NodeKind::Custom("B".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    ///     .add_edge(NodeKind::Custom("A".into()), NodeKind::Custom("B".into()))
+    ///     .add_edge(NodeKind::Custom("B".into()), NodeKind::End);
+    ///
+    /// let node_count = builder.nodes().count();
+    /// assert_eq!(node_count, 2);
+    /// ```
+    pub fn nodes(&self) -> super::iteration::NodesIter<'_> {
+        super::iteration::NodesIter::new(self.nodes.keys())
+    }
+
+    /// Returns an iterator over all edges in the graph as (source, target) pairs.
+    ///
+    /// Includes edges from/to virtual `Start` and `End` nodes.
+    /// The iteration order is not deterministic due to hash map iteration;
+    /// use [`topological_sort`](Self::topological_sort) for ordered traversal.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use weavegraph::types::NodeKind;
+    ///
+    /// # struct MyNode;
+    /// # #[async_trait::async_trait]
+    /// # impl weavegraph::node::Node for MyNode {
+    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
+    /// #         Ok(weavegraph::node::NodePartial::default())
+    /// #     }
+    /// # }
+    ///
+    /// let builder = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("A".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    ///     .add_edge(NodeKind::Custom("A".into()), NodeKind::End);
+    ///
+    /// let edge_count = builder.edges().count();
+    /// assert_eq!(edge_count, 2);
+    /// ```
+    pub fn edges(&self) -> super::iteration::EdgesIter<'_> {
+        super::iteration::EdgesIter::new(&self.edges)
+    }
+
+    /// Returns the number of registered nodes in the graph.
+    ///
+    /// Does not include virtual `Start` and `End` nodes.
+    #[must_use]
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Returns the number of edges in the graph.
+    ///
+    /// Counts all edges including those from/to virtual nodes.
+    #[must_use]
+    pub fn edge_count(&self) -> usize {
+        self.edges.values().map(|v| v.len()).sum()
+    }
+
+    // =========================================================================
+    // Graph Algorithms
+    // =========================================================================
+
+    /// Returns a topologically sorted list of all nodes in the graph.
+    ///
+    /// The result includes virtual `Start` (always first) and `End` (always last)
+    /// nodes along with all custom nodes. Nodes at the same topological level
+    /// are sorted lexicographically for deterministic ordering.
+    ///
+    /// This is useful for:
+    /// - Deterministic iteration over nodes
+    /// - Dependency analysis
+    /// - Visualization and debugging
+    ///
+    /// # Note
+    ///
+    /// This method assumes the graph is acyclic. If the graph contains cycles,
+    /// the result will exclude nodes involved in cycles. Use [`compile`](Self::compile)
+    /// to validate the graph before relying on topological sort.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use weavegraph::types::NodeKind;
+    ///
+    /// # struct MyNode;
+    /// # #[async_trait::async_trait]
+    /// # impl weavegraph::node::Node for MyNode {
+    /// #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
+    /// #         Ok(weavegraph::node::NodePartial::default())
+    /// #     }
+    /// # }
+    ///
+    /// let builder = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("A".into()), MyNode)
+    ///     .add_node(NodeKind::Custom("B".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    ///     .add_edge(NodeKind::Custom("A".into()), NodeKind::Custom("B".into()))
+    ///     .add_edge(NodeKind::Custom("B".into()), NodeKind::End);
+    ///
+    /// let sorted = builder.topological_sort();
+    /// assert_eq!(sorted[0], NodeKind::Start);
+    /// assert_eq!(sorted[sorted.len() - 1], NodeKind::End);
+    ///
+    /// // A comes before B due to edge A -> B
+    /// let a_pos = sorted.iter().position(|n| n == &NodeKind::Custom("A".into())).unwrap();
+    /// let b_pos = sorted.iter().position(|n| n == &NodeKind::Custom("B".into())).unwrap();
+    /// assert!(a_pos < b_pos);
+    /// ```
+    #[must_use]
+    pub fn topological_sort(&self) -> Vec<crate::types::NodeKind> {
+        super::iteration::topological_sort(&self.edges)
+    }
+
+    // =========================================================================
+    // petgraph Compatibility (feature-gated)
+    // =========================================================================
+
+    /// Converts the graph to a petgraph `DiGraph` for advanced algorithms.
+    ///
+    /// This is useful for:
+    /// - Advanced graph algorithms (shortest path, max flow, etc.)
+    /// - Graph analysis and metrics
+    /// - Integration with petgraph ecosystem tools
+    ///
+    /// # Feature Gate
+    ///
+    /// This method requires the `petgraph-compat` feature:
+    /// ```toml
+    /// weavegraph = { features = ["petgraph-compat"] }
+    /// ```
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use petgraph::algo::is_cyclic_directed;
+    ///
+    /// let builder = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("A".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    ///     .add_edge(NodeKind::Custom("A".into()), NodeKind::End);
+    ///
+    /// let pg = builder.to_petgraph();
+    /// assert!(!is_cyclic_directed(&pg.graph));
+    /// ```
+    #[cfg(feature = "petgraph-compat")]
+    #[must_use]
+    pub fn to_petgraph(&self) -> super::petgraph_compat::PetgraphConversion {
+        super::petgraph_compat::to_petgraph(&self.edges)
+    }
+
+    /// Exports the graph to DOT format for visualization.
+    ///
+    /// The output can be rendered using Graphviz (`dot -Tpng graph.dot -o graph.png`)
+    /// or online tools like <https://dreampuf.github.io/GraphvizOnline/>.
+    ///
+    /// # Feature Gate
+    ///
+    /// This method requires the `petgraph-compat` feature:
+    /// ```toml
+    /// weavegraph = { features = ["petgraph-compat"] }
+    /// ```
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// use weavegraph::graphs::GraphBuilder;
+    /// use std::fs;
+    ///
+    /// let builder = GraphBuilder::new()
+    ///     .add_node(NodeKind::Custom("A".into()), MyNode)
+    ///     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+    ///     .add_edge(NodeKind::Custom("A".into()), NodeKind::End);
+    ///
+    /// let dot = builder.to_dot();
+    /// fs::write("workflow.dot", &dot)?;
+    /// // Then run: dot -Tpng workflow.dot -o workflow.png
+    /// ```
+    #[cfg(feature = "petgraph-compat")]
+    #[must_use]
+    pub fn to_dot(&self) -> String {
+        super::petgraph_compat::to_dot(&self.edges)
+    }
+
+    /// Checks if the graph contains cycles using petgraph's algorithm.
+    ///
+    /// This provides an alternative to the built-in cycle detection for
+    /// cross-verification or when you need petgraph's specific behavior.
+    ///
+    /// # Feature Gate
+    ///
+    /// This method requires the `petgraph-compat` feature.
+    #[cfg(feature = "petgraph-compat")]
+    #[must_use]
+    pub fn is_cyclic_petgraph(&self) -> bool {
+        super::petgraph_compat::is_cyclic(&self.edges)
+    }
+
+    // =========================================================================
+    // Internal Helpers
+    // =========================================================================
+
     /// Extracts the components for compilation (internal use only).
     pub(super) fn into_parts(self) -> GraphParts {
         (

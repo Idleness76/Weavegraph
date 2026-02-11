@@ -9,7 +9,7 @@
 ---
 
 > **EARLY BETA**  
-> This framework is in active development (v0.1.x). APIs are evolving rapidly, and **breaking changes will happen** between minor versions.  
+> This framework is in active development (targeting v0.2.x). APIs are evolving rapidly, and **breaking changes may happen** between minor versions.  
 > The core architecture is solid, but expect rough edges, API churn, and occasional surprises. Pin exact versions if stability matters.  
 > Use in production at your own risk—or better yet, help us shape the future by reporting issues and suggesting improvements.
 
@@ -34,7 +34,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-weavegraph = "0.1"
+weavegraph = "0.2"
 ```
 
 ## Documentation
@@ -80,7 +80,7 @@ async fn main() -> miette::Result<()> {
         let state = VersionedState::new_with_user_message("Hi!");
         let result = app.invoke(state).await?;
         for message in result.messages.snapshot() {
-                println!("{}: {}", message.role, message.content);
+                println!("{}: {}", message.role_type(), message.content);
         }
         Ok(())
 }
@@ -95,7 +95,11 @@ For testing and ephemeral workflows use the InMemory checkpointer:
 
 ```rust
 // After compiling the graph into an `App`:
-let runner = AppRunner::new(app, CheckpointerType::InMemory).await; // In-memory state
+let runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
 ```
 
 Run the comprehensive test suite:
