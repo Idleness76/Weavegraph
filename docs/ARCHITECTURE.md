@@ -122,7 +122,6 @@ wg-ragsmith/              → RAG utilities crate (library + examples + tests).
 data/                     → Local development databases (ignored in version control).
 external/                 → Vendor snapshots (RAGatouille, raptor) kept outside the workspace.
 .github/workflows/        → Continuous integration pipelines.
-Makefile                  → Developer/CI task runner (fmt, clippy, test, doc, deny, machete, migrations).
 ARCHITECTURE.md           → This document.
 ```
 
@@ -332,13 +331,12 @@ These examples share environment variables with the weavegraph RAG demo (see `.e
 
 ## Shared Operational Pieces
 
-* **Tooling** – The top-level `Makefile` standardises `cargo fmt`, `cargo clippy`,
-  `cargo test`, `cargo doc`, `cargo deny`, `cargo machete`, and `sqlx` migrations so that
-  local developers and CI run identical commands.
-* **CI/CD** – `.github/workflows/ci.yml` runs the Makefile/`cargo` commands across three
-  toolchains (`1.91.0`, current stable, nightly) and per workspace member to guard API evolution.
+* **Tooling** – Standard Rust tooling (`cargo fmt`, `cargo clippy`, `cargo test`, `cargo doc`,
+  `cargo deny`, `cargo machete`) plus `sqlx` migrations keep local workflows and CI aligned.
+* **CI/CD** – `.github/workflows/ci.yml` runs the cargo commands across two toolchains
+  (`1.89.0` and current stable) and per workspace member to guard API evolution.
 * **Migrations** – `weavegraph/migrations` houses the `sqlx` migration set for the SQLite
-  checkpointer. The Makefile’s `migrate*` targets wrap `sqlx` CLI calls.
+  checkpointer. Use `sqlx migrate` to apply or rollback changes.
 * **Docs** – `docs/` captures forward-looking design documents (event bus refactor,
   control-flow commands, hybrid RAG pipeline) and the production readiness plan. Use
   this architecture document as the entry point.

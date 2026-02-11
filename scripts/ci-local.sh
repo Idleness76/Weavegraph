@@ -90,23 +90,7 @@ else
     echo ""
 fi
 
-# 9. Cargo semver-checks (semver-checks job - checks API stability)
-if command -v cargo-semver-checks &> /dev/null; then
-    echo -e "${YELLOW}Running: cargo semver-checks (advisory only)${NC}"
-    if cargo semver-checks check-release --package weavegraph 2>/dev/null; then
-        echo -e "${GREEN}✓ cargo semver-checks passed${NC}"
-    else
-        echo -e "${YELLOW}⚠ cargo semver-checks found potential breaking changes${NC}"
-        echo "  This is informational - review before releasing"
-    fi
-    echo ""
-else
-    echo -e "${YELLOW}⚠ Skipping cargo semver-checks (not installed)${NC}"
-    echo "  Install with: cargo install cargo-semver-checks"
-    echo ""
-fi
-
-# 10. Quick benchmark run (benchmarks job - validates benchmarks compile and run)
+# 9. Quick benchmark run (benchmarks job - validates benchmarks compile and run)
 echo -e "${YELLOW}Running: benchmark compilation check${NC}"
 if cargo bench --workspace --no-run 2>/dev/null; then
     echo -e "${GREEN}✓ benchmarks compile successfully${NC}"

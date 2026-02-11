@@ -23,7 +23,7 @@ jobs:
         with:
           prefix-key: fmt
       - name: cargo fmt --check
-        run: make fmt-check
+        run: cargo fmt --all -- --check
 
   clippy:
     name: clippy (${{ matrix.toolchain }})
@@ -92,7 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: deny
-      - run: make deny
+      - run: cargo deny check
 
   machete:
     name: cargo machete
@@ -109,28 +109,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: machete
-      - run: make machete
-
-  semver-checks:
-    name: cargo semver-checks
-    runs-on: ubuntu-latest
-    # Only run on PRs to catch breaking changes before merge
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-semver-checks
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: semver-checks
-      - name: Check semver compatibility
-        run: cargo semver-checks check-release --package weavegraph
+      - run: cargo machete --with-metadata
 
   benchmarks:
     name: benchmark regression

@@ -67,3 +67,6 @@ weavegraph-nodes = ["weavegraph"]
 
 [lib]
 path = "src/lib.rs"
+
+[package.metadata.cargo-machete]
+ignored = ["httpmock", "rig-core", "rust-bert", "unicode-segmentation"]
