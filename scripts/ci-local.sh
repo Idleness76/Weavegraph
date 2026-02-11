@@ -90,6 +90,15 @@ else
     echo ""
 fi
 
+# 9. Quick benchmark run (benchmarks job - validates benchmarks compile and run)
+echo -e "${YELLOW}Running: benchmark compilation check${NC}"
+if cargo bench --workspace --no-run 2>/dev/null; then
+    echo -e "${GREEN}✓ benchmarks compile successfully${NC}"
+else
+    echo -e "${YELLOW}⚠ benchmark compilation failed (non-blocking)${NC}"
+fi
+echo ""
+
 echo "=============================="
 if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}✅ All CI checks passed!${NC}"

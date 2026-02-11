@@ -201,11 +201,16 @@ impl InvocationHandle {
     }
 
     /// Await the workflow result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RunnerError::JoinHandleConsumed`] if `join()` was already called,
+    /// or [`RunnerError::Join`] if the underlying task panicked or was cancelled.
     pub async fn join(mut self) -> Result<VersionedState, RunnerError> {
         let handle = self
             .join_handle
             .take()
-            .expect("join_handle already awaited");
+            .ok_or(RunnerError::JoinHandleConsumed)?;
         match handle.await {
             Ok(result) => result,
             Err(err) => Err(RunnerError::Join(err)),
@@ -363,6 +368,7 @@ impl App {
         let (event_bus, output) = build_event_bus();
         let checkpointer_type = self.resolve_checkpointer(checkpointer_override);
 
+        #[allow(deprecated)]
         let runner = AppRunner::with_options_and_bus(
             self.clone(),
             checkpointer_type,
@@ -431,8 +437,7 @@ impl App {
     /// # }
     /// ```
     ///
-    /// See `examples/streaming_events.rs` for a CLI integration and
-    /// `examples/demo7_axum_sse.rs` for an Axum streaming server that reacts to client cancellation.
+    /// See `examples/streaming_events.rs` for a complete integration example.
     pub async fn invoke_streaming(
         &self,
         initial_state: VersionedState,
@@ -440,10 +445,14 @@ impl App {
         let checkpointer_type = self.resolve_checkpointer(None);
 
         let event_handle = self.event_stream();
-        let (event_bus, event_stream) = event_handle
-            .split()
-            .expect("fresh App::event_stream() should yield an unused event stream");
+        // SAFETY: We just created the event handle via event_stream(), so the stream
+        // is guaranteed to be unconsumed. If this somehow fails, it indicates a bug
+        // in the AppEventStream implementation.
+        let (event_bus, event_stream) = event_handle.split().unwrap_or_else(|_| {
+            unreachable!("fresh App::event_stream() always yields unused stream")
+        });
 
+        #[allow(deprecated)]
         let runner =
             AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
                 .await;
@@ -879,12 +888,11 @@ impl App {
     /// # use weavegraph::node::NodePartial;
     /// # use weavegraph::state::VersionedState;
     /// # use weavegraph::types::NodeKind;
-    /// # use weavegraph::message::Message;
+    /// # use weavegraph::message::{Message, Role};
     /// # async fn example(app: App, state: &mut VersionedState) -> Result<(), String> {
-    /// let partials = vec![NodePartial {
-    ///     messages: Some(vec![Message::assistant("test")]),
-    ///     ..Default::default()
-    /// }];
+    /// let partials = vec![NodePartial::new().with_messages(vec![
+    ///     Message::with_role(Role::Assistant, "test"),
+    /// ])];
     /// let outcome = app.apply_barrier(state, &[NodeKind::Custom("process".into())], partials).await
     ///     .map_err(|e| format!("Error: {}", e))?;
     /// println!("Updated channels: {:?}", outcome.updated_channels);

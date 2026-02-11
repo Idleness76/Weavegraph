@@ -1,10 +1,26 @@
+//! Main workflow runner coordinating session management, execution, and event streaming.
+//!
+//! The `AppRunner` is the central coordinator that brings together:
+//! - Session state management (from [`session`](super::session))
+//! - Step execution logic (from [`execution`](super::execution))
+//! - Event stream handling (see [`App::event_stream`](crate::app::App::event_stream) and
+//!   [`App::invoke_streaming`](crate::app::App::invoke_streaming))
+//!
+//! For most use cases, interact with `AppRunner` directly rather than
+//! the constituent modules.
+
 use crate::app::{App, BarrierOutcome};
 use crate::channels::Channel;
 use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
 use crate::control::{FrontierCommand, NodeRoute};
-use crate::event_bus::{Event, EventBus, EventStream, STREAM_END_SCOPE};
+use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
+use crate::runtimes::execution::{
+    PausedReason, PausedReport, SchedulerOutcome, StepOptions, StepReport, StepResult,
+};
+use crate::runtimes::session::{SessionInit, SessionState, StateVersions};
+use crate::runtimes::streaming::{StreamEndReason, finalize_event_stream};
 use crate::runtimes::{
     Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer, restore_session_state,
 };
@@ -17,81 +33,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinError;
 use tracing::instrument;
-
-/// Result of executing one superstep in a session.
-///
-/// The embedded [`BarrierOutcome`] carries the
-/// canonical ordering of updates/errors so callers can persist and resume
-/// without drift.
-#[derive(Debug, Clone)]
-pub struct StepReport {
-    pub step: u64,
-    pub ran_nodes: Vec<NodeKind>,
-    pub skipped_nodes: Vec<NodeKind>,
-    pub barrier_outcome: BarrierOutcome,
-    pub next_frontier: Vec<NodeKind>,
-    pub state_versions: StateVersions,
-    pub completed: bool,
-}
-
-/// Snapshot of channel versions for tracking state evolution
-#[derive(Debug, Clone)]
-pub struct StateVersions {
-    pub messages_version: u32,
-    pub extra_version: u32,
-}
-
-/// Session state that needs to be persisted across steps
-#[derive(Debug, Clone)]
-pub struct SessionState {
-    pub state: VersionedState,
-    pub step: u64,
-    pub frontier: Vec<NodeKind>,
-    pub scheduler: Scheduler,
-    pub scheduler_state: SchedulerState,
-}
-
-/// Options for step execution
-#[derive(Debug, Clone, Default)]
-pub struct StepOptions {
-    pub interrupt_before: Vec<NodeKind>,
-    pub interrupt_after: Vec<NodeKind>,
-    pub interrupt_each_step: bool,
-}
-
-/// Paused execution context
-#[derive(Debug, Clone)]
-pub enum PausedReason {
-    BeforeNode(NodeKind),
-    AfterNode(NodeKind),
-    AfterStep(u64),
-}
-
-/// Extended step report when execution is paused
-#[derive(Debug, Clone)]
-pub struct PausedReport {
-    pub session_state: SessionState,
-    pub reason: PausedReason,
-}
-
-/// Result of attempting to run a step
-#[derive(Debug, Clone)]
-pub enum StepResult {
-    Completed(StepReport),
-    Paused(PausedReport),
-}
-
-/// Outcome from scheduler after normalization (ordered partials)
-struct SchedulerOutcome {
-    ran_nodes: Vec<NodeKind>,
-    skipped_nodes: Vec<NodeKind>,
-    partials: Vec<NodePartial>,
-}
-
-enum StreamEndReason {
-    Completed { step: u64 },
-    Error { step: Option<u64>, error: String },
-}
 
 /// Runtime execution engine for workflow graphs with session management and event streaming.
 ///
@@ -198,18 +139,15 @@ pub struct AppRunner {
     event_stream_taken: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SessionInit {
-    Fresh,
-    Resumed { checkpoint_step: u64 },
-}
-
+/// Errors that can occur during workflow execution.
 #[derive(Debug, Error, Diagnostic)]
 pub enum RunnerError {
+    /// The requested session was not found.
     #[error("session not found: {session_id}")]
     #[diagnostic(code(weavegraph::runner::session_not_found))]
     SessionNotFound { session_id: String },
 
+    /// No nodes are reachable from the Start node.
     #[error("no nodes to run from START (empty frontier)")]
     #[diagnostic(
         code(weavegraph::runner::no_start_nodes),
@@ -217,28 +155,265 @@ pub enum RunnerError {
     )]
     NoStartNodes,
 
+    /// Execution paused unexpectedly during run_until_complete.
     #[error("unexpected pause during run_until_complete")]
     #[diagnostic(code(weavegraph::runner::unexpected_pause))]
     UnexpectedPause,
 
+    /// The join handle was already consumed by a previous call.
+    #[error("join handle already consumed")]
+    #[diagnostic(
+        code(weavegraph::runner::join_handle_consumed),
+        help("InvocationHandle::join() can only be called once.")
+    )]
+    JoinHandleConsumed,
+
+    /// The workflow task failed to join.
     #[error("workflow task join error: {0}")]
     #[diagnostic(code(weavegraph::runner::join))]
     Join(#[from] JoinError),
 
+    /// Checkpointer operation failed.
     #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::checkpointer))]
     Checkpointer(#[from] CheckpointerError),
 
+    /// Barrier application failed.
     #[error("app barrier error: {0}")]
     #[diagnostic(code(weavegraph::runner::barrier))]
     AppBarrier(#[source] Box<dyn std::error::Error + Send + Sync>),
 
+    /// Scheduler error during step execution.
     #[error(transparent)]
     #[diagnostic(code(weavegraph::runner::scheduler))]
     Scheduler(#[from] SchedulerError),
 }
 
+// ============================================================================
+// Builder Pattern
+// ============================================================================
+
+/// Builder for constructing [`AppRunner`] instances with a fluent API.
+///
+/// This builder consolidates all the various constructors (`new`, `with_options`,
+/// `with_options_and_bus`, etc.) into a single, discoverable interface.
+///
+/// # Examples
+///
+/// ## Basic usage with defaults
+///
+/// ```rust,no_run
+/// # use weavegraph::app::App;
+/// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+/// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// let runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .build()
+///     .await;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Full configuration with custom EventBus
+///
+/// ```rust,no_run
+/// # use weavegraph::app::App;
+/// use weavegraph::event_bus::{EventBus, ChannelSink, StdOutSink};
+/// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+/// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// let (tx, rx) = flume::unbounded();
+/// let bus = EventBus::with_sinks(vec![
+///     Box::new(StdOutSink::default()),
+///     Box::new(ChannelSink::new(tx)),
+/// ]);
+///
+/// let runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::SQLite)
+///     .event_bus(bus)
+///     .autosave(true)
+///     .start_listener(true)
+///     .build()
+///     .await;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Using `Arc<App>` for shared workflows
+///
+/// ```rust,no_run
+/// # use weavegraph::app::App;
+/// use std::sync::Arc;
+/// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+/// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// let shared_app = Arc::new(app);
+///
+/// // Create multiple runners sharing the same App
+/// let runner1 = AppRunner::builder()
+///     .app_arc(shared_app.clone())
+///     .checkpointer(CheckpointerType::InMemory)
+///     .build()
+///     .await;
+///
+/// let runner2 = AppRunner::builder()
+///     .app_arc(shared_app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .build()
+///     .await;
+/// # Ok(())
+/// # }
+/// ```
+pub struct AppRunnerBuilder {
+    app: Option<Arc<App>>,
+    checkpointer_type: CheckpointerType,
+    autosave: bool,
+    event_bus: Option<EventBus>,
+    start_listener: bool,
+}
+
+impl Default for AppRunnerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AppRunnerBuilder {
+    /// Create a new builder with default settings.
+    ///
+    /// Defaults:
+    /// - `checkpointer`: `InMemory`
+    /// - `autosave`: `true`
+    /// - `event_bus`: Uses the app's runtime config when built
+    /// - `start_listener`: `true`
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            app: None,
+            checkpointer_type: CheckpointerType::InMemory,
+            autosave: true,
+            event_bus: None,
+            start_listener: true,
+        }
+    }
+
+    /// Set the workflow application (takes ownership).
+    ///
+    /// This is required before calling [`build()`](Self::build).
+    #[must_use]
+    pub fn app(mut self, app: App) -> Self {
+        self.app = Some(Arc::new(app));
+        self
+    }
+
+    /// Set the workflow application from an existing `Arc<App>`.
+    ///
+    /// Use this when sharing an `App` across multiple runners to avoid cloning.
+    #[must_use]
+    pub fn app_arc(mut self, app: Arc<App>) -> Self {
+        self.app = Some(app);
+        self
+    }
+
+    /// Set the checkpointer type for state persistence.
+    ///
+    /// Defaults to [`CheckpointerType::InMemory`].
+    #[must_use]
+    pub fn checkpointer(mut self, checkpointer_type: CheckpointerType) -> Self {
+        self.checkpointer_type = checkpointer_type;
+        self
+    }
+
+    /// Set whether to automatically save checkpoints after each step.
+    ///
+    /// Defaults to `true`.
+    #[must_use]
+    pub fn autosave(mut self, autosave: bool) -> Self {
+        self.autosave = autosave;
+        self
+    }
+
+    /// Set a custom EventBus for event handling.
+    ///
+    /// If not set, the runner will use the EventBus configured in the app's
+    /// [`RuntimeConfig`](crate::runtimes::RuntimeConfig).
+    #[must_use]
+    pub fn event_bus(mut self, event_bus: EventBus) -> Self {
+        self.event_bus = Some(event_bus);
+        self
+    }
+
+    /// Set whether to start the event listener immediately.
+    ///
+    /// Defaults to `true`. Set to `false` if you need to configure
+    /// the EventBus further before starting.
+    #[must_use]
+    pub fn start_listener(mut self, start: bool) -> Self {
+        self.start_listener = start;
+        self
+    }
+
+    /// Build the [`AppRunner`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`app()`](Self::app) or [`app_arc()`](Self::app_arc) was not called.
+    /// Use [`try_build()`](Self::try_build) for a fallible version.
+    pub async fn build(self) -> AppRunner {
+        self.try_build()
+            .await
+            .expect("AppRunnerBuilder requires an app to be set")
+    }
+
+    /// Build the [`AppRunner`], returning `None` if no app was provided.
+    pub async fn try_build(self) -> Option<AppRunner> {
+        let app = self.app?;
+        let event_bus = self
+            .event_bus
+            .unwrap_or_else(|| app.runtime_config().event_bus.build_event_bus());
+
+        Some(
+            AppRunner::with_arc_and_bus(
+                app,
+                self.checkpointer_type,
+                self.autosave,
+                event_bus,
+                self.start_listener,
+            )
+            .await,
+        )
+    }
+}
+
 impl AppRunner {
+    /// Create a new [`AppRunnerBuilder`] for fluent configuration.
+    ///
+    /// This is the **preferred method** for constructing `AppRunner` instances.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use weavegraph::app::App;
+    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
+    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// let runner = AppRunner::builder()
+    ///     .app(app)
+    ///     .checkpointer(CheckpointerType::InMemory)
+    ///     .autosave(true)
+    ///     .build()
+    ///     .await;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn builder() -> AppRunnerBuilder {
+        AppRunnerBuilder::new()
+    }
+
     /// Create a new AppRunner with default EventBus (stdout only).
     ///
     /// This is the simplest constructor, used internally by [`App::invoke()`](crate::app::App::invoke).
@@ -280,14 +455,25 @@ impl AppRunner {
     ///
     /// # See Also
     ///
+    /// - [`builder()`](Self::builder) - **Preferred**: Fluent builder API
     /// - [`with_options_and_bus()`](Self::with_options_and_bus) - For custom EventBus
     /// - [`App::invoke()`](crate::app::App::invoke) - Higher-level API using this internally
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app(app).checkpointer(type).build().await instead"
+    )]
     #[must_use]
+    #[allow(deprecated)]
     pub async fn new(app: App, checkpointer_type: CheckpointerType) -> Self {
         Self::with_options(app, checkpointer_type, true).await
     }
 
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).build().await instead"
+    )]
     #[must_use]
+    #[allow(deprecated)]
     pub async fn from_arc(app: Arc<App>, checkpointer_type: CheckpointerType) -> Self {
         Self::with_options_arc(app, checkpointer_type, true).await
     }
@@ -297,7 +483,9 @@ impl AppRunner {
         sqlite_db_name: Option<String>,
     ) -> Option<Arc<dyn Checkpointer>> {
         match checkpointer_type {
-            CheckpointerType::InMemory => Some(Arc::new(InMemoryCheckpointer::new())),
+            CheckpointerType::InMemory => {
+                Some(Arc::new(InMemoryCheckpointer::new()) as Arc<dyn Checkpointer>)
+            }
             #[cfg(feature = "sqlite")]
             CheckpointerType::SQLite => {
                 let db_url = std::env::var("WEAVEGRAPH_SQLITE_URL")
@@ -363,6 +551,10 @@ impl AppRunner {
     }
 
     /// Create with explicit checkpointer + autosave toggle
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).build().await instead"
+    )]
     pub async fn with_options(
         app: App,
         checkpointer_type: CheckpointerType,
@@ -373,6 +565,10 @@ impl AppRunner {
         Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
     }
 
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).build().await instead"
+    )]
     pub async fn with_options_arc(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
@@ -512,6 +708,10 @@ impl AppRunner {
     /// - [`EventBus::with_sinks()`](crate::event_bus::EventBus::with_sinks) - Create EventBus with custom sinks
     /// - [`ChannelSink`](crate::event_bus::ChannelSink) - Stream events to async channels
     /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead"
+    )]
     pub async fn with_options_and_bus(
         app: App,
         checkpointer_type: CheckpointerType,
@@ -531,6 +731,10 @@ impl AppRunner {
     ///
     /// See [`with_options_and_bus()`](Self::with_options_and_bus) for detailed
     /// documentation and examples.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead"
+    )]
     pub async fn with_options_arc_and_bus(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
@@ -672,10 +876,14 @@ impl AppRunner {
         // Check for interrupt_before
         for node in &current_frontier {
             if options.interrupt_before.contains(node) {
+                // SAFETY: We verified session existence above with the same session_id.
+                // If this fails, we have a logic bug (e.g., concurrent mutation).
                 let session_state = self
                     .sessions
                     .get(session_id)
-                    .expect("session exists after initial lookup")
+                    .ok_or_else(|| RunnerError::SessionNotFound {
+                        session_id: session_id.to_string(),
+                    })?
                     .clone();
                 return Ok(StepResult::Paused(PausedReport {
                     session_state,
@@ -685,10 +893,13 @@ impl AppRunner {
         }
 
         // Take ownership of session state for execution (eliminates full clone)
-        let mut session_state = self
-            .sessions
-            .remove(session_id)
-            .expect("session exists after initial lookup");
+        // SAFETY: We verified session existence above with the same session_id.
+        let mut session_state =
+            self.sessions
+                .remove(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
 
         // Execute one superstep; on error, emit an ErrorEvent and rethrow
         let step_report = match self.run_one_superstep(&mut session_state).await {
@@ -697,6 +908,20 @@ impl AppRunner {
                 // Build error event
                 let event = match &e {
                     RunnerError::Scheduler(source) => match source {
+                        crate::schedulers::SchedulerError::NodeNotFound { kind, step } => {
+                            ErrorEvent {
+                                when: chrono::Utc::now(),
+                                scope: ErrorScope::Scheduler { step: *step },
+                                error: LadderError::msg(format!(
+                                    "node {:?} not found in registry",
+                                    kind
+                                )),
+                                tags: vec!["scheduler".into(), "node_not_found".into()],
+                                context: serde_json::json!({
+                                    "kind": kind.encode()
+                                }),
+                            }
+                        }
                         crate::schedulers::SchedulerError::NodeRun { kind, step, source } => {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
@@ -734,12 +959,7 @@ impl AppRunner {
                 };
                 // Inject via barrier mechanics by applying a synthetic NodePartial with errors field
                 let mut update_state = session_state.state.clone();
-                let partial = NodePartial {
-                    messages: None,
-                    extra: None,
-                    errors: Some(vec![event]),
-                    frontier: None,
-                };
+                let partial = NodePartial::new().with_errors(vec![event]);
                 // Apply directly using reducer registry through App
                 let _ = self
                     .app
@@ -1228,32 +1448,11 @@ impl AppRunner {
     }
 
     fn finalize_event_stream(&mut self, session_id: &str, reason: StreamEndReason) {
-        let message = match reason {
-            StreamEndReason::Completed { step } => {
-                format!("session={session_id} status=completed step={step}")
-            }
-            StreamEndReason::Error { step, error } => step
-                .map(|s| format!("session={session_id} status=error step={s} error={error}"))
-                .unwrap_or_else(|| format!("session={session_id} status=error error={error}")),
-        };
-
-        if let Err(err) = self
-            .event_bus
-            .get_emitter()
-            .emit(Event::diagnostic(STREAM_END_SCOPE, message.clone()))
-        {
-            tracing::debug!(
-                session = %session_id,
-                scope = STREAM_END_SCOPE,
-                completion_message = %message,
-                error = ?err,
-                "failed to emit stream termination event"
-            );
-        }
-
-        if self.event_stream_taken {
-            self.event_bus.close_channel();
-            self.event_stream_taken = false;
-        }
+        finalize_event_stream(
+            &self.event_bus,
+            session_id,
+            reason,
+            &mut self.event_stream_taken,
+        );
     }
 }

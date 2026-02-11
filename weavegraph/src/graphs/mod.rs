@@ -13,6 +13,43 @@
 //! - **Virtual Endpoints**: `NodeKind::Start` and `NodeKind::End` for structural definition
 //! - **Compilation**: Validation and conversion to executable [`App`](crate::app::App)
 //!
+//! # Graph Iteration
+//!
+//! The module provides petgraph-style iterators for inspecting graph structure:
+//!
+//! ```
+//! use weavegraph::graphs::GraphBuilder;
+//! use weavegraph::types::NodeKind;
+//!
+//! # struct MyNode;
+//! # #[async_trait::async_trait]
+//! # impl weavegraph::node::Node for MyNode {
+//! #     async fn run(&self, _: weavegraph::state::StateSnapshot, _: weavegraph::node::NodeContext) -> Result<weavegraph::node::NodePartial, weavegraph::node::NodeError> {
+//! #         Ok(weavegraph::node::NodePartial::default())
+//! #     }
+//! # }
+//!
+//! let builder = GraphBuilder::new()
+//!     .add_node(NodeKind::Custom("A".into()), MyNode)
+//!     .add_node(NodeKind::Custom("B".into()), MyNode)
+//!     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+//!     .add_edge(NodeKind::Custom("A".into()), NodeKind::Custom("B".into()))
+//!     .add_edge(NodeKind::Custom("B".into()), NodeKind::End);
+//!
+//! // Iterate over registered nodes
+//! for node in builder.nodes() {
+//!     println!("Node: {:?}", node);
+//! }
+//!
+//! // Iterate over edges as (from, to) pairs
+//! for (from, to) in builder.edges() {
+//!     println!("Edge: {:?} -> {:?}", from, to);
+//! }
+//!
+//! // Get deterministic topological ordering
+//! let sorted = builder.topological_sort();
+//! ```
+//!
 //! # Quick Start
 //!
 //! ```
@@ -77,13 +114,44 @@
 //!     .add_edge(NodeKind::Custom("skip".into()), NodeKind::End)
 //!     .compile();
 //! ```
+//!
+//! ## petgraph Integration
+//!
+//! With the `petgraph-compat` feature, you can convert graphs to petgraph format
+//! for advanced algorithms and DOT visualization:
+//!
+//! ```ignore
+//! // Enable with: weavegraph = { features = ["petgraph-compat"] }
+//! use weavegraph::graphs::GraphBuilder;
+//!
+//! let builder = GraphBuilder::new()
+//!     .add_node(NodeKind::Custom("A".into()), MyNode)
+//!     .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+//!     .add_edge(NodeKind::Custom("A".into()), NodeKind::End);
+//!
+//! // Convert to petgraph for analysis
+//! let pg = builder.to_petgraph();
+//! assert!(!petgraph::algo::is_cyclic_directed(&pg.graph));
+//!
+//! // Export to DOT for visualization
+//! let dot = builder.to_dot();
+//! std::fs::write("workflow.dot", dot)?;
+//! ```
 
 // Internal module declarations
 mod builder;
 mod compilation;
 mod edges;
+mod iteration;
+
+#[cfg(feature = "petgraph-compat")]
+mod petgraph_compat;
 
 // Public re-exports for backward compatibility
 pub use builder::GraphBuilder;
 pub use compilation::GraphCompileError;
 pub use edges::{ConditionalEdge, EdgePredicate};
+pub use iteration::{EdgesIter, NodesIter};
+
+#[cfg(feature = "petgraph-compat")]
+pub use petgraph_compat::{NodeIndexMap, PetgraphConversion, WeaveDiGraph, is_cyclic};

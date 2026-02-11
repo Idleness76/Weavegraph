@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
@@ -14,25 +14,25 @@ documentation = "https://docs.rs/weavegraph"
 
 [dev-dependencies]
 async-stream = "0.3"
-bytes = "1.7"
-criterion = { version = "0.5", default-features = false, features = [
+bytes = "1"
+criterion = { version = "0.8", default-features = false, features = [
     "async_tokio",
 ] }
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
-    "rustls-tls",
+    "rustls",
     "stream",
 ] }
 proptest = "1"
 tempfile = "3"
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 url = "2"
-httpmock = "0.7"
-axum = { version = "0.7", features = ["macros"] }
+httpmock = "0.8"
+axum = { version = "0.8", features = ["macros"] }
 
 [dependencies]
 # Error handling & diagnostics
-miette = { version = "7.6", features = ["fancy"] }
+miette = { version = "7", features = ["fancy"] }
 thiserror = "2"
 
 # Tracing & logging
@@ -62,19 +62,19 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Data structures & utilities
-rustc-hash = "2.1"
-flume = "0.11"
-parking_lot = "0.12"
+rustc-hash = "2"
+flume = "0.12"
 
 # Time & IDs
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
-rand = "0.9"
+rand = "0.10"
 
 # LLM framework (external dependency)
 # NOTE: rig-core and rmcp are gated behind the "llm" feature (default-off) for AI/MCP users; reduces compile time for non-AI workflows.
-rig-core = { version = "0.28", features = ["rmcp"], optional = true }
-rmcp = { version = "0.8", features = ["client"], optional = true }
+rig-core = { version = "0.30", features = ["rmcp"], optional = true }
+rmcp = { version = "0.15", features = ["client"], optional = true }
+
 # Database
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
@@ -89,18 +89,25 @@ sqlx = { version = "0.8", features = [
 # Configuration
 dotenvy = "0.15"
 
-reqwest = { version = "0.12", default-features = false, features = [
+# Graph algorithms (optional)
+petgraph = { version = "0.8", optional = true }
+
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
     "gzip",
     "brotli",
-    "rustls-tls",
+    "rustls",
 ], optional = true }
-scraper = { version = "0.24", optional = true }
-wg-ragsmith = { version = "0.1.2", optional = true }
+scraper = { version = "0.25", optional = true }
+# wg-ragsmith removed from dependencies to avoid circular dependency.
+# For RAG examples, see the wg-ragsmith crate directly.
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.cargo-machete]
+ignored = ["httpmock", "rig-core", "rmcp", "scraper", "tokio-rusqlite", "url"]
 
 # SQLite is enabled by default for full functionality; use --no-default-features for DB-less builds.
 [features]
@@ -110,35 +117,13 @@ sqlite = ["sqlx"]
 postgres-migrations = ["postgres"]
 postgres = ["sqlx"]
 llm = ["rig-core", "rmcp"]
-examples = ["reqwest", "scraper", "wg-ragsmith"]
+examples = ["reqwest", "scraper"]
+petgraph-compat = ["petgraph"]
 
-[[example]]
-name = "demo3"
-required-features = ["llm"]
+[[bench]]
+name = "event_bus_throughput"
+harness = false
 
-[[example]]
-name = "demo4"
-required-features = ["llm"]
-
-[[example]]
-name = "demo5_rag"
-required-features = ["llm", "examples"]
-
-[[example]]
-name = "cap_demo"
-required-features = ["llm"]
-
-[[example]]
-name = "demo6_agent_mcp"
-required-features = ["llm"]
-
-# Clippy configuration to enforce Message API best practices
-[lints.clippy]
-# Encourage use of convenience constructors over manual struct construction
-manual_string_new = "warn"
-# Encourage use of builder patterns and convenience methods
-new_without_default = "warn"
-# General code quality
-missing_errors_doc = "allow"      # We handle this manually
-module_name_repetitions = "allow" # Common in this domain
-too_many_lines = "allow"          # Documentation examples can be long
+[[bench]]
+name = "graph_compile"
+harness = false

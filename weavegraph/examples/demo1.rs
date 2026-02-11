@@ -5,7 +5,7 @@
 //! barrier operations, and error handling scenarios.
 //!
 //! What You'll Learn:
-//! 1. Modern Message Construction: Using convenience constructors and the builder pattern
+//! 1. Modern Message Construction: Typed roles with `Message::with_role()`
 //! 2. State Management: Working with versioned state and snapshots
 //! 3. Graph Building: Creating workflows with nodes and edges
 //! 4. Barrier Operations: Manual state updates and version management
@@ -26,7 +26,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
@@ -70,8 +70,8 @@ impl Node for SimpleNode {
             None => format!("Node {} initialized with no input", self.name),
         };
 
-        // ✅ MODERN: Use convenience constructor instead of manual struct construction
-        let output_message = Message::assistant(&response);
+        // ✅ MODERN: Use typed roles for message construction
+        let output_message = Message::with_role(Role::Assistant, &response);
 
         ctx.emit(
             "node_completion",
@@ -94,7 +94,7 @@ impl Node for SimpleNode {
 ///
 /// # Key Modern Patterns Demonstrated
 ///
-/// - **Message Construction**: `Message::user()`, `Message::assistant()` instead of manual structs
+/// - **Message Construction**: `Message::with_role(Role::User, ...)` for typed roles
 /// - **State Building**: `VersionedState::builder()` for complex initialization
 /// - **Error Handling**: Proper Result types and error propagation
 /// - **Event Emission**: Using `NodeContext::emit()` for observability
@@ -237,8 +237,11 @@ async fn demo() -> Result<()> {
     // Create a mutated copy to show immutability
     let mut mutated_state = final_state.clone();
 
-    // ✅ MODERN: Use convenience constructor for new message
-    let post_run_message = Message::assistant("This is a post-execution note added via mutation");
+    // ✅ MODERN: Use typed roles for message construction
+    let post_run_message = Message::with_role(
+        Role::Assistant,
+        "This is a post-execution note added via mutation",
+    );
     mutated_state.messages.get_mut().push(post_run_message);
 
     // Update version properly
@@ -274,7 +277,8 @@ async fn demo() -> Result<()> {
     extra_a.insert("priority".into(), json!("high"));
 
     let partial_a = NodePartial::new()
-        .with_messages(vec![Message::assistant(
+        .with_messages(vec![Message::with_role(
+            Role::Assistant,
             "Manual barrier message from virtual node A",
         )])
         .with_extra(extra_a);
@@ -285,7 +289,8 @@ async fn demo() -> Result<()> {
     extra_b.insert("additional_data".into(), json!({"value": 42}));
 
     let partial_b = NodePartial::new()
-        .with_messages(vec![Message::assistant(
+        .with_messages(vec![Message::with_role(
+            Role::Assistant,
             "Manual barrier message from virtual node B",
         )])
         .with_extra(extra_b);
@@ -354,7 +359,8 @@ async fn demo() -> Result<()> {
     let mut saturation_state = final_state.clone();
     saturation_state.messages.set_version(u32::MAX);
 
-    let saturation_partial = NodePartial::new().with_messages(vec![Message::assistant(
+    let saturation_partial = NodePartial::new().with_messages(vec![Message::with_role(
+        Role::Assistant,
         "This message won't increment version due to saturation",
     )]);
 
@@ -376,7 +382,7 @@ async fn demo() -> Result<()> {
     info!("║                      Demo 1 Complete                    ║");
     info!("╚══════════════════════════════════════════════════════════╝");
     info!("\n✅ Key patterns demonstrated:");
-    info!("   • Modern message construction with convenience methods");
+    info!("   • Modern message construction with typed roles");
     info!("   • State building with fluent builder pattern");
     info!("   • Graph compilation and execution");
     info!("   • State snapshots and mutation safety");

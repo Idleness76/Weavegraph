@@ -31,7 +31,7 @@
 //! ## Web Integration
 //!
 //! For Axum/HTTP integration, convert the `EventStream` returned by
-//! `invoke_streaming` into SSE frames (see `demo7_axum_sse.rs`).
+//! `invoke_streaming` into SSE frames.
 //!
 //! ```ignore
 //! use axum::response::sse::{Event as SseEvent, Sse};
@@ -73,7 +73,7 @@ use weavegraph::{
     channels::Channel,
     event_bus::{Event, STREAM_END_SCOPE},
     graphs::GraphBuilder,
-    message::Message,
+    message::{Message, Role},
     node::{Node, NodeContext, NodeError, NodePartial},
     state::{StateSnapshot, VersionedState},
     types::NodeKind,
@@ -137,7 +137,8 @@ impl Node for ProcessingNode {
 
         ctx.emit("processing", "Processing complete!")?;
 
-        Ok(NodePartial::new().with_messages(vec![Message::assistant(
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
             "Processing finished successfully.",
         )]))
     }

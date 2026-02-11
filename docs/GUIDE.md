@@ -9,21 +9,19 @@ Weavegraph uses a type-safe message system for agent and workflow communication.
 ### Constructors
 
 ```rust
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 
-// Recommended: convenience constructors
-let user_msg = Message::user("What's the weather like?");
-let assistant_msg = Message::assistant("It's sunny and 75°F!");
-let system_msg = Message::system("You are a helpful assistant.");
+// Recommended: typed roles
+let user_msg = Message::with_role(Role::User, "What's the weather like?");
+let assistant_msg = Message::with_role(Role::Assistant, "It's sunny and 75°F!");
+let system_msg = Message::with_role(Role::System, "You are a helpful assistant.");
 
 // Custom roles
-let function_msg = Message::new("function", "Processing complete");
+let function_msg = Message::with_role(Role::Custom("function".into()), "Processing complete");
 
-// Builder pattern for advanced cases
-let complex_msg = Message::builder()
-    .role("custom_agent")
-    .content("Task completed successfully")
-    .build();
+// Role helpers
+let tool_msg = Message::with_role(Role::Tool, "Tool output");
+assert!(tool_msg.is_role(Role::Tool));
 ```
 
 ## State Management {#state}
