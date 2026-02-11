@@ -1,6 +1,6 @@
 [package]
 name = "wg-ragsmith"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Semantic chunking and RAG utilities for document processing and retrieval-augmented generation."
 license = "MIT"
@@ -30,23 +30,23 @@ tokio = { version = "1", features = [
     "fs",
 ] }
 tracing = "0.1"
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
     "gzip",
     "brotli",
-    "rustls-tls",
+    "rustls",
 ] }
 url = "2"
-rig-core = { version = "0.28", features = ["derive"] }
-rig-sqlite = "0.1.31"
+rig-core = { version = "0.30", features = ["derive"] }
+rig-sqlite = "0.1"
 tokio-rusqlite = { version = "0.6", features = ["bundled"] }
 sqlite-vec = "0.1"
 regex = "1"
-scraper = "0.24"
-unicode-segmentation = "1.11"
+scraper = "0.25"
+unicode-segmentation = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
-segtok = { version = "0.1.5", optional = true }
-tiktoken-rs = { version = "0.7", optional = true }
+segtok = { version = "0.1", optional = true }
+tiktoken-rs = { version = "0.9", optional = true }
 rust-bert = { version = "0.23", default-features = false, optional = true }
 
 # Weavegraph integration (optional)
@@ -54,7 +54,7 @@ weavegraph = { path = "../weavegraph", optional = true }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-httpmock = "0.7"
+httpmock = "0.8"
 tempfile = "3"
 
 [features]
@@ -67,10 +67,3 @@ weavegraph-nodes = ["weavegraph"]
 
 [lib]
 path = "src/lib.rs"
-
-[package.metadata.cargo-machete]
-# These dependencies are optional (or future-facing) and intentionally retained:
-# - rust-bert: gated behind the `semantic-chunking-rust-bert` feature
-# - unicode-segmentation: reserved for upcoming segmentation strategies
-# - httpmock: kept for future integration tests that exercise HTTP flows
-ignored = ["rust-bert", "unicode-segmentation", "httpmock"]
