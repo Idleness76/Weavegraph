@@ -43,10 +43,8 @@ impl Node for BurstEmitterNode {
             ctx.emit("burst", format!("event_{i}")).ok();
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
-        Ok(NodePartial::new().with_messages(vec![Message::with_role(
-            Role::Assistant,
-            "burst complete",
-        )]))
+        Ok(NodePartial::new()
+            .with_messages(vec![Message::with_role(Role::Assistant, "burst complete")]))
     }
 }
 

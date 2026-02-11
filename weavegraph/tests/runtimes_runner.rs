@@ -221,10 +221,8 @@ impl Node for WorkerNode {
         _snapshot: StateSnapshot,
         _ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        Ok(NodePartial::new().with_messages(vec![Message::with_role(
-            Role::Assistant,
-            "worker-run",
-        )]))
+        Ok(NodePartial::new()
+            .with_messages(vec![Message::with_role(Role::Assistant, "worker-run")]))
     }
 }
 

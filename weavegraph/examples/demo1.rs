@@ -276,10 +276,11 @@ async fn demo() -> Result<()> {
     extra_a.insert("source".into(), json!("manual_barrier_a"));
     extra_a.insert("priority".into(), json!("high"));
 
-    let partial_a = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "Manual barrier message from virtual node A",
-    )])
+    let partial_a = NodePartial::new()
+        .with_messages(vec![Message::with_role(
+            Role::Assistant,
+            "Manual barrier message from virtual node A",
+        )])
         .with_extra(extra_a);
 
     let mut extra_b = FxHashMap::default();
@@ -287,10 +288,11 @@ async fn demo() -> Result<()> {
     extra_b.insert("priority".into(), json!("low")); // Will overwrite priority
     extra_b.insert("additional_data".into(), json!({"value": 42}));
 
-    let partial_b = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "Manual barrier message from virtual node B",
-    )])
+    let partial_b = NodePartial::new()
+        .with_messages(vec![Message::with_role(
+            Role::Assistant,
+            "Manual barrier message from virtual node B",
+        )])
         .with_extra(extra_b);
 
     let run_ids = vec![

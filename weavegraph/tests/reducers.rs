@@ -45,10 +45,7 @@ fn test_add_messages_appends_state() {
     let initial_version = state.messages.version();
     let initial_len = state.messages.snapshot().len();
 
-    let partial = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::System,
-        "b",
-    )]);
+    let partial = NodePartial::new().with_messages(vec![Message::with_role(Role::System, "b")]);
 
     reducer.apply(&mut state, &partial);
 
@@ -177,10 +174,8 @@ fn test_channel_guard_logic() {
     assert!(!channel_guard(ChannelType::Message, &empty));
     assert!(!channel_guard(ChannelType::Extra, &empty));
 
-    let msg_partial = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "m",
-    )]);
+    let msg_partial =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "m")]);
     assert!(channel_guard(ChannelType::Message, &msg_partial));
     assert!(!channel_guard(ChannelType::Extra, &msg_partial));
 
@@ -265,10 +260,8 @@ async fn test_reducer_determinism_under_concurrency() {
         // Apply same partials concurrently to both states
         let partials: Vec<NodePartial> = (0..5)
             .map(|i| {
-                NodePartial::new().with_messages(vec![Message::with_role(
-                    Role::User,
-                    &format!("test_{}", i),
-                )])
+                NodePartial::new()
+                    .with_messages(vec![Message::with_role(Role::User, &format!("test_{}", i))])
             })
             .collect();
 
@@ -330,10 +323,8 @@ fn test_reducer_channel_isolation() {
     let initial_extra_keys = state.extra.snapshot().len();
 
     // Apply message-only partial
-    let message_partial = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::System,
-        "isolated message",
-    )]);
+    let message_partial = NodePartial::new()
+        .with_messages(vec![Message::with_role(Role::System, "isolated message")]);
 
     registry
         .try_update(ChannelType::Message, &mut state, &message_partial)

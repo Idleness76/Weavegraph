@@ -26,10 +26,8 @@ async fn test_apply_barrier_messages_update() {
     let app = make_app();
     let state = &mut state_with_user("hi");
     let run_ids = vec![NodeKind::Start];
-    let partial = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "foo",
-    )]);
+    let partial =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "foo")]);
     let outcome = app
         .apply_barrier(state, &run_ids, vec![partial])
         .await
@@ -63,10 +61,7 @@ async fn test_apply_barrier_saturating_version() {
     let state = &mut state_with_user("hi");
     // push messages version to max to verify saturating add behavior
     state.messages.set_version(u32::MAX);
-    let partial = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "x",
-    )]);
+    let partial = NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "x")]);
     app.apply_barrier(state, &[NodeKind::Start], vec![partial])
         .await
         .unwrap();
@@ -81,10 +76,8 @@ async fn test_apply_barrier_preserves_updated_channel_order() {
     let state = &mut state_with_user("hi");
     let run_ids = vec![NodeKind::Start];
 
-    let partial_a = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "a",
-    )]);
+    let partial_a =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "a")]);
     let partial_b = NodePartial::new().with_extra({
         let mut map = FxHashMap::default();
         map.insert("z".into(), Value::String("1".into()));
@@ -166,14 +159,10 @@ async fn invoke_streaming_closes_stream() {
 async fn test_apply_barrier_multiple_updates() {
     let app = make_app();
     let state = &mut state_with_user("hi");
-    let partial1 = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "foo",
-    )]);
-    let partial2 = NodePartial::new().with_messages(vec![Message::with_role(
-        Role::Assistant,
-        "bar",
-    )]);
+    let partial1 =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "foo")]);
+    let partial2 =
+        NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "bar")]);
     let outcome = app
         .apply_barrier(
             state,

@@ -40,10 +40,7 @@ impl Node for CountingNode {
             tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
         }
         self.counter.fetch_add(1, Ordering::SeqCst);
-        Ok(NodePartial::new().with_messages(vec![Message::with_role(
-            Role::Assistant,
-            "counted",
-        )]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, "counted")]))
     }
 }
 

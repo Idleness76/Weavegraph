@@ -466,7 +466,8 @@ impl VersionedStateBuilder {
     ///     .build();
     /// ```
     pub fn with_system_message(mut self, content: &str) -> Self {
-        self.messages.push(Message::with_role(Role::System, content));
+        self.messages
+            .push(Message::with_role(Role::System, content));
         self
     }
 

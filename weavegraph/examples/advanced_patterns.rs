@@ -109,10 +109,7 @@ impl Node for ApiCallNode {
                 let partial = NodePartial::new()
                     .with_messages(vec![Message::with_role(
                         Role::System,
-                        &format!(
-                            "{} API call completed successfully",
-                            self.service_name
-                        ),
+                        &format!("{} API call completed successfully", self.service_name),
                     )])
                     .with_extra(extra);
 

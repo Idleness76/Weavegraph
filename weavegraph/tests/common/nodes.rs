@@ -23,10 +23,7 @@ impl Node for SimpleMessageNode {
         _snapshot: StateSnapshot,
         _ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        Ok(NodePartial::new().with_messages(vec![Message::with_role(
-            Role::Assistant,
-            self.msg,
-        )]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(Role::Assistant, self.msg)]))
     }
 }
 
@@ -57,10 +54,8 @@ impl Node for EmitterNode {
         ctx.emit("test", "First event")?;
         ctx.emit("test", "Second event")?;
         ctx.emit("test", "Third event")?;
-        Ok(NodePartial::new().with_messages(vec![Message::with_role(
-            Role::Assistant,
-            "Done emitting",
-        )]))
+        Ok(NodePartial::new()
+            .with_messages(vec![Message::with_role(Role::Assistant, "Done emitting")]))
     }
 }
 
