@@ -23,7 +23,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use weavegraph::channels::Channel;
 use weavegraph::graphs::GraphBuilder;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
@@ -100,7 +100,7 @@ impl Node for SchedulerDemoNode {
             ),
         )?;
 
-        let result_message = Message::assistant(&response_content);
+        let result_message = Message::with_role(Role::Assistant, &response_content);
 
         // Add execution metadata
         let mut extra = FxHashMap::default();

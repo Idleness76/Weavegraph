@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use weavegraph::channels::Channel;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::state::VersionedState;
 
 #[test]
@@ -19,7 +19,10 @@ fn test_new_with_user_message_initializes_fields() {
 
 #[test]
 fn test_new_with_messages_initializes_fields() {
-    let messages = vec![Message::user("hello"), Message::assistant("hi there")];
+    let messages = vec![
+        Message::with_role(Role::User, "hello"),
+        Message::with_role(Role::Assistant, "hi there"),
+    ];
     let state = VersionedState::new_with_messages(messages.clone());
     let snapshot = state.snapshot();
 
@@ -48,8 +51,8 @@ fn test_snapshot_is_deep_copy() {
 #[test]
 fn test_new_with_messages_snapshot_is_deep_copy() {
     let mut state = VersionedState::new_with_messages(vec![
-        Message::user("original"),
-        Message::assistant("response"),
+        Message::with_role(Role::User, "original"),
+        Message::with_role(Role::Assistant, "response"),
     ]);
     let snapshot = state.snapshot();
 

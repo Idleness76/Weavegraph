@@ -16,10 +16,11 @@ use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use weavegraph::channels::Channel;
 use weavegraph::event_bus::EventBus;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
-use weavegraph::state::StateSnapshot;
+use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::utils::collections::new_extra_map;
 
 /// A simple message processing node that counts and logs messages.
@@ -72,10 +73,7 @@ impl Node for MessageCounterNode {
         )?;
 
         Ok(NodePartial::new()
-            .with_messages(vec![Message {
-                role: "assistant".to_string(),
-                content: summary,
-            }])
+            .with_messages(vec![Message::with_role(Role::Assistant, &summary)])
             .with_extra(extra))
     }
 }
@@ -203,10 +201,7 @@ impl Node for AggregatorNode {
         ctx.emit("completed", "Data aggregation completed")?;
 
         Ok(NodePartial::new()
-            .with_messages(vec![Message {
-                role: "assistant".to_string(),
-                content: summary,
-            }])
+            .with_messages(vec![Message::with_role(Role::Assistant, &summary)])
             .with_extra(extra))
     }
 }
@@ -250,26 +245,18 @@ async fn main() -> Result<()> {
     event_bus.listen_for_events();
 
     // Create initial state
-    let mut state = StateSnapshot {
-        messages: vec![Message {
-            role: "user".to_string(),
-            content: "Initial user message".to_string(),
-        }],
-        messages_version: 1,
-        extra: {
-            let mut extra = new_extra_map();
-            extra.insert("processor".to_string(), json!("initial"));
-            extra.insert("step".to_string(), json!(1));
-            extra
-        },
-        extra_version: 1,
-        errors: vec![],
-        errors_version: 1,
-    };
+    let mut state = VersionedState::builder()
+        .with_user_message("Initial user message")
+        .with_extra("processor", json!("initial"))
+        .with_extra("step", json!(1))
+        .build();
 
     info!("\n📊 Initial State:");
-    info!("  Messages: {}", state.messages.len());
-    info!("  Extra keys: {:?}", state.extra.keys().collect::<Vec<_>>());
+    info!("  Messages: {}", state.messages.snapshot().len());
+    info!(
+        "  Extra keys: {:?}",
+        state.extra.snapshot().keys().collect::<Vec<_>>()
+    );
 
     // Run MessageCounterNode
     info!("\n🔄 Running MessageCounterNode...");
@@ -285,20 +272,20 @@ async fn main() -> Result<()> {
         event_emitter: Arc::clone(&emitter),
     };
 
-    let result1 = counter_node.run(state.clone(), ctx1).await?;
+    let result1 = counter_node.run(state.snapshot(), ctx1).await?;
 
     // Apply the result (simulating runtime behavior)
     if let Some(messages) = result1.messages {
-        state.messages.extend(messages);
+        state.messages.get_mut().extend(messages);
     }
     if let Some(extra) = result1.extra {
-        state.extra.extend(extra);
+        state.extra.get_mut().extend(extra);
     }
 
-    info!("  ✅ Messages now: {}", state.messages.len());
+    info!("  ✅ Messages now: {}", state.messages.snapshot().len());
     info!(
         "  ✅ Extra keys: {:?}",
-        state.extra.keys().collect::<Vec<_>>()
+        state.extra.snapshot().keys().collect::<Vec<_>>()
     );
 
     // Run ValidationNode
@@ -314,10 +301,10 @@ async fn main() -> Result<()> {
         event_emitter: Arc::clone(&emitter),
     };
 
-    let result2 = validation_node.run(state.clone(), ctx2).await?;
+    let result2 = validation_node.run(state.snapshot(), ctx2).await?;
 
     if let Some(extra) = result2.extra {
-        state.extra.extend(extra);
+        state.extra.get_mut().extend(extra);
     }
 
     info!("  ✅ Validation passed");
@@ -332,26 +319,28 @@ async fn main() -> Result<()> {
         event_emitter: Arc::clone(&emitter),
     };
 
-    let result3 = aggregator_node.run(state.clone(), ctx3).await?;
+    let result3 = aggregator_node.run(state.snapshot(), ctx3).await?;
 
     if let Some(messages) = result3.messages {
-        state.messages.extend(messages);
+        state.messages.get_mut().extend(messages);
     }
     if let Some(extra) = result3.extra {
-        state.extra.extend(extra);
+        state.extra.get_mut().extend(extra);
     }
 
     info!("  ✅ Aggregation completed");
 
     // Display final state
     info!("\n📋 Final State:");
-    info!("  Messages: {}", state.messages.len());
-    for (i, msg) in state.messages.iter().enumerate() {
+    let final_snapshot = state.snapshot();
+
+    info!("  Messages: {}", final_snapshot.messages.len());
+    for (i, msg) in final_snapshot.messages.iter().enumerate() {
         info!("    {}: [{}] {}", i + 1, msg.role, msg.content);
     }
     info!(
         "  Extra data keys: {:?}",
-        state.extra.keys().collect::<Vec<_>>()
+        final_snapshot.extra.keys().collect::<Vec<_>>()
     );
 
     // Give a moment for events to be processed

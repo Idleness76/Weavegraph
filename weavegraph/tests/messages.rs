@@ -2,10 +2,7 @@ use weavegraph::message::{Message, Role};
 
 #[test]
 fn test_message_construction() {
-    let msg = Message {
-        role: "user".to_string(),
-        content: "hello".to_string(),
-    };
+    let msg = Message::with_role(Role::User, "hello");
     assert_eq!(msg.role, "user");
     assert_eq!(msg.content, "hello");
 }
@@ -24,7 +21,7 @@ fn test_convenience_constructors() {
     assert_eq!(system_msg.role, Role::System.as_str());
     assert_eq!(system_msg.content, "You are helpful");
 
-    let custom_msg = Message::new("function", "Result: 42");
+    let custom_msg = Message::with_role(Role::Custom("function".to_string()), "Result: 42");
     assert_eq!(custom_msg.role, "function");
     assert_eq!(custom_msg.content, "Result: 42");
 }

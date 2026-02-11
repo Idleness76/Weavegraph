@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use weavegraph::channels::Channel;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::NodePartial;
 use weavegraph::reducers::{AddMessages, MapMerge, Reducer, ReducerRegistry};
 use weavegraph::state::VersionedState;
@@ -45,15 +45,10 @@ fn test_add_messages_appends_state() {
     let initial_version = state.messages.version();
     let initial_len = state.messages.snapshot().len();
 
-    let partial = NodePartial {
-        messages: Some(vec![Message {
-            role: "system".into(),
-            content: "b".into(),
-        }]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new().with_messages(vec![Message::with_role(
+        Role::System,
+        "b",
+    )]);
 
     reducer.apply(&mut state, &partial);
 
@@ -72,12 +67,7 @@ fn test_add_messages_empty_partial_noop() {
     let initial_version = state.messages.version();
     let initial_snapshot = state.messages.snapshot();
 
-    let partial = NodePartial {
-        messages: Some(vec![]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new().with_messages(vec![]);
 
     reducer.apply(&mut state, &partial);
 
@@ -104,12 +94,7 @@ fn test_map_merge_merges_and_overwrites_state() {
     extra_update.insert("k2".into(), Value::String("v2".into()));
     extra_update.insert("k1".into(), Value::String("v3".into())); // overwrite existing
 
-    let partial = NodePartial {
-        messages: None,
-        extra: Some(extra_update),
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new().with_extra(extra_update);
 
     reducer.apply(&mut state, &partial);
 
@@ -141,12 +126,7 @@ fn test_map_merge_empty_partial_noop() {
     let initial_version = state.extra.version();
     let initial_snapshot = state.extra.snapshot();
 
-    let partial = NodePartial {
-        messages: None,
-        extra: Some(FxHashMap::default()),
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new().with_extra(FxHashMap::default());
 
     reducer.apply(&mut state, &partial);
 
@@ -171,15 +151,9 @@ fn test_enum_wrapper_dispatch() {
     let mut extra_update = FxHashMap::default();
     extra_update.insert("seed".into(), Value::String("y".into()));
 
-    let partial = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "hi".into(),
-        }]),
-        extra: Some(extra_update),
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new()
+        .with_messages(vec![Message::with_role(Role::Assistant, "hi")])
+        .with_extra(extra_update);
 
     for r in &reducers {
         r.apply(&mut state, &partial);
@@ -203,24 +177,16 @@ fn test_channel_guard_logic() {
     assert!(!channel_guard(ChannelType::Message, &empty));
     assert!(!channel_guard(ChannelType::Extra, &empty));
 
-    let msg_partial = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "m".into(),
-        }]),
-        ..Default::default()
-    };
+    let msg_partial = NodePartial::new().with_messages(vec![Message::with_role(
+        Role::Assistant,
+        "m",
+    )]);
     assert!(channel_guard(ChannelType::Message, &msg_partial));
     assert!(!channel_guard(ChannelType::Extra, &msg_partial));
 
     let mut extra_map = FxHashMap::default();
     extra_map.insert("k".into(), Value::String("v".into()));
-    let extra_partial = NodePartial {
-        messages: None,
-        extra: Some(extra_map),
-        errors: None,
-        frontier: None,
-    };
+    let extra_partial = NodePartial::new().with_extra(extra_map);
     assert!(channel_guard(ChannelType::Extra, &extra_partial));
 }
 
@@ -236,15 +202,9 @@ fn test_registry_integration_like_flow() {
     let mut extra_update = FxHashMap::default();
     extra_update.insert("origin".into(), Value::String("node".into()));
 
-    let partial = NodePartial {
-        messages: Some(vec![Message {
-            role: "assistant".into(),
-            content: "from node".into(),
-        }]),
-        extra: Some(extra_update),
-        errors: None,
-        frontier: None,
-    };
+    let partial = NodePartial::new()
+        .with_messages(vec![Message::with_role(Role::Assistant, "from node")])
+        .with_extra(extra_update);
 
     // Simulate runtime iterating channels
     for channel in [ChannelType::Message, ChannelType::Extra] {
@@ -273,12 +233,10 @@ async fn test_reducer_thread_safety() {
             let state = Arc::clone(&state);
 
             tokio::spawn(async move {
-                let partial = NodePartial {
-                    messages: Some(vec![Message::assistant(&format!("msg_{}", i))]),
-                    extra: None,
-                    errors: None,
-                    frontier: None,
-                };
+                let partial = NodePartial::new().with_messages(vec![Message::with_role(
+                    Role::Assistant,
+                    &format!("msg_{}", i),
+                )]);
 
                 let mut state_guard = state.lock().await;
                 let _ = registry.try_update(ChannelType::Message, &mut state_guard, &partial);
@@ -306,11 +264,11 @@ async fn test_reducer_determinism_under_concurrency() {
 
         // Apply same partials concurrently to both states
         let partials: Vec<NodePartial> = (0..5)
-            .map(|i| NodePartial {
-                messages: Some(vec![Message::user(&format!("test_{}", i))]),
-                extra: None,
-                errors: None,
-                frontier: None,
+            .map(|i| {
+                NodePartial::new().with_messages(vec![Message::with_role(
+                    Role::User,
+                    &format!("test_{}", i),
+                )])
             })
             .collect();
 
@@ -372,12 +330,10 @@ fn test_reducer_channel_isolation() {
     let initial_extra_keys = state.extra.snapshot().len();
 
     // Apply message-only partial
-    let message_partial = NodePartial {
-        messages: Some(vec![Message::system("isolated message")]),
-        extra: None,
-        errors: None,
-        frontier: None,
-    };
+    let message_partial = NodePartial::new().with_messages(vec![Message::with_role(
+        Role::System,
+        "isolated message",
+    )]);
 
     registry
         .try_update(ChannelType::Message, &mut state, &message_partial)
@@ -394,12 +350,7 @@ fn test_reducer_channel_isolation() {
         Value::String("isolated_value".into()),
     );
 
-    let extra_partial = NodePartial {
-        messages: None,
-        extra: Some(extra_map),
-        errors: None,
-        frontier: None,
-    };
+    let extra_partial = NodePartial::new().with_extra(extra_map);
 
     registry
         .try_update(ChannelType::Extra, &mut state, &extra_partial)

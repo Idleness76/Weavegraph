@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use weavegraph::channels::errors::ErrorEvent;
 use weavegraph::event_bus::EventBus;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeContextError, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::utils::collections::new_extra_map;
@@ -34,10 +34,10 @@ fn test_node_partial_default() {
 
 #[test]
 fn test_node_partial_with_messages() {
-    let messages = vec![Message {
-        role: "test".to_string(),
-        content: "test message".to_string(),
-    }];
+    let messages = vec![Message::with_role(
+        Role::Custom("test".to_string()),
+        "test message",
+    )];
     let partial = NodePartial::new().with_messages(messages.clone());
     assert_eq!(partial.messages, Some(messages));
     assert!(partial.extra.is_none());
@@ -135,10 +135,10 @@ impl Node for DummyNode {
         ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
         ctx.emit("dummy", "executed").map_err(NodeError::EventBus)?;
-        Ok(NodePartial::new().with_messages(vec![Message {
-            role: "dummy".to_string(),
-            content: "ok".to_string(),
-        }]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Custom("dummy".to_string()),
+            "ok",
+        )]))
     }
 }
 

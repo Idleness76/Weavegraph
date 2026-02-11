@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use rustc_hash::FxHashMap;
 
 use weavegraph::graphs::GraphBuilder;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{AppRunner, CheckpointerType, StepOptions, StepResult};
 use weavegraph::state::StateSnapshot;
@@ -40,7 +40,10 @@ impl Node for CountingNode {
             tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
         }
         self.counter.fetch_add(1, Ordering::SeqCst);
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("counted")]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
+            "counted",
+        )]))
     }
 }
 
@@ -63,7 +66,7 @@ impl Node for SessionMarkerNode {
         let mut extra = FxHashMap::default();
         extra.insert("marker".to_string(), serde_json::json!(self.marker.clone()));
         Ok(NodePartial::new()
-            .with_messages(vec![Message::assistant(&self.marker)])
+            .with_messages(vec![Message::with_role(Role::Assistant, &self.marker)])
             .with_extra(extra))
     }
 }

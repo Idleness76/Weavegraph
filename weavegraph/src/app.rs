@@ -888,12 +888,11 @@ impl App {
     /// # use weavegraph::node::NodePartial;
     /// # use weavegraph::state::VersionedState;
     /// # use weavegraph::types::NodeKind;
-    /// # use weavegraph::message::Message;
+    /// # use weavegraph::message::{Message, Role};
     /// # async fn example(app: App, state: &mut VersionedState) -> Result<(), String> {
-    /// let partials = vec![NodePartial {
-    ///     messages: Some(vec![Message::assistant("test")]),
-    ///     ..Default::default()
-    /// }];
+    /// let partials = vec![NodePartial::new().with_messages(vec![
+    ///     Message::with_role(Role::Assistant, "test"),
+    /// ])];
     /// let outcome = app.apply_barrier(state, &[NodeKind::Custom("process".into())], partials).await
     ///     .map_err(|e| format!("Error: {}", e))?;
     /// println!("Updated channels: {:?}", outcome.updated_channels);

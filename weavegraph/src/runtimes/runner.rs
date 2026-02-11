@@ -959,12 +959,7 @@ impl AppRunner {
                 };
                 // Inject via barrier mechanics by applying a synthetic NodePartial with errors field
                 let mut update_state = session_state.state.clone();
-                let partial = NodePartial {
-                    messages: None,
-                    extra: None,
-                    errors: Some(vec![event]),
-                    frontier: None,
-                };
+                let partial = NodePartial::new().with_errors(vec![event]);
                 // Apply directly using reducer registry through App
                 let _ = self
                     .app

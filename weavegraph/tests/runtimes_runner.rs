@@ -2,7 +2,7 @@ use async_trait::async_trait;
 #[cfg(feature = "sqlite")]
 use weavegraph::channels::Channel;
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{
     AppRunner, CheckpointerType, PausedReason, RuntimeConfig, SessionInit, StepOptions, StepResult,
@@ -221,7 +221,10 @@ impl Node for WorkerNode {
         _snapshot: StateSnapshot,
         _ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("worker-run")]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
+            "worker-run",
+        )]))
     }
 }
 

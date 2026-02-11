@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use weavegraph::event_bus::{Event, EventBus, MemorySink};
 use weavegraph::graphs::GraphBuilder;
-use weavegraph::message::Message;
+use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{AppRunner, CheckpointerType, StepOptions, StepResult};
 use weavegraph::state::StateSnapshot;
@@ -43,7 +43,10 @@ impl Node for BurstEmitterNode {
             ctx.emit("burst", format!("event_{i}")).ok();
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("burst complete")]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
+            "burst complete",
+        )]))
     }
 }
 

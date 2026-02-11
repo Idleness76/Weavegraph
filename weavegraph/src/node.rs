@@ -218,20 +218,24 @@ impl NodeContext {
 ///
 /// ```rust
 /// use weavegraph::node::NodePartial;
-/// use weavegraph::message::Message;
+/// use weavegraph::message::{Message, Role};
 /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
 /// use serde_json::json;
 /// use weavegraph::utils::collections::new_extra_map;
 ///
 /// // Simple message-only response
-/// let partial = NodePartial::new().with_messages(vec![Message::assistant("Done")]);
+/// let partial = NodePartial::new()
+///     .with_messages(vec![Message::with_role(Role::Assistant, "Done")]);
 ///
 /// // Rich response with metadata
 /// let mut extra = new_extra_map();
 /// extra.insert("status".to_string(), json!("success"));
 /// extra.insert("duration_ms".to_string(), json!(150));
 /// let partial = NodePartial::new()
-///     .with_messages(vec![Message::assistant("Processing complete")])
+///     .with_messages(vec![Message::with_role(
+///         Role::Assistant,
+///         "Processing complete",
+///     )])
 ///     .with_extra(extra);
 ///
 /// // Response with warnings
@@ -243,7 +247,10 @@ impl NodeContext {
 ///     ..Default::default()
 /// }];
 /// let partial = NodePartial::new()
-///     .with_messages(vec![Message::assistant("Result with warnings")])
+///     .with_messages(vec![Message::with_role(
+///         Role::Assistant,
+///         "Result with warnings",
+///     )])
 ///     .with_errors(errors);
 /// ```
 #[derive(Clone, Debug, Default)]

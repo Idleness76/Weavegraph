@@ -158,7 +158,7 @@ Weavegraph applications revolve around three building blocks: nodes, state, and 
 ```rust
 use weavegraph::{
     graphs::GraphBuilder,
-    message::Message,
+    message::{Message, Role},
     node::{Node, NodeContext, NodePartial},
     state::VersionedState,
     types::NodeKind,
@@ -175,7 +175,10 @@ impl Node for GreetingNode {
         ctx: NodeContext,
     ) -> Result<NodePartial, weavegraph::node::NodeError> {
         ctx.emit("greeting", "Saying hi!")?;
-        Ok(NodePartial::new().with_messages(vec![Message::assistant("Hello!")]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+          Role::Assistant,
+          "Hello!",
+        )]))
     }
 }
 
@@ -191,7 +194,7 @@ let result = app.invoke(initial).await?;
 
 **Key practices:**
 
-- Prefer the convenience constructors on `Message` (`Message::user`, `Message::assistant`, etc.) - see [Messages](GUIDE.md#messages)
+- Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](GUIDE.md#messages)
 - Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](GUIDE.md#state)
 - Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout
 - Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)

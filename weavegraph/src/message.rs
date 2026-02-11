@@ -108,10 +108,10 @@ impl From<Role> for String {
 /// ```
 /// use weavegraph::message::{Message, Role};
 ///
-/// // Using convenience constructors (recommended)
-/// let user_msg = Message::user("What is the weather?");
-/// let assistant_msg = Message::assistant("It's sunny today!");
-/// let system_msg = Message::system("You are a helpful assistant.");
+/// // Using typed roles (recommended)
+/// let user_msg = Message::with_role(Role::User, "What is the weather?");
+/// let assistant_msg = Message::with_role(Role::Assistant, "It's sunny today!");
+/// let system_msg = Message::with_role(Role::System, "You are a helpful assistant.");
 ///
 /// // Using Role enum directly
 /// let msg = Message::with_role(Role::User, "Hello!");
@@ -217,10 +217,10 @@ impl Message {
     /// ```
     /// use weavegraph::message::{Message, Role};
     ///
-    /// let msg = Message::user("Hello");
+    /// let msg = Message::with_role(Role::User, "Hello");
     /// assert_eq!(msg.role_type(), Role::User);
     ///
-    /// let custom = Message::new("function", "Result");
+    /// let custom = Message::with_role(Role::Custom("function".into()), "Result");
     /// assert_eq!(custom.role_type(), Role::Custom("function".into()));
     /// ```
     #[must_use]
@@ -237,7 +237,7 @@ impl Message {
     /// ```
     /// use weavegraph::message::{Message, Role};
     ///
-    /// let msg = Message::user("Hello");
+    /// let msg = Message::with_role(Role::User, "Hello");
     /// assert!(msg.is_role(Role::User));
     /// assert!(!msg.is_role(Role::Assistant));
     /// ```

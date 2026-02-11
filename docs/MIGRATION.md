@@ -19,11 +19,7 @@ For backward compatibility, `Message.role` remains a `String` (it still serializ
 **Before (v0.1.x):**
 ```rust
 // Old: role was a String
-let msg = Message {
-    role: "user".to_string(),
-    content: "Hello".to_string(),
-    ..Default::default()
-};
+let msg = Message::new("user", "Hello");
 
 // Checking roles
 if msg.role == "user" { ... }
@@ -34,7 +30,7 @@ if msg.role == "user" { ... }
 use weavegraph::message::{Message, Role};
 
 // New: use Role enum variants
-let msg = Message::user("Hello");
+let msg = Message::with_role(Role::User, "Hello");
 
 // Or construct explicitly with a typed Role
 let msg = Message::with_role(Role::User, "Hello");
@@ -46,7 +42,7 @@ if msg.is_role(Role::User) {
 ```
 
 **Migration steps:**
-1. Prefer `Message::user/assistant/system/tool(...)` and `Message::with_role(Role::..., ...)`
+1. Prefer `Message::with_role(Role::..., ...)` (typed roles)
 2. Replace string comparisons like `msg.role == "user"` with `msg.is_role(Role::User)`
 3. For custom roles, prefer `Message::with_role(Role::Custom("my_role".into()), ...)`
 4. If you must keep string roles (interop), use `msg.role_type()` when branching
@@ -54,10 +50,10 @@ if msg.is_role(Role::User) {
 **Convenience constructors (recommended):**
 ```rust
 // These create messages with the correct role already set
-let user_msg = Message::user("User input");
-let assistant_msg = Message::assistant("AI response");
-let system_msg = Message::system("System prompt");
-let tool_msg = Message::tool("Tool output");
+let user_msg = Message::with_role(Role::User, "User input");
+let assistant_msg = Message::with_role(Role::Assistant, "AI response");
+let system_msg = Message::with_role(Role::System, "System prompt");
+let tool_msg = Message::with_role(Role::Tool, "Tool output");
 ```
 
 ---
@@ -146,9 +142,9 @@ The following items are deprecated and will be removed in v0.3.0:
 
 | Deprecated | Replacement |
 |-----------|-------------|
-| `Message::USER` constant | `Role::User` + `Message::user(...)` |
-| `Message::ASSISTANT` constant | `Role::Assistant` + `Message::assistant(...)` |
-| `Message::SYSTEM` constant | `Role::System` + `Message::system(...)` |
+| `Message::USER` constant | `Role::User` + `Message::with_role(...)` |
+| `Message::ASSISTANT` constant | `Role::Assistant` + `Message::with_role(...)` |
+| `Message::SYSTEM` constant | `Role::System` + `Message::with_role(...)` |
 | `AppRunner::new()` | `AppRunner::builder()...build()` |
 | `AppRunner::with_options()` | `AppRunner::builder()...build()` |
 
