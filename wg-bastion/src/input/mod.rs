@@ -6,3 +6,5 @@ pub mod normalization;
 pub mod patterns;
 #[cfg(feature = "heuristics")]
 pub mod injection;
+#[cfg(feature = "heuristics")]
+pub mod structural;
