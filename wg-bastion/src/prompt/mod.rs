@@ -7,6 +7,9 @@ pub mod scanner;
 pub mod honeytoken;
 
 #[cfg(feature = "heuristics")]
+pub mod isolation;
+
+#[cfg(feature = "heuristics")]
 pub mod template;
 
 pub mod refusal;
