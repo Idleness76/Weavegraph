@@ -8,3 +8,5 @@ pub mod patterns;
 pub mod injection;
 #[cfg(feature = "heuristics")]
 pub mod structural;
+#[cfg(feature = "heuristics")]
+pub mod ensemble;
