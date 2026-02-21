@@ -1,0 +1,192 @@
+```mermaid
+flowchart TD
+    %% External Inputs
+    User[User Prompt] --> InputPipeline
+    RAGDoc[RAG Document Source] --> RAGIngestion
+    MCPServer[MCP Server / Tool] --> ToolGuard
+    
+    %% Input Security Layer
+    subgraph InputSecurity [Input Security Boundary]
+        InputPipeline[Input Pipeline]
+        InputPipeline --> InjectionScan[Injection Scanner]
+        InputPipeline --> PIIDetect[PII Detection]
+        InputPipeline --> Moderation[Content Moderation]
+        
+        InjectionScan --> |Threat?| Block1{Fail Mode}
+        PIIDetect --> |PII Found?| Redact[Redact/Mask]
+        Moderation --> |Unsafe?| Block2{Fail Mode}
+        
+        Block1 --> |Closed| Reject1[Reject Request]
+        Block1 --> |Open/Log| Continue1[Continue + Log]
+        Block2 --> |Closed| Reject2[Reject Request]
+        Block2 --> |Open/Log| Continue2[Continue + Log]
+    end
+    
+    %% Prompt Protection Layer
+    subgraph PromptProtection [Prompt Protection]
+        Continue1 --> PromptGuard[Prompt Guard]
+        Continue2 --> PromptGuard
+        Redact --> PromptGuard
+        
+        PromptGuard --> Fragment[Fragment System Prompt]
+        PromptGuard --> Honeytoken[Insert Honeytokens]
+        Fragment --> AssembledPrompt[Assembled Prompt]
+        Honeytoken --> AssembledPrompt
+    end
+    
+    %% RAG Security Layer
+    subgraph RAGSecurity [RAG Security]
+        RAGIngestion[RAG Ingestion] --> Sanitize[Sanitize Content]
+        Sanitize --> Provenance[Tag Provenance]
+        Provenance --> EmbedGen[Generate Embeddings]
+        EmbedGen --> VectorStore[(Vector Store)]
+        
+        RAGQuery[RAG Query] --> AccessControl[Access Control Check]
+        AccessControl --> VectorStore
+        VectorStore --> RetrievedDocs[Retrieved Context]
+        RetrievedDocs --> GroundingCheck[Grounding Validator]
+    end
+    
+    %% Tool Security Layer
+    subgraph ToolSecurity [Tool/MCP Security]
+        ToolGuard[Tool Guard] --> PolicyCheck[Policy Check]
+        PolicyCheck --> MCPValidation[MCP Validation]
+        MCPValidation --> |High Risk?| ApprovalFlow[Human Approval]
+        MCPValidation --> |Low Risk| ToolExec[Tool Execution]
+        ApprovalFlow --> |Approved| ToolExec
+        ApprovalFlow --> |Denied| RejectTool[Reject Tool Call]
+        
+        ToolExec --> SanitizeResp[Sanitize Response]
+    end
+    
+    %% Application Layer
+    subgraph Application [weavegraph Application]
+        AssembledPrompt --> AppNode[App Node / LLM]
+        GroundingCheck --> AppNode
+        SanitizeResp --> AppNode
+        
+        AppNode --> LLMCall[LLM Provider API]
+        LLMCall --> RawResponse[Raw LLM Response]
+    end
+    
+    %% Output Security Layer
+    subgraph OutputSecurity [Output Security Boundary]
+        RawResponse --> OutputPipeline[Output Pipeline]
+        OutputPipeline --> SchemaValid[Schema Validation]
+        OutputPipeline --> EgressScan[Egress Scanner]
+        OutputPipeline --> OutputSanitize[Sanitization]
+        OutputPipeline --> GroundingOut[Grounding Check]
+        
+        SchemaValid --> |Invalid?| BlockOut{Fail Mode}
+        EgressScan --> |Secret/PII?| RedactOut[Redact]
+        OutputSanitize --> SafeOutput[Safe Output]
+        GroundingOut --> |Ungrounded?| WarnUser[Warning Flag]
+        
+        BlockOut --> |Closed| RejectOut[Reject Response]
+        BlockOut --> |Open/Log| RedactOut
+        RedactOut --> SafeOutput
+        WarnUser --> SafeOutput
+    end
+    
+    %% Abuse Prevention
+    subgraph AbusePrevention [Abuse Prevention]
+        RateLimit[Rate Limiter] -.-> InputPipeline
+        CostMonitor[Cost Monitor] -.-> AppNode
+        RecursionGuard[Recursion Guard] -.-> AppNode
+        CircuitBreaker[Circuit Breaker] -.-> LLMCall
+    end
+    
+    %% Telemetry Layer
+    subgraph Telemetry [Security Telemetry]
+        InputPipeline -.-> Events[Security Events]
+        PromptGuard -.-> Events
+        RAGIngestion -.-> Events
+        ToolGuard -.-> Events
+        OutputPipeline -.-> Events
+        
+        Events --> AuditLog[Audit Log]
+        Events --> Metrics[OTLP Metrics]
+        Events --> IncidentDetector[Incident Detector]
+        
+        IncidentDetector --> |Threat Pattern| Alert[Alert / Response]
+    end
+    
+    %% Final Output
+    SafeOutput --> UserResponse[User Response]
+    
+    %% Styling
+    classDef untrusted fill:#ff6b6b,stroke:#c92a2a,color:#fff
+    classDef security fill:#51cf66,stroke:#2f9e44,color:#000
+    classDef trusted fill:#339af0,stroke:#1971c2,color:#fff
+    classDef telemetry fill:#ffd43b,stroke:#f59f00,color:#000
+    
+    class User,RAGDoc,MCPServer untrusted
+    class InputSecurity,PromptProtection,RAGSecurity,ToolSecurity,OutputSecurity,AbusePrevention security
+    class Application trusted
+    class Telemetry telemetry
+```
+
+## Data Flow Narrative
+
+### 1. Input Phase
+- **User prompts** enter through the Input Security Boundary
+- Multi-stage pipeline runs: injection scanning, PII detection, moderation
+- Based on `FailMode` configuration, threats are either blocked or logged
+- PII is redacted/masked before proceeding
+
+### 2. Prompt Protection Phase
+- System prompts are fragmented to prevent extraction
+- Honeytokens are inserted to detect leakage attempts
+- Prompts are assembled with clear role boundaries
+
+### 3. RAG Security Phase (if applicable)
+- Documents are sanitized during ingestion
+- Provenance metadata is tagged
+- Embeddings are generated and stored with access controls
+- Retrieval enforces tenant isolation
+- Retrieved context is validated for grounding
+
+### 4. Tool/MCP Security Phase (if applicable)
+- Tool requests pass through policy checks
+- MCP-specific validation (session binding, scope, etc.)
+- High-risk tools require human approval
+- Tool responses are sanitized
+
+### 5. Application Execution
+- weavegraph App Node orchestrates LLM calls
+- All context (prompt + RAG + tool results) is assembled
+- LLM provider API is invoked
+- Raw response is returned
+
+### 6. Output Phase
+- Output Security Boundary validates responses
+- Schema validation enforces structure
+- Egress scanner checks for secrets/PII/honeytokens
+- Sanitization removes dangerous content
+- Grounding check warns if response is unfounded
+
+### 7. Abuse Prevention (Cross-Cutting)
+- Rate limiting controls request volume
+- Cost monitoring tracks token usage
+- Recursion guards prevent infinite loops
+- Circuit breakers protect external services
+
+### 8. Telemetry (Cross-Cutting)
+- All security decisions emit structured events
+- Audit logs provide compliance trail
+- OTLP metrics export to observability platforms
+- Incident detector triggers automated responses
+
+### Trust Boundaries
+
+1. **Untrusted → Security Boundary**: All external inputs are validated
+2. **Security Boundary → Application**: Sanitized data passes to weavegraph
+3. **Application → Trusted Infrastructure**: LLM/DB calls use authenticated channels
+4. **Trusted Infrastructure → Security Boundary**: Responses are re-validated
+
+### Critical Paths
+
+- **Prompt Injection Prevention**: Input Scanner → Prompt Guard → Egress Scanner
+- **PII Protection**: PII Detector → Redaction → Egress Scanner → Audit Log
+- **Tool Abuse Prevention**: Tool Guard → Policy → Approval → Sanitization
+- **RAG Poisoning Prevention**: RAG Ingestion → Sanitization → Provenance → Grounding

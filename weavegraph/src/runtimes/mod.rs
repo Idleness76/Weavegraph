@@ -50,7 +50,6 @@ mod checkpointer_postgres_helpers;
 pub mod checkpointer_sqlite;
 #[cfg(feature = "sqlite")]
 mod checkpointer_sqlite_helpers;
-pub mod execution;
 pub mod persistence;
 pub mod runner;
 pub mod runtime_config;

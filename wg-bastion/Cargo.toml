@@ -1,0 +1,82 @@
+[package]
+name = "wg-bastion"
+version = "0.1.0"
+edition = "2024"
+description = "Comprehensive security suite for graph-driven LLM applications built on weavegraph"
+license = "MIT"
+repository = "https://github.com/Idleness76/weavegraph"
+readme = "README.md"
+keywords = ["security", "llm", "guardrails", "ai-safety", "prompt-injection"]
+categories = ["security", "web-programming", "algorithms"]
+rust-version = "1.89"
+homepage = "https://github.com/Idleness76/weavegraph"
+documentation = "https://docs.rs/wg-bastion"
+
+[dependencies]
+# Error handling
+thiserror = "2"
+
+# Tracing & logging
+tracing = "0.1"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+async-trait = "0.1"
+
+# Serialization & configuration
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+dotenvy = "0.15"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Optional dependencies
+ort = { version = "2.0.0-rc.10", optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls"] }
+redis = { version = "0.27", optional = true }
+sqlx = { version = "0.8", optional = true, features = ["sqlite"] }
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", optional = true }
+opentelemetry-otlp = { version = "0.27", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+tempfile = "3"
+
+[features]
+default = ["heuristics"]
+
+# Core functionality
+heuristics = []  # Pattern-based detection (no ML dependencies)
+full = ["moderation-onnx", "pii-presidio", "telemetry-otlp"]
+
+# Moderation backends
+moderation-onnx = ["ort"]
+moderation-remote = ["reqwest"]
+
+# PII detection
+pii-presidio = ["reqwest"]
+pii-local = []
+
+# Storage backends
+storage-redis = ["redis"]
+storage-sqlite = ["sqlx"]
+
+# Telemetry
+telemetry-otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp"]
+
+# Testing utilities
+testing = []
+adversarial-corpus = ["testing"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.cargo-machete]
+ignored = ["ort", "reqwest", "redis", "sqlx", "opentelemetry"]
+# NOTE: miette, jsonschema, schemars, ring, zeroize removed in WS3-05.
+# They will be re-added behind feature gates when their modules land.

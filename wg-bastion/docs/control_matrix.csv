@@ -1,0 +1,71 @@
+Control ID,OWASP Category,NIST AI RMF Function,EU AI Act Article,Control Name,wg-bastion Module,Implementation,Test ID,Status
+C001,LLM01:2025,MAP,Art 13 (Transparency),Injection Pattern Scanner,input::injection,InjectionScanner with regex patterns,T-INJ-001,Planned
+C002,LLM01:2025,MEASURE,Art 13,ML-Based Injection Classifier,input::moderation,ONNXClassifier (optional),T-INJ-002,Planned
+C003,LLM01:2025,MANAGE,-,Injection Detection Telemetry,telemetry::events,SecurityEvent::InjectionDetected,T-TEL-001,Planned
+C004,LLM02:2025,MAP,Art 10 (Data Governance),PII Detection Scanner,input::pii,PIIDetector with Presidio integration,T-PII-001,Planned
+C005,LLM02:2025,MANAGE,Art 10,PII Redaction/Masking,input::pii,PIIMasker with configurable strategies,T-PII-002,Planned
+C006,LLM02:2025,MEASURE,Art 12 (Record Keeping),PII Detection Audit Log,telemetry::audit,AuditLog with encrypted storage,T-AUD-001,Planned
+C007,LLM02:2025,MANAGE,-,Egress Secret Scanner,output::egress,EgressScanner with regex patterns,T-EGR-001,Planned
+C008,LLM03:2025,GOVERN,Art 15 (Accuracy),SBOM Generation,supply_chain::sbom,CycloneDX SBOM generator,T-SUP-001,Planned
+C009,LLM03:2025,GOVERN,Art 15,AIBOM Generation,supply_chain::aibom,AI Bill of Materials generator,T-SUP-002,Planned
+C010,LLM03:2025,MAP,-,Dependency Audit (cargo-audit),supply_chain::audit,CI integration with cargo-audit,T-SUP-003,Planned
+C011,LLM03:2025,MAP,-,License Compliance (cargo-deny),supply_chain::audit,CI integration with cargo-deny,T-SUP-004,Planned
+C012,LLM03:2025,GOVERN,-,Signed Releases,supply_chain::signing,GPG tag signing + Cosign,T-SUP-005,Planned
+C013,LLM04:2025,MAP,-,RAG Ingestion Sanitization,rag::ingestion,SanitizedIngestion wrapper,T-RAG-001,Planned
+C014,LLM04:2025,MAP,-,Document Provenance Tagging,rag::provenance,ProvenanceTagger metadata,T-RAG-002,Planned
+C015,LLM04:2025,MEASURE,-,Document Hash/Signature,rag::ingestion,SHA256 + optional signing,T-RAG-003,Planned
+C016,LLM04:2025,MEASURE,-,Agent Memory Validation,agents::memory,AgentMemoryProtection,T-AGT-001,Planned
+C017,LLM05:2025,MANAGE,Art 14 (Human Oversight),Schema Validation,output::schema,SchemaValidator with JSON Schema,T-OUT-001,Planned
+C018,LLM05:2025,MANAGE,-,HTML Sanitization,output::sanitizer,Ammonia-based HTML sanitizer,T-OUT-002,Planned
+C019,LLM05:2025,MANAGE,-,Terminal Escape Removal,output::sanitizer,ANSI escape code stripper,T-OUT-003,Planned
+C020,LLM05:2025,MANAGE,-,Code Output Guard,output::code_guard,CodeGuard with language filtering,T-OUT-004,Planned
+C021,LLM06:2025,MAP,Art 14 (Human Oversight),Tool Policy Schema,tools::policy,ToolPolicy YAML/JSON config,T-TOL-001,Planned
+C022,LLM06:2025,MANAGE,Art 14,Tool Execution Guard,tools::guard,ExecutionGuard with pre/post hooks,T-TOL-002,Planned
+C023,LLM06:2025,MEASURE,-,Tool Execution Audit,telemetry::audit,Tool call event logging,T-AUD-002,Planned
+C024,LLM06:2025,MANAGE,Art 14,Human Approval Workflow,tools::approval,ApprovalFlow for high-risk tools,T-TOL-003,Planned
+C025,LLM06:2025,MAP,-,MCP Session Binding,tools::mcp,MCPSecurityLayer session validation,T-MCP-001,Planned
+C026,LLM06:2025,MAP,-,MCP Token Binding,tools::mcp,Token origin validation,T-MCP-002,Planned
+C027,LLM06:2025,MANAGE,-,MCP Confused Deputy Prevention,tools::mcp,Session ID entropy + binding,T-MCP-003,Planned
+C028,LLM06:2025,MANAGE,-,Agent Delegation Tracking,agents::delegation,DelegationTracker chain recording,T-AGT-002,Planned
+C029,LLM06:2025,MANAGE,Art 14,Agent Autonomy Boundaries,agents::boundaries,AutonomyBoundaries with kill switch,T-AGT-003,Planned
+C030,LLM07:2025,MAP,-,System Prompt Fragmentation,prompt::guard,PromptGuard fragmentation strategy,T-PRM-001,Planned
+C031,LLM07:2025,MEASURE,-,Honeytoken Insertion,prompt::canaries,Honeytoken unique UUID generation,T-PRM-002,Planned
+C032,LLM07:2025,MEASURE,-,Honeytoken Detection (Egress),output::egress,EgressScanner honeytoken matching,T-EGR-002,Planned
+C033,LLM07:2025,MANAGE,-,Prompt Leakage Incident,telemetry::incident,Immediate incident trigger,T-INC-001,Planned
+C034,LLM08:2025,MAP,-,Vector Store Access Control,rag::embedding,EmbeddingSecurity ACLs,T-RAG-004,Planned
+C035,LLM08:2025,MAP,-,Tenant Isolation (RAG),rag::embedding,Multi-tenant query filtering,T-RAG-005,Planned
+C036,LLM08:2025,MEASURE,-,Embedding Inversion Detection,rag::embedding,Anomaly detection (future),T-RAG-006,Planned
+C037,LLM09:2025,MEASURE,-,Grounding Validator,output::grounding,GroundingValidator claim matching,T-OUT-005,Planned
+C038,LLM09:2025,MEASURE,-,Citation Generation,output::grounding,Automatic citation injection,T-OUT-006,Planned
+C039,LLM09:2025,MANAGE,-,Ungrounded Content Warning,output::grounding,Warning flag in metadata,T-OUT-007,Planned
+C040,LLM10:2025,MANAGE,-,Multi-Dimensional Rate Limiting,abuse::rate_limit,RateLimiter (user/session/global),T-ABU-001,Planned
+C041,LLM10:2025,MEASURE,-,Token/Cost Budget Tracking,abuse::cost,CostMonitor with thresholds,T-ABU-002,Planned
+C042,LLM10:2025,MANAGE,-,Recursion Guard,abuse::recursion,RecursionGuard depth/cycle detection,T-ABU-003,Planned
+C043,LLM10:2025,MANAGE,-,Circuit Breaker (External Services),abuse::circuit,CircuitBreaker state machine,T-ABU-004,Planned
+C044,-,MAP,-,Security Policy Configuration,config::policy,SecurityPolicy + PolicyBuilder,T-CFG-001,In Progress
+C045,-,GOVERN,-,Fail Mode Strategy,config::policy,FailMode enum (closed/open/log),T-CFG-002,In Progress
+C046,-,GOVERN,-,Environment Variable Override,config::policy,PolicyBuilder::with_env(),T-CFG-003,In Progress
+C047,-,MAP,-,Multi-Stage Security Pipeline,pipeline::core,SecurityPipeline framework,T-PIP-001,In Progress
+C048,-,MEASURE,-,Pipeline Stage Metadata,pipeline::core,SecurityContext metadata,T-PIP-002,In Progress
+C049,-,MEASURE,Art 12,Security Event Schema,telemetry::events,SecurityEvent structured types,T-TEL-002,Planned
+C050,-,MEASURE,Art 12,OTLP Metrics Export,telemetry::exporter,OTLPExporter configuration,T-TEL-003,Planned
+C051,-,MANAGE,-,Incident Orchestrator,telemetry::incident,IncidentOrchestrator triggers,T-INC-002,Planned
+C052,-,MEASURE,Art 12,Audit Log Encryption,telemetry::audit,JSONL with at-rest encryption,T-AUD-003,Planned
+C053,-,MEASURE,Art 12,Audit Log Retention Policy,telemetry::audit,Configurable retention periods,T-AUD-004,Planned
+C054,-,MAP,-,Content Moderation (External API),input::moderation,ModerationClient for remote APIs,T-MOD-001,Planned
+C055,-,MAP,-,Content Moderation (Local ONNX),input::moderation,ONNXModerator local inference,T-MOD-002,Planned
+C056,-,MAP,-,Input Normalization,input::normalization,InputNormalizer encoding/whitespace,T-NRM-001,Planned
+C057,-,GOVERN,-,Session Management,session::manager,SessionManager context isolation,T-SES-001,Planned
+C058,-,MEASURE,-,Corpus Scanner CLI,rag::scanner,Cargo xtask security scan-corpus,T-RAG-007,Planned
+C059,-,MEASURE,-,Adversarial Corpus Management,testing::corpus,AdversarialCorpus loader,T-TST-001,Planned
+C060,-,MEASURE,-,Attack Harness,testing::harness,AttackHarness automated testing,T-TST-002,Planned
+C061,-,MEASURE,-,Regression Test Suites,tests::regression,Comprehensive regression tests,T-TST-003,Planned
+C062,-,GOVERN,Art 15,Threat Model Documentation,docs/threat_model.md,Attack trees + playbooks,WS1-01,In Progress
+C063,-,GOVERN,-,Control Matrix (This File),docs/control_matrix.csv,Requirements → Implementation map,WS1-02,In Progress
+C064,-,GOVERN,-,Architecture Documentation,docs/architecture.md,Module design + integration,WS1-03,Planned
+C065,-,GOVERN,-,Integration Guide,docs/integration_guide.md,Adoption walkthrough,WS13-01,Planned
+C066,-,GOVERN,-,FAQ & Troubleshooting,docs/faq.md,Self-service support,WS13-04,Planned
+C067,-,GOVERN,-,Security Review Checklist,CONTRIBUTING.md,PR template security items,WS1-03,Planned
+C068,-,GOVERN,-,Vulnerability Disclosure Policy,SECURITY.md,Responsible disclosure process,WS1-03,Planned
+C069,-,MEASURE,-,Performance Benchmarks,benches/,Latency targets (<50ms P95),WS2-05,Planned
+C070,-,MEASURE,-,Feature Flag Management,Cargo.toml,Optional dependencies (ML/Redis),WS2-04,In Progress

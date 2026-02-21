@@ -117,6 +117,94 @@ We welcome various types of contributions:
   - `fix(channels): resolve version merge race condition`
   - `docs(message): add role validation examples`
 
+## 🔒 Security Review Requirements (wg-bastion)
+
+For contributions to the **wg-bastion** security crate, additional requirements apply:
+
+### Mandatory Security Review
+
+All PRs touching `wg-bastion/` must pass enhanced security review:
+
+1. **Unsafe Code Policy**
+   - `unsafe` blocks require explicit justification in code comments
+   - Memory safety analysis must be documented
+   - Requires approval from at least **two maintainers**
+   - Consider safer alternatives before using `unsafe`
+
+2. **Cryptography**
+   - No custom cryptographic implementations (use audited libraries like `ring`)
+   - Crypto primitives must be reviewed by maintainer with crypto expertise
+   - Use `zeroize` for secret data cleanup
+   - Document threat model assumptions
+
+3. **Dependency Review**
+   - New dependencies require security justification
+   - Check for recent activity and security track record
+   - `cargo-deny` must pass (licenses, advisories, duplicates)
+   - Prefer well-audited crates with active maintenance
+
+4. **Input Validation**
+   - All untrusted input must be validated
+   - Add adversarial test cases for injection attacks
+   - Document validation logic and assumptions
+   - Never trust external data (defense in depth)
+
+5. **Secret Handling**
+   - Secrets must be `zeroize`d after use
+   - No secrets in logs, errors, or telemetry
+   - PII handling must be documented
+   - Use structured logging to avoid accidental leakage
+
+6. **Error Messages**
+   - User-facing errors must not leak sensitive information
+   - No internal paths, credentials, or system details
+   - Provide generic security errors with internal logging
+   - Review all `Error` types for information disclosure
+
+7. **Testing Requirements**
+   - **Unit tests**: Required for all security functions
+   - **Adversarial tests**: Required for threat detection logic
+   - **Regression tests**: Required when fixing security bugs
+   - **Attack harness**: Integration with adversarial corpus
+
+8. **Documentation Requirements**
+   - Update threat model (`docs/threat_model.md`) if attack surface changes
+   - Update control matrix (`docs/control_matrix.csv`) with test IDs
+   - Add attack playbooks for new threat categories
+   - Document security assumptions and limitations
+
+### CI Requirements
+
+All wg-bastion PRs must pass:
+
+- `cargo test` – All tests pass
+- `cargo clippy` – No warnings
+- `cargo fmt --check` – Formatting consistent
+- `cargo audit` – No known vulnerabilities
+- `cargo deny check` – License/advisory compliance
+- Attack harness (when implemented) – >95% detection rate
+
+### Pre-Merge Checklist
+
+Before merging security-critical PRs:
+
+- [ ] Security review by at least two maintainers
+- [ ] All adversarial tests pass
+- [ ] Threat model updated (if applicable)
+- [ ] Control matrix updated with test IDs
+- [ ] No sensitive data in logs or errors
+- [ ] Performance benchmarks acceptable (<50ms P95 target)
+- [ ] Documentation complete and accurate
+
+### Vulnerability Disclosure
+
+If you discover a security vulnerability:
+
+- **DO NOT** open a public issue
+- Report privately to `security@example.com` (see `SECURITY.md`)
+- Allow time for coordinated disclosure
+- Follow responsible disclosure practices
+
 ### 📝 Documentation
 
 - Improve existing documentation clarity
