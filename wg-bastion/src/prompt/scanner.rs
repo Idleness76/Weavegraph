@@ -25,7 +25,7 @@ pub enum PatternCategory {
     AwsKey,
     /// Google Cloud Platform API key.
     GcpKey,
-    /// OpenAI API key.
+    /// `OpenAI` API key.
     OpenAiKey,
     /// Anthropic API key.
     AnthropicKey,
@@ -322,6 +322,7 @@ const BUILTIN_PATTERNS: &[BuiltinPattern] = &[
 /// Calculate byte-level Shannon entropy of the given data.
 ///
 /// Returns bits per byte in \[0.0, 8.0\].  An empty slice returns 0.0.
+#[allow(clippy::cast_precision_loss)] // Precision loss is negligible for Shannon entropy calculation
 fn shannon_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
@@ -367,7 +368,7 @@ impl TemplateScanner {
     /// # Errors
     ///
     /// Returns [`ScanError::RegexCompilation`] if any pattern regex is invalid.
-    pub fn new(config: ScannerConfig) -> Result<Self, ScanError> {
+    pub fn new(config: &ScannerConfig) -> Result<Self, ScanError> {
         let mut regex_strings = Vec::new();
         let mut patterns = Vec::new();
         let mut needs_entropy = Vec::new();
@@ -412,11 +413,10 @@ impl TemplateScanner {
         }
 
         // Compile RegexSet
-        let regex_set =
-            RegexSet::new(&regex_strings).map_err(|e| ScanError::RegexCompilation {
-                pattern_id: "regex_set".into(),
-                reason: e.to_string(),
-            })?;
+        let regex_set = RegexSet::new(&regex_strings).map_err(|e| ScanError::RegexCompilation {
+            pattern_id: "regex_set".into(),
+            reason: e.to_string(),
+        })?;
 
         Ok(Self {
             regex_set,
@@ -436,7 +436,7 @@ impl TemplateScanner {
     /// Returns [`ScanError::RegexCompilation`] if a built-in pattern is invalid
     /// (should never happen).
     pub fn with_defaults() -> Result<Self, ScanError> {
-        Self::new(ScannerConfig::default())
+        Self::new(&ScannerConfig::default())
     }
 
     /// Scan the given template text for embedded secrets.
@@ -489,7 +489,14 @@ fn redact(s: &str) -> String {
         return "*".repeat(s.len());
     }
     let first: String = s.chars().take(4).collect();
-    let last: String = s.chars().rev().take(2).collect::<Vec<_>>().into_iter().rev().collect();
+    let last: String = s
+        .chars()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     format!("{first}***{last}")
 }
 
@@ -497,7 +504,7 @@ fn redact(s: &str) -> String {
 
 #[async_trait]
 impl GuardrailStage for TemplateScanner {
-    fn id(&self) -> &str {
+    fn id(&self) -> &'static str {
         "template_scanner"
     }
 
@@ -598,9 +605,7 @@ mod tests {
     #[test]
     fn no_false_positives_on_benign_text() {
         let scanner = TemplateScanner::with_defaults().unwrap();
-        let findings = scanner
-            .scan("Hello world, how are you today?")
-            .unwrap();
+        let findings = scanner.scan("Hello world, how are you today?").unwrap();
         assert!(findings.is_empty(), "unexpected findings: {findings:?}");
     }
 
@@ -642,7 +647,7 @@ mod tests {
                 severity: Severity::High,
             })
             .build();
-        let scanner = TemplateScanner::new(config).unwrap();
+        let scanner = TemplateScanner::new(&config).unwrap();
         let findings = scanner.scan("key=MYSECRET_ABCDEFGHIJ").unwrap();
         assert!(findings.iter().any(|f| f.pattern_id == "custom-secret"));
     }

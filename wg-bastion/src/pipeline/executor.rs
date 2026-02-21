@@ -623,14 +623,9 @@ mod tests {
             _ctx: &SecurityContext,
         ) -> Result<StageOutcome, StageError> {
             match content {
-                Content::Text(s) if s == self.expected_text => {
-                    Ok(StageOutcome::allow(1.0))
-                }
+                Content::Text(s) if s == self.expected_text => Ok(StageOutcome::allow(1.0)),
                 other => Ok(StageOutcome::block(
-                    format!(
-                        "expected text '{}', got {:?}",
-                        self.expected_text, other
-                    ),
+                    format!("expected text '{}', got {:?}", self.expected_text, other),
                     Severity::High,
                 )),
             }

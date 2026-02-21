@@ -88,9 +88,9 @@ pub mod pipeline;
 
 // Phase 2 (prompt & injection security)
 #[cfg(feature = "heuristics")]
-pub mod prompt;
-#[cfg(feature = "heuristics")]
 pub mod input;
+#[cfg(feature = "heuristics")]
+pub mod prompt;
 
 // Phase 3+ (output, tools, rag, agents, abuse, telemetry)
 // #[cfg(feature = "heuristics")]
@@ -123,22 +123,22 @@ pub mod prelude {
     pub use crate::pipeline::compat::LegacyAdapter;
 
     // Phase 2: Prompt protection types
-    #[cfg(feature = "heuristics")]
-    pub use crate::prompt::scanner::{ScannerConfig, SecretFinding, TemplateScanner};
-    #[cfg(feature = "heuristics")]
-    pub use crate::prompt::template::{SecureTemplate, TemplateError};
+    #[cfg(all(feature = "heuristics", feature = "honeytoken"))]
+    pub use crate::prompt::honeytoken::{HoneytokenDetection, HoneytokenStore};
     #[cfg(feature = "heuristics")]
     pub use crate::prompt::isolation::{IsolationConfig, RoleIsolation};
     #[cfg(feature = "heuristics")]
     pub use crate::prompt::refusal::{RefusalAction, RefusalMode, RefusalPolicy};
-    #[cfg(all(feature = "heuristics", feature = "honeytoken"))]
-    pub use crate::prompt::honeytoken::{HoneytokenDetection, HoneytokenStore};
+    #[cfg(feature = "heuristics")]
+    pub use crate::prompt::scanner::{ScannerConfig, SecretFinding, TemplateScanner};
+    #[cfg(feature = "heuristics")]
+    pub use crate::prompt::template::{SecureTemplate, TemplateError};
 
     // Phase 2: Input validation types
+    #[cfg(feature = "heuristics")]
+    pub use crate::input::ensemble::EnsembleScorer;
     #[cfg(feature = "heuristics")]
     pub use crate::input::injection::InjectionStage;
     #[cfg(feature = "heuristics")]
     pub use crate::input::normalization::NormalizationStage;
-    #[cfg(feature = "heuristics")]
-    pub use crate::input::ensemble::EnsembleScorer;
 }

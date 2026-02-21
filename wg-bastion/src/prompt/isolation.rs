@@ -149,6 +149,16 @@ pub struct BoundaryViolation {
     pub severity: Severity,
 }
 
+// ── MarkerHit (used by detect_boundary_violation) ──────────────────────
+
+/// A single marker-like substring found during boundary scanning.
+#[derive(Debug)]
+struct MarkerHit {
+    pos: usize,
+    len: usize,
+    is_start: bool,
+}
+
 // ── RoleIsolation ──────────────────────────────────────────────────────
 
 /// System prompt boundary marker with per-instance randomization.
@@ -220,13 +230,6 @@ impl RoleIsolation {
         let lower = text.to_lowercase();
         let prefix_lower = self.config.marker_prefix.to_lowercase();
         let suffix_lower = self.config.marker_suffix.to_lowercase();
-
-        #[derive(Debug)]
-        struct MarkerHit {
-            pos: usize,
-            len: usize,
-            is_start: bool,
-        }
 
         // Collect all marker-like hits (case-insensitive).
         let mut hits: Vec<MarkerHit> = Vec::new();
@@ -302,8 +305,8 @@ impl RoleIsolation {
         }
 
         // Remaining unclosed start markers.
-        if depth > 0 {
-            if let Some(last_start) = hits.iter().rev().find(|h| h.is_start) {
+        if depth > 0
+            && let Some(last_start) = hits.iter().rev().find(|h| h.is_start) {
                 violations.push(BoundaryViolation {
                     violation_type: ViolationType::UnmatchedMarker,
                     position: last_start.pos..last_start.pos + last_start.len,
@@ -311,7 +314,6 @@ impl RoleIsolation {
                     severity: Severity::Medium,
                 });
             }
-        }
 
         violations
     }
@@ -321,7 +323,7 @@ impl RoleIsolation {
 
 #[async_trait]
 impl GuardrailStage for RoleIsolation {
-    fn id(&self) -> &str {
+    fn id(&self) -> &'static str {
         "role_isolation"
     }
 
@@ -375,16 +377,18 @@ impl GuardrailStage for RoleIsolation {
 /// entropy source. Not cryptographically secure — only used for
 /// per-session marker uniqueness.
 fn generate_hex_suffix(len: usize) -> String {
-    let nanos = SystemTime::now()
+    let nanos = u64::from(SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .subsec_nanos() as u64;
+        .subsec_nanos());
 
     // Mix in the stack address for extra entropy between rapid calls.
-    let stack_val: u64 = &nanos as *const u64 as u64;
-    let mixed = nanos.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(stack_val);
+    let stack_val: u64 = &raw const nanos as u64;
+    let mixed = nanos
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(stack_val);
 
-    format!("{mixed:0>width$x}", width = len)
+    format!("{mixed:0>len$x}")
         .chars()
         .rev()
         .take(len)

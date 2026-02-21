@@ -8,8 +8,8 @@
 use crate::pipeline::content::Content;
 use crate::pipeline::outcome::Severity;
 use aho_corasick::AhoCorasick;
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
-use ring::hkdf::{Salt, HKDF_SHA256};
+use ring::aead::{AES_256_GCM, Aad, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
+use ring::hkdf::{HKDF_SHA256, Salt};
 use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::fmt;
@@ -74,12 +74,13 @@ impl fmt::Debug for KeySource {
 fn resolve_key(source: &KeySource) -> Result<Zeroizing<Vec<u8>>, HoneytokenError> {
     match source {
         KeySource::EnvVar(var) => {
-            let val = std::env::var(var).map_err(|_| HoneytokenError::KeyNotFound {
+            let env_value = std::env::var(var).map_err(|_| HoneytokenError::KeyNotFound {
                 env_var: var.clone(),
             })?;
-            let bytes = hex_decode(&val).map_err(|_| HoneytokenError::InvalidKeyMaterial {
-                reason: format!("environment variable '{var}' does not contain valid hex"),
-            })?;
+            let bytes =
+                hex_decode(&env_value).map_err(|()| HoneytokenError::InvalidKeyMaterial {
+                    reason: format!("environment variable '{var}' does not contain valid hex"),
+                })?;
             Ok(Zeroizing::new(bytes))
         }
         KeySource::Bytes(bytes) => Ok(bytes.clone()),
@@ -260,15 +261,16 @@ fn derive_subkey(
     len: usize,
 ) -> Result<Zeroizing<Vec<u8>>, HoneytokenError> {
     let info_refs = [info];
-    let okm = prk
-        .expand(&info_refs, HkdfKeyLen(len))
-        .map_err(|_| HoneytokenError::InvalidKeyMaterial {
+    let okm = prk.expand(&info_refs, HkdfKeyLen(len)).map_err(|_| {
+        HoneytokenError::InvalidKeyMaterial {
             reason: "HKDF expand failed".into(),
-        })?;
-    let mut out = Zeroizing::new(vec![0u8; len]);
-    okm.fill(&mut out).map_err(|_| HoneytokenError::InvalidKeyMaterial {
-        reason: "HKDF fill failed".into(),
+        }
     })?;
+    let mut out = Zeroizing::new(vec![0u8; len]);
+    okm.fill(&mut out)
+        .map_err(|_| HoneytokenError::InvalidKeyMaterial {
+            reason: "HKDF fill failed".into(),
+        })?;
     Ok(out)
 }
 
@@ -311,12 +313,11 @@ fn decrypt_impl(key: &LessSafeKey, ciphertext: &[u8]) -> Result<Vec<u8>, Honeyto
     }
 
     let (nonce_bytes, ct_and_tag) = ciphertext.split_at(NONCE_LEN);
-    let nonce =
-        Nonce::try_assume_unique_for_key(nonce_bytes).map_err(|_| {
-            HoneytokenError::DecryptionFailed {
-                reason: "invalid nonce length".into(),
-            }
-        })?;
+    let nonce = Nonce::try_assume_unique_for_key(nonce_bytes).map_err(|_| {
+        HoneytokenError::DecryptionFailed {
+            reason: "invalid nonce length".into(),
+        }
+    })?;
 
     let mut buf = ct_and_tag.to_vec();
     let plaintext = key
@@ -385,11 +386,8 @@ fn nearest_char_boundary(s: &str, pos: usize) -> usize {
     p
 }
 
-fn random_indices(
-    rng: &SystemRandom,
-    max: usize,
-    n: usize,
-) -> Result<Vec<usize>, HoneytokenError> {
+#[allow(clippy::cast_possible_truncation)] // modular index: truncation is harmless
+fn random_indices(rng: &SystemRandom, max: usize, n: usize) -> Result<Vec<usize>, HoneytokenError> {
     let n = n.min(max);
     let mut selected = Vec::with_capacity(n);
     let mut attempts = 0;
@@ -435,7 +433,7 @@ impl fmt::Debug for HoneytokenStore {
         f.debug_struct("HoneytokenStore")
             .field("pool_size", &pool_size)
             .field("config", &self.config)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -463,12 +461,11 @@ impl HoneytokenStore {
         let enc_key_bytes = derive_subkey(&prk, ENC_INFO, AES_KEY_LEN)?;
         let hmac_key_bytes = derive_subkey(&prk, HMAC_INFO, HMAC_KEY_LEN)?;
 
-        let unbound =
-            UnboundKey::new(&AES_256_GCM, &enc_key_bytes).map_err(|_| {
-                HoneytokenError::InvalidKeyMaterial {
-                    reason: "failed to create AES-256-GCM unbound key".into(),
-                }
-            })?;
+        let unbound = UnboundKey::new(&AES_256_GCM, &enc_key_bytes).map_err(|_| {
+            HoneytokenError::InvalidKeyMaterial {
+                reason: "failed to create AES-256-GCM unbound key".into(),
+            }
+        })?;
         let enc_key = LessSafeKey::new(unbound);
         let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &hmac_key_bytes);
         let rng = SystemRandom::new();
@@ -502,6 +499,10 @@ impl HoneytokenStore {
     ///
     /// Returns the modified prompt and the IDs of injected tokens.
     ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    ///
     /// # Errors
     ///
     /// Returns [`HoneytokenError::EncryptionFailed`] if random selection fails.
@@ -510,8 +511,7 @@ impl HoneytokenStore {
         prompt: &str,
     ) -> Result<(String, Vec<String>), HoneytokenError> {
         let state = self.state.read().unwrap();
-        let active: Vec<&Honeytoken> =
-            state.tokens.iter().filter(|t| !t.detection_only).collect();
+        let active: Vec<&Honeytoken> = state.tokens.iter().filter(|t| !t.detection_only).collect();
 
         if active.is_empty() {
             return Ok((prompt.to_owned(), Vec::new()));
@@ -551,7 +551,11 @@ impl HoneytokenStore {
     }
 
     /// Scan LLM output for leaked honeytokens using Aho-Corasick.
-    pub fn detect_in_output(&self, output: &Content) -> Vec<HoneytokenDetection> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
+    #[must_use] pub fn detect_in_output(&self, output: &Content) -> Vec<HoneytokenDetection> {
         let text = output.as_text();
         let state = self.state.read().unwrap();
 
@@ -571,6 +575,10 @@ impl HoneytokenStore {
 
     /// Rotate: generate new tokens, mark old ones as detection-only,
     /// and rebuild the detection automaton.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
     ///
     /// # Errors
     ///
@@ -677,7 +685,10 @@ mod tests {
         let (token_id, leaked) = {
             let state = store.state.read().unwrap();
             let t = &state.tokens[0];
-            (t.id.clone(), format!("The answer is {} and more", &*t.plaintext))
+            (
+                t.id.clone(),
+                format!("The answer is {} and more", &*t.plaintext),
+            )
         };
 
         let detections = store.detect_in_output(&Content::Text(leaked));
@@ -738,8 +749,7 @@ mod tests {
     fn random_text_no_false_positives() {
         let store = make_store(50);
         let benign = Content::Text(
-            "The quick brown fox jumps over the lazy dog. Nothing suspicious here."
-                .into(),
+            "The quick brown fox jumps over the lazy dog. Nothing suspicious here.".into(),
         );
         let detections = store.detect_in_output(&benign);
         assert!(

@@ -22,6 +22,7 @@ use crate::pipeline::stage::{GuardrailStage, SecurityContext};
 /// Configuration for the [`NormalizationStage`].
 ///
 /// Uses a builder pattern — all setters are `#[must_use]`.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct NormalizationConfig {
@@ -183,17 +184,14 @@ fn do_strip_control_chars(input: &str) -> Cow<'_, str> {
 /// Fast path: if the text is already in NFKC form, returns `Cow::Borrowed`.
 fn normalize_nfkc(input: &str) -> Cow<'_, str> {
     use unicode_normalization::UnicodeNormalization;
-    use unicode_normalization::{is_nfkc_quick, IsNormalized};
+    use unicode_normalization::{IsNormalized, is_nfkc_quick};
 
-    match is_nfkc_quick(input.chars()) {
-        IsNormalized::Yes => Cow::Borrowed(input),
-        _ => {
-            let normalized: String = input.nfkc().collect();
-            if normalized == input {
-                Cow::Borrowed(input)
-            } else {
-                Cow::Owned(normalized)
-            }
+    if is_nfkc_quick(input.chars()) == IsNormalized::Yes { Cow::Borrowed(input) } else {
+        let normalized: String = input.nfkc().collect();
+        if normalized == input {
+            Cow::Borrowed(input)
+        } else {
+            Cow::Owned(normalized)
         }
     }
 }
@@ -204,7 +202,7 @@ fn normalize_nfkc(input: &str) -> Cow<'_, str> {
 /// All other tags are removed but their text content is preserved.
 #[cfg(feature = "normalization-html")]
 fn strip_html_lol(input: &str) -> Result<String, String> {
-    use lol_html::{element, HtmlRewriter, Settings};
+    use lol_html::{HtmlRewriter, Settings, element};
 
     let mut output = Vec::with_capacity(input.len());
 
@@ -236,21 +234,18 @@ fn strip_html_lol(input: &str) -> Result<String, String> {
 
 /// Regex-based fallback for HTML stripping.
 fn strip_html_regex(input: &str) -> Cow<'_, str> {
-    if !input.contains('<') {
-        return Cow::Borrowed(input);
-    }
-
     use regex::Regex;
     use std::sync::LazyLock;
 
-    static SCRIPT_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)<script\b[^>]*>.*?</script\s*>").unwrap()
-    });
-    static STYLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?is)<style\b[^>]*>.*?</style\s*>").unwrap()
-    });
-    static TAG_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
+    static SCRIPT_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<script\b[^>]*>.*?</script\s*>").unwrap());
+    static STYLE_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?is)<style\b[^>]*>.*?</style\s*>").unwrap());
+    static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
+
+    if !input.contains('<') {
+        return Cow::Borrowed(input);
+    }
 
     let after_scripts: String = SCRIPT_RE.replace_all(input, "").into_owned();
     let after_styles: String = STYLE_RE.replace_all(&after_scripts, "").into_owned();
@@ -460,7 +455,7 @@ fn normalize_json_value(
 
 #[async_trait]
 impl GuardrailStage for NormalizationStage {
-    fn id(&self) -> &str {
+    fn id(&self) -> &'static str {
         "normalization"
     }
 
@@ -479,8 +474,7 @@ impl GuardrailStage for NormalizationStage {
     ) -> Result<StageOutcome, StageError> {
         match content {
             Content::Text(text) => {
-                let (normalized, changed, _warnings) =
-                    normalize_text(text, &self.config);
+                let (normalized, changed, _warnings) = normalize_text(text, &self.config);
                 if changed {
                     Ok(StageOutcome::transform(
                         Content::Text(normalized.into_owned()),
@@ -496,8 +490,7 @@ impl GuardrailStage for NormalizationStage {
                 let new_msgs: Vec<Message> = msgs
                     .iter()
                     .map(|m| {
-                        let (normalized, changed, _) =
-                            normalize_text(&m.content, &self.config);
+                        let (normalized, changed, _) = normalize_text(&m.content, &self.config);
                         if changed {
                             any_changed = true;
                             Message {
@@ -525,8 +518,7 @@ impl GuardrailStage for NormalizationStage {
                 let new_chunks: Vec<RetrievedChunk> = chunks
                     .iter()
                     .map(|c| {
-                        let (normalized, changed, _) =
-                            normalize_text(&c.text, &self.config);
+                        let (normalized, changed, _) = normalize_text(&c.text, &self.config);
                         if changed {
                             any_changed = true;
                             RetrievedChunk {
@@ -555,8 +547,7 @@ impl GuardrailStage for NormalizationStage {
                 tool_name,
                 arguments,
             } => {
-                let (new_args, changed) =
-                    normalize_json_value(arguments, &self.config);
+                let (new_args, changed) = normalize_json_value(arguments, &self.config);
                 if changed {
                     Ok(StageOutcome::transform(
                         Content::ToolCall {
@@ -571,8 +562,7 @@ impl GuardrailStage for NormalizationStage {
             }
 
             Content::ToolResult { tool_name, result } => {
-                let (new_result, changed) =
-                    normalize_json_value(result, &self.config);
+                let (new_result, changed) = normalize_json_value(result, &self.config);
                 if changed {
                     Ok(StageOutcome::transform(
                         Content::ToolResult {

@@ -42,7 +42,7 @@ impl Default for AnyAboveThreshold {
 }
 
 impl EnsembleStrategy for AnyAboveThreshold {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "any_above_threshold"
     }
 
@@ -73,7 +73,7 @@ impl Default for WeightedAverage {
 }
 
 impl EnsembleStrategy for WeightedAverage {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "weighted_average"
     }
 
@@ -84,11 +84,7 @@ impl EnsembleStrategy for WeightedAverage {
         let mut weighted_sum = 0.0_f32;
         let mut weight_total = 0.0_f32;
         for (id, score) in scores {
-            let w = self
-                .weights
-                .get(*id)
-                .copied()
-                .unwrap_or(1.0);
+            let w = self.weights.get(*id).copied().unwrap_or(1.0);
             weighted_sum += w * score;
             weight_total += w;
         }
@@ -114,10 +110,11 @@ impl Default for MajorityVote {
 }
 
 impl EnsembleStrategy for MajorityVote {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "majority_vote"
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn combine(&self, scores: &[(&str, f32)]) -> f32 {
         let above = scores.iter().filter(|(_, s)| *s > 0.5).count();
         if above >= self.min_detectors {
@@ -149,7 +146,7 @@ impl Default for MaxScore {
 }
 
 impl EnsembleStrategy for MaxScore {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "max_score"
     }
 
@@ -223,7 +220,7 @@ impl EnsembleScorer {
     }
 
     /// Create a scorer from a pre-boxed strategy.
-    pub fn from_boxed(strategy: Box<dyn EnsembleStrategy>) -> Self {
+    #[must_use] pub fn from_boxed(strategy: Box<dyn EnsembleStrategy>) -> Self {
         Self { strategy }
     }
 
@@ -261,7 +258,7 @@ impl EnsembleScorer {
             )
         };
 
-        let s_details = format!("overall structural risk {:.2}", s_score);
+        let s_details = format!("overall structural risk {s_score:.2}");
 
         let detector_scores = vec![
             DetectorScore {
@@ -312,30 +309,10 @@ impl EnsembleScorer {
 
     /// Resolve the effective threshold for the active strategy.
     fn resolve_threshold(&self) -> f32 {
-        // Use strategy name to infer threshold. The built-in strategies
-        // embed their threshold, but we cannot downcast a trait object
-        // without `Any`. Instead, the `combine` output is compared
-        // against a conventional threshold.
-        //
-        // For `MajorityVote` the combine fn already encodes the vote
-        // logic (returns max when enough votes, average otherwise), so
-        // we use 0.5 as threshold.
         match self.strategy.name() {
-            "any_above_threshold" | "max_score" => {
-                // We need the actual threshold from the strategy. Since
-                // the default `with_defaults` uses 0.7 and the user
-                // controls construction, we store it via combine's
-                // behaviour. Here we use 0.7 as conventional default.
-                //
-                // NOTE: For exact per-instance thresholds, callers
-                // should construct strategies with the desired value.
-                // The combine() output already reflects the strategy's
-                // semantics; we just need *some* cutoff here.
-                0.7
-            }
-            "weighted_average" => 0.7,
-            "majority_vote" => 0.5,
-            _ => 0.5, // conservative default for custom strategies
+            "any_above_threshold" | "max_score" | "weighted_average" => 0.7,
+            // "majority_vote" and custom strategies default to 0.5.
+            _ => 0.5,
         }
     }
 }
@@ -482,11 +459,7 @@ mod tests {
     #[test]
     fn score_normalization_capped_at_one() {
         let scorer = EnsembleScorer::new(AnyAboveThreshold { threshold: 0.7 });
-        let matches = vec![
-            pattern_match(0.8),
-            pattern_match(0.7),
-            pattern_match(0.9),
-        ];
+        let matches = vec![pattern_match(0.8), pattern_match(0.7), pattern_match(0.9)];
         let structural = structural_report(0.1);
         let result = scorer.score(&matches, &structural);
         // Heuristic score should be capped at 1.0 even though sum is 2.4.

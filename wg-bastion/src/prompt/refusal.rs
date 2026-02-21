@@ -236,7 +236,7 @@ impl RefusalPolicy {
     /// Create a policy with sensible defaults:
     ///
     /// - `Low` → Redact
-    /// - `Medium` → SafeResponse
+    /// - `Medium` → `SafeResponse`
     /// - `High` / `Critical` → Block
     #[must_use]
     pub fn with_defaults() -> Self {
@@ -289,11 +289,7 @@ impl RefusalPolicy {
     /// For Block outcomes, returns a [`RefusalAction`] with the appropriate
     /// mode, response text, and optional audit entry.
     #[must_use]
-    pub fn apply(
-        &self,
-        outcome: &StageOutcome,
-        ctx: &SecurityContext,
-    ) -> Option<RefusalAction> {
+    pub fn apply(&self, outcome: &StageOutcome, ctx: &SecurityContext) -> Option<RefusalAction> {
         let (reason, severity) = match outcome {
             StageOutcome::Block { reason, severity } => (reason.as_str(), *severity),
             _ => return None,
@@ -483,7 +479,10 @@ mod tests {
         let outcome = block_outcome(reason, Severity::Critical);
         let action = policy.apply(&outcome, &ctx()).unwrap();
 
-        let audit = action.audit_entry.as_ref().expect("audit should be present");
+        let audit = action
+            .audit_entry
+            .as_ref()
+            .expect("audit should be present");
         // Reason hash must NOT contain the raw reason text
         assert!(!audit.reason_hash.contains("secret"));
         assert!(!audit.reason_hash.contains("API"));

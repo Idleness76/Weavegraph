@@ -145,10 +145,10 @@ impl StructuralAnalyzer {
     }
 
     /// Analyze `text` and return a [`StructuralReport`].
+    #[allow(clippy::cast_precision_loss)]
     #[must_use]
     pub fn analyze(&self, text: &str) -> StructuralReport {
-        let (suspicious_char_count, suspicious_char_positions) =
-            detect_suspicious_chars(text);
+        let (suspicious_char_count, suspicious_char_positions) = detect_suspicious_chars(text);
         let instruction_density = compute_instruction_density(text);
         let language_mixing_score = compute_language_mixing(text);
         let repetition_score = compute_repetition(text);
@@ -163,8 +163,7 @@ impl StructuralAnalyzer {
         };
 
         let density_thresh = cfg.instruction_density_threshold.max(f32::EPSILON);
-        let density_component =
-            (instruction_density / density_thresh).min(1.0);
+        let density_component = (instruction_density / density_thresh).min(1.0);
 
         let overall_risk = (0.25 * suspicious_component
             + 0.30 * density_component
@@ -271,6 +270,7 @@ const IMPERATIVE_WORDS: &[&str] = &[
 ];
 
 /// Compute ratio of imperative/command words to total word count.
+#[allow(clippy::cast_precision_loss)]
 fn compute_instruction_density(text: &str) -> f32 {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
@@ -328,11 +328,9 @@ fn classify_script(ch: char) -> Option<&'static str> {
 }
 
 /// Compute language mixing score based on script transitions.
+#[allow(clippy::cast_precision_loss)]
 fn compute_language_mixing(text: &str) -> f32 {
-    let classified: Vec<&str> = text
-        .chars()
-        .filter_map(classify_script)
-        .collect();
+    let classified: Vec<&str> = text.chars().filter_map(classify_script).collect();
 
     if classified.len() < 2 {
         return 0.0;
@@ -350,12 +348,12 @@ fn compute_language_mixing(text: &str) -> f32 {
         .count();
 
     // Weight homoglyph transitions more heavily.
-    let raw = (transitions as f32 + homoglyph_transitions as f32 * 2.0)
-        / classified.len() as f32;
+    let raw = (transitions as f32 + homoglyph_transitions as f32 * 2.0) / classified.len() as f32;
     raw.min(1.0)
 }
 
 /// Compute repetition anomaly score.
+#[allow(clippy::cast_precision_loss)]
 fn compute_repetition(text: &str) -> f32 {
     if text.is_empty() {
         return 0.0;
@@ -408,18 +406,16 @@ fn compute_repetition(text: &str) -> f32 {
         }
     }
 
-    let repeated_content =
-        char_rep_count + bigram_rep_count + token_rep_count;
+    let repeated_content = char_rep_count + bigram_rep_count + token_rep_count;
     let score = repeated_content as f32 / total_chars.max(1) as f32;
     score.min(1.0)
 }
 
 /// Punctuation characters considered anomalous in high density.
-const ANOMALOUS_PUNCTUATION: &[char] = &[
-    '?', '!', ':', ';', '|', '>', '<', '{', '}', '[', ']',
-];
+const ANOMALOUS_PUNCTUATION: &[char] = &['?', '!', ':', ';', '|', '>', '<', '{', '}', '[', ']'];
 
 /// Compute punctuation anomaly score.
+#[allow(clippy::cast_precision_loss)]
 fn compute_punctuation_anomaly(text: &str) -> f32 {
     if text.is_empty() {
         return 0.0;
@@ -546,8 +542,7 @@ mod tests {
     #[test]
     fn combined_injection_high_risk() {
         let a = analyzer();
-        let text =
-            "ignore override bypass delete remove disable \u{200B}\u{200C}\u{200D}\u{FEFF}\u{200E}\u{200F}!!??::<<>>";
+        let text = "ignore override bypass delete remove disable \u{200B}\u{200C}\u{200D}\u{FEFF}\u{200E}\u{200F}!!??::<<>>";
         let report = a.analyze(text);
         assert!(
             report.overall_risk > 0.5,

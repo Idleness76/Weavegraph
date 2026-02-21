@@ -196,12 +196,11 @@ fn parse_placeholder(
                 Some(c) if c.contains('-') => {
                     // Handle negative numbers: split on the pattern "number-number"
                     // We need to find the separator '-' that is between two numbers.
-                    let parts = parse_number_range(c).ok_or_else(|| {
-                        TemplateError::InvalidPlaceholder {
+                    let parts =
+                        parse_number_range(c).ok_or_else(|| TemplateError::InvalidPlaceholder {
                             position,
                             reason: format!("invalid number range: '{c}'"),
-                        }
-                    })?;
+                        })?;
                     (Some(parts.0), Some(parts.1))
                 }
                 Some(c) => {
@@ -227,7 +226,7 @@ fn parse_placeholder(
                 .split('|')
                 .map(|s| s.trim().to_owned())
                 .collect::<Vec<_>>();
-            if values.is_empty() || values.iter().any(|v| v.is_empty()) {
+            if values.is_empty() || values.iter().any(std::string::String::is_empty) {
                 return Err(TemplateError::InvalidPlaceholder {
                     position,
                     reason: "enum values must not be empty".into(),
@@ -240,7 +239,7 @@ fn parse_placeholder(
         }
         "json" => Ok(Placeholder::Json {
             name: name.to_owned(),
-            schema_hint: constraint.map(|s| s.to_owned()),
+            schema_hint: constraint.map(std::borrow::ToOwned::to_owned),
         }),
         other => Err(TemplateError::InvalidPlaceholder {
             position,
@@ -252,7 +251,7 @@ fn parse_placeholder(
 /// Parse a range like "0-100" into (min, max).
 fn parse_number_range(s: &str) -> Option<(f64, f64)> {
     // Find the separator dash. Skip a leading '-' (negative min).
-    let search_start = if s.starts_with('-') { 1 } else { 0 };
+    let search_start = usize::from(s.starts_with('-'));
     let sep = s[search_start..].find('-').map(|i| i + search_start)?;
     let min = s[..sep].parse::<f64>().ok()?;
     let max = s[sep + 1..].parse::<f64>().ok()?;
@@ -287,6 +286,11 @@ impl SecureTemplate {
     ///
     /// Returns [`TemplateError::InvalidPlaceholder`] or [`TemplateError::ParseError`]
     /// if the template contains malformed placeholder syntax.
+    ///
+    /// # Panics
+    ///
+    /// Calls `.unwrap()` on `caps.get(0)`, which is guaranteed to succeed because
+    /// capture group 0 always exists when the regex matches.
     pub fn compile(template: &str) -> Result<Self, TemplateError> {
         let re = placeholder_regex();
         let mut placeholders = Vec::new();
@@ -319,6 +323,11 @@ impl SecureTemplate {
     /// # Errors
     ///
     /// Returns a [`TemplateError`] if validation fails for any value.
+    ///
+    /// # Panics
+    ///
+    /// Calls `.unwrap()` on `caps.get(0)`, which is guaranteed to succeed because
+    /// capture group 0 always exists when the regex matches.
     pub fn render(
         &self,
         values: impl IntoIterator<Item = (impl AsRef<str>, impl AsRef<str>)>,
@@ -329,83 +338,7 @@ impl SecureTemplate {
             .collect();
 
         // Validate all placeholders against supplied values.
-        for ph in &self.placeholders {
-            let value = map.get(ph.name());
-            match ph {
-                Placeholder::Text {
-                    name,
-                    max_length,
-                    required,
-                } => {
-                    if *required && value.is_none() {
-                        return Err(TemplateError::MissingRequired {
-                            name: name.clone(),
-                        });
-                    }
-                    if let Some(v) = value {
-                        if v.chars().count() > *max_length {
-                            return Err(TemplateError::ExceedsMaxLength {
-                                name: name.clone(),
-                                actual: v.chars().count(),
-                                max: *max_length,
-                            });
-                        }
-                    }
-                }
-                Placeholder::Number { name, min, max } => {
-                    if let Some(v) = value {
-                        let num = v.parse::<f64>().map_err(|_| TemplateError::InvalidType {
-                            name: name.clone(),
-                            expected: "number".into(),
-                            actual: v.clone(),
-                        })?;
-                        if let Some(lo) = min {
-                            if num < *lo {
-                                return Err(TemplateError::InvalidType {
-                                    name: name.clone(),
-                                    expected: format!("number >= {lo}"),
-                                    actual: v.clone(),
-                                });
-                            }
-                        }
-                        if let Some(hi) = max {
-                            if num > *hi {
-                                return Err(TemplateError::InvalidType {
-                                    name: name.clone(),
-                                    expected: format!("number <= {hi}"),
-                                    actual: v.clone(),
-                                });
-                            }
-                        }
-                    }
-                }
-                Placeholder::Enum {
-                    name,
-                    allowed_values,
-                } => {
-                    if let Some(v) = value {
-                        if !allowed_values.iter().any(|a| a == v) {
-                            return Err(TemplateError::InvalidType {
-                                name: name.clone(),
-                                expected: format!("one of [{}]", allowed_values.join(", ")),
-                                actual: v.clone(),
-                            });
-                        }
-                    }
-                }
-                Placeholder::Json { name, .. } => {
-                    if let Some(v) = value {
-                        serde_json::from_str::<serde_json::Value>(v).map_err(|_| {
-                            TemplateError::InvalidType {
-                                name: name.clone(),
-                                expected: "valid JSON".into(),
-                                actual: v.clone(),
-                            }
-                        })?;
-                    }
-                }
-            }
-        }
+        self.validate_values(&map)?;
 
         // Perform substitution with auto-escaping.
         let re = placeholder_regex();
@@ -429,9 +362,9 @@ impl SecureTemplate {
         }
 
         // Scan rendered output for secrets.
-        if let Ok(scanner) = TemplateScanner::with_defaults() {
-            if let Ok(findings) = scanner.scan(&result) {
-                if !findings.is_empty() {
+        if let Ok(scanner) = TemplateScanner::with_defaults()
+            && let Ok(findings) = scanner.scan(&result)
+                && !findings.is_empty() {
                     // Attribute findings to the first placeholder whose value triggered them.
                     let finding_strs: Vec<String> = findings
                         .iter()
@@ -442,22 +375,93 @@ impl SecureTemplate {
                         .placeholders
                         .iter()
                         .find(|ph| {
-                            map.get(ph.name()).map_or(false, |v| {
-                                scanner.scan(v).map_or(false, |f| !f.is_empty())
-                            })
-                        })
-                        .map(|ph| ph.name().to_owned())
-                        .unwrap_or_else(|| "unknown".into());
+                            map.get(ph.name())
+                                .is_some_and(|v| scanner.scan(v).is_ok_and(|f| !f.is_empty()))
+                        }).map_or_else(|| "unknown".into(), |ph| ph.name().to_owned());
 
                     return Err(TemplateError::ContainsSecrets {
                         name: responsible,
                         findings: finding_strs,
                     });
                 }
-            }
-        }
 
         Ok(result)
+    }
+
+    /// Validate all placeholder values against their type constraints.
+    fn validate_values(&self, map: &HashMap<String, String>) -> Result<(), TemplateError> {
+        for ph in &self.placeholders {
+            let value = map.get(ph.name());
+            match ph {
+                Placeholder::Text {
+                    name,
+                    max_length,
+                    required,
+                } => {
+                    if *required && value.is_none() {
+                        return Err(TemplateError::MissingRequired { name: name.clone() });
+                    }
+                    if let Some(v) = value
+                        && v.chars().count() > *max_length {
+                            return Err(TemplateError::ExceedsMaxLength {
+                                name: name.clone(),
+                                actual: v.chars().count(),
+                                max: *max_length,
+                            });
+                        }
+                }
+                Placeholder::Number { name, min, max } => {
+                    if let Some(v) = value {
+                        let num = v.parse::<f64>().map_err(|_| TemplateError::InvalidType {
+                            name: name.clone(),
+                            expected: "number".into(),
+                            actual: v.clone(),
+                        })?;
+                        if let Some(lo) = min
+                            && num < *lo {
+                                return Err(TemplateError::InvalidType {
+                                    name: name.clone(),
+                                    expected: format!("number >= {lo}"),
+                                    actual: v.clone(),
+                                });
+                            }
+                        if let Some(hi) = max
+                            && num > *hi {
+                                return Err(TemplateError::InvalidType {
+                                    name: name.clone(),
+                                    expected: format!("number <= {hi}"),
+                                    actual: v.clone(),
+                                });
+                            }
+                    }
+                }
+                Placeholder::Enum {
+                    name,
+                    allowed_values,
+                } => {
+                    if let Some(v) = value
+                        && !allowed_values.iter().any(|a| a == v) {
+                            return Err(TemplateError::InvalidType {
+                                name: name.clone(),
+                                expected: format!("one of [{}]", allowed_values.join(", ")),
+                                actual: v.clone(),
+                            });
+                        }
+                }
+                Placeholder::Json { name, .. } => {
+                    if let Some(v) = value {
+                        serde_json::from_str::<serde_json::Value>(v).map_err(|_| {
+                            TemplateError::InvalidType {
+                                name: name.clone(),
+                                expected: "valid JSON".into(),
+                                actual: v.clone(),
+                            }
+                        })?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -527,9 +531,7 @@ mod tests {
     #[test]
     fn render_missing_required_value() {
         let tpl = SecureTemplate::compile("Hello, {{user:text:50}}!").unwrap();
-        let err = tpl
-            .render(std::iter::empty::<(&str, &str)>())
-            .unwrap_err();
+        let err = tpl.render(std::iter::empty::<(&str, &str)>()).unwrap_err();
         assert!(
             matches!(err, TemplateError::MissingRequired { ref name } if name == "user"),
             "expected MissingRequired, got: {err}"

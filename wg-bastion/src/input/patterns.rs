@@ -97,71 +97,418 @@ macro_rules! pat {
 }
 
 /// Returns the full set of built-in injection detection patterns (50+).
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn builtin_patterns() -> Vec<InjectionPattern> {
-    use PatternCategory::*;
-    use Severity::*;
+    use PatternCategory::{RoleConfusion, InstructionOverride, DelimiterManipulation, SystemPromptExtraction, EncodingEvasion};
+    use Severity::{High, Critical, Medium, Low};
 
     vec![
         // ── Category 1: Role Confusion (14 patterns) ───────────────
-        pat!("RC-001", RoleConfusion, "You are now", r"(?i)you\s+are\s+now\b", High, 0.9),
-        pat!("RC-002", RoleConfusion, "Ignore previous instructions", r"(?i)ignore\s+(all\s+)?previous\s+instructions", Critical, 1.0),
-        pat!("RC-003", RoleConfusion, "Act as a/an", r"(?i)act\s+as\s+(a|an)\b", High, 0.8),
-        pat!("RC-004", RoleConfusion, "Pretend to be", r"(?i)pretend\s+(to\s+be|you\s+are)\b", High, 0.85),
-        pat!("RC-005", RoleConfusion, "Forget everything", r"(?i)forget\s+everything", Critical, 0.95),
-        pat!("RC-006", RoleConfusion, "Your new role is", r"(?i)your\s+new\s+role\s+is\b", High, 0.9),
-        pat!("RC-007", RoleConfusion, "Disregard prior", r"(?i)disregard\s+(all\s+)?prior\b", Critical, 0.95),
-        pat!("RC-008", RoleConfusion, "Switch to mode", r"(?i)switch\s+to\s+\w+\s+mode", Medium, 0.7),
-        pat!("RC-009", RoleConfusion, "From now on", r"(?i)from\s+now\s+on\b", Medium, 0.6),
-        pat!("RC-010", RoleConfusion, "You must now", r"(?i)you\s+must\s+now\b", High, 0.8),
-        pat!("RC-011", RoleConfusion, "System: prefix", r"(?i)^system:\s", High, 0.9),
-        pat!("RC-012", RoleConfusion, "Override your programming", r"(?i)override\s+your\s+programming", Critical, 0.95),
-        pat!("RC-013", RoleConfusion, "You have been reprogrammed", r"(?i)you\s+have\s+been\s+reprogrammed", Critical, 0.95),
-        pat!("RC-014", RoleConfusion, "New instructions:", r"(?i)new\s+instructions?\s*:", High, 0.85),
-
+        pat!(
+            "RC-001",
+            RoleConfusion,
+            "You are now",
+            r"(?i)you\s+are\s+now\b",
+            High,
+            0.9
+        ),
+        pat!(
+            "RC-002",
+            RoleConfusion,
+            "Ignore previous instructions",
+            r"(?i)ignore\s+(all\s+)?previous\s+instructions",
+            Critical,
+            1.0
+        ),
+        pat!(
+            "RC-003",
+            RoleConfusion,
+            "Act as a/an",
+            r"(?i)act\s+as\s+(a|an)\b",
+            High,
+            0.8
+        ),
+        pat!(
+            "RC-004",
+            RoleConfusion,
+            "Pretend to be",
+            r"(?i)pretend\s+(to\s+be|you\s+are)\b",
+            High,
+            0.85
+        ),
+        pat!(
+            "RC-005",
+            RoleConfusion,
+            "Forget everything",
+            r"(?i)forget\s+everything",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "RC-006",
+            RoleConfusion,
+            "Your new role is",
+            r"(?i)your\s+new\s+role\s+is\b",
+            High,
+            0.9
+        ),
+        pat!(
+            "RC-007",
+            RoleConfusion,
+            "Disregard prior",
+            r"(?i)disregard\s+(all\s+)?prior\b",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "RC-008",
+            RoleConfusion,
+            "Switch to mode",
+            r"(?i)switch\s+to\s+\w+\s+mode",
+            Medium,
+            0.7
+        ),
+        pat!(
+            "RC-009",
+            RoleConfusion,
+            "From now on",
+            r"(?i)from\s+now\s+on\b",
+            Medium,
+            0.6
+        ),
+        pat!(
+            "RC-010",
+            RoleConfusion,
+            "You must now",
+            r"(?i)you\s+must\s+now\b",
+            High,
+            0.8
+        ),
+        pat!(
+            "RC-011",
+            RoleConfusion,
+            "System: prefix",
+            r"(?i)^system:\s",
+            High,
+            0.9
+        ),
+        pat!(
+            "RC-012",
+            RoleConfusion,
+            "Override your programming",
+            r"(?i)override\s+your\s+programming",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "RC-013",
+            RoleConfusion,
+            "You have been reprogrammed",
+            r"(?i)you\s+have\s+been\s+reprogrammed",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "RC-014",
+            RoleConfusion,
+            "New instructions:",
+            r"(?i)new\s+instructions?\s*:",
+            High,
+            0.85
+        ),
         // ── Category 2: Instruction Override (12 patterns) ─────────
-        pat!("IO-001", InstructionOverride, "Ignore the above", r"(?i)ignore\s+the\s+above", Critical, 1.0),
-        pat!("IO-002", InstructionOverride, "Disregard the ... and", r"(?i)disregard\s+the\s+\w+\s+and\b", High, 0.9),
-        pat!("IO-003", InstructionOverride, "Do not follow", r"(?i)do\s+not\s+follow", High, 0.85),
-        pat!("IO-004", InstructionOverride, "Cancel all restrictions", r"(?i)cancel\s+all\s+restrictions", Critical, 0.95),
-        pat!("IO-005", InstructionOverride, "Remove safety", r"(?i)remove\s+(all\s+)?safety", Critical, 0.95),
-        pat!("IO-006", InstructionOverride, "Disable filters", r"(?i)disable\s+(all\s+)?filters", Critical, 0.95),
-        pat!("IO-007", InstructionOverride, "Bypass the", r"(?i)bypass\s+the\b", High, 0.85),
-        pat!("IO-008", InstructionOverride, "Override: prefix", r"(?i)^override\s*:", High, 0.9),
-        pat!("IO-009", InstructionOverride, "Admin tag injection", r"<admin>", Critical, 0.95),
-        pat!("IO-010", InstructionOverride, "Execute the following", r"(?i)execute\s+the\s+following", Medium, 0.7),
-        pat!("IO-011", InstructionOverride, "Unlock hidden/secret mode", r"(?i)unlock\s+(hidden|secret)\s+mode", High, 0.9),
-        pat!("IO-012", InstructionOverride, "Enter developer/debug/god mode", r"(?i)enter\s+(developer|debug|god)\s+mode", High, 0.9),
-
+        pat!(
+            "IO-001",
+            InstructionOverride,
+            "Ignore the above",
+            r"(?i)ignore\s+the\s+above",
+            Critical,
+            1.0
+        ),
+        pat!(
+            "IO-002",
+            InstructionOverride,
+            "Disregard the ... and",
+            r"(?i)disregard\s+the\s+\w+\s+and\b",
+            High,
+            0.9
+        ),
+        pat!(
+            "IO-003",
+            InstructionOverride,
+            "Do not follow",
+            r"(?i)do\s+not\s+follow",
+            High,
+            0.85
+        ),
+        pat!(
+            "IO-004",
+            InstructionOverride,
+            "Cancel all restrictions",
+            r"(?i)cancel\s+all\s+restrictions",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "IO-005",
+            InstructionOverride,
+            "Remove safety",
+            r"(?i)remove\s+(all\s+)?safety",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "IO-006",
+            InstructionOverride,
+            "Disable filters",
+            r"(?i)disable\s+(all\s+)?filters",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "IO-007",
+            InstructionOverride,
+            "Bypass the",
+            r"(?i)bypass\s+the\b",
+            High,
+            0.85
+        ),
+        pat!(
+            "IO-008",
+            InstructionOverride,
+            "Override: prefix",
+            r"(?i)^override\s*:",
+            High,
+            0.9
+        ),
+        pat!(
+            "IO-009",
+            InstructionOverride,
+            "Admin tag injection",
+            r"<admin>",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "IO-010",
+            InstructionOverride,
+            "Execute the following",
+            r"(?i)execute\s+the\s+following",
+            Medium,
+            0.7
+        ),
+        pat!(
+            "IO-011",
+            InstructionOverride,
+            "Unlock hidden/secret mode",
+            r"(?i)unlock\s+(hidden|secret)\s+mode",
+            High,
+            0.9
+        ),
+        pat!(
+            "IO-012",
+            InstructionOverride,
+            "Enter developer/debug/god mode",
+            r"(?i)enter\s+(developer|debug|god)\s+mode",
+            High,
+            0.9
+        ),
         // ── Category 3: Delimiter Manipulation (10 patterns) ───────
-        pat!("DM-001", DelimiterManipulation, "Dash-delimited system: prefix", r"---\n.*(?i)system\s*:", High, 0.85),
-        pat!("DM-002", DelimiterManipulation, "Code block system: hijack", r"```\w*\n.*(?i)system\s*:", High, 0.85),
-        pat!("DM-003", DelimiterManipulation, "[INST] tag injection", r"\[INST\]", High, 0.9),
-        pat!("DM-004", DelimiterManipulation, "Special token injection", r"<\|[a-z_]+\|>", Critical, 0.95),
-        pat!("DM-005", DelimiterManipulation, "End of prompt marker", r"(?i)end\s+of\s+prompt", Medium, 0.7),
-        pat!("DM-006", DelimiterManipulation, "Template variable abuse", r"(?i)\{\{[^}]*\}\}", Medium, 0.6),
-        pat!("DM-007", DelimiterManipulation, "HTML comment injection", r"<!--.*?-->", Medium, 0.6),
-        pat!("DM-008", DelimiterManipulation, "End-of-sequence token", r"</s>", High, 0.9),
-        pat!("DM-009", DelimiterManipulation, "ChatML markers", r"(?i)<\|im_start\|>|<\|im_end\|>", Critical, 0.95),
-        pat!("DM-010", DelimiterManipulation, "Excessive newline context break", r"\n{10,}", Medium, 0.5),
-
+        pat!(
+            "DM-001",
+            DelimiterManipulation,
+            "Dash-delimited system: prefix",
+            r"---\n.*(?i)system\s*:",
+            High,
+            0.85
+        ),
+        pat!(
+            "DM-002",
+            DelimiterManipulation,
+            "Code block system: hijack",
+            r"```\w*\n.*(?i)system\s*:",
+            High,
+            0.85
+        ),
+        pat!(
+            "DM-003",
+            DelimiterManipulation,
+            "[INST] tag injection",
+            r"\[INST\]",
+            High,
+            0.9
+        ),
+        pat!(
+            "DM-004",
+            DelimiterManipulation,
+            "Special token injection",
+            r"<\|[a-z_]+\|>",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "DM-005",
+            DelimiterManipulation,
+            "End of prompt marker",
+            r"(?i)end\s+of\s+prompt",
+            Medium,
+            0.7
+        ),
+        pat!(
+            "DM-006",
+            DelimiterManipulation,
+            "Template variable abuse",
+            r"(?i)\{\{[^}]*\}\}",
+            Medium,
+            0.6
+        ),
+        pat!(
+            "DM-007",
+            DelimiterManipulation,
+            "HTML comment injection",
+            r"<!--.*?-->",
+            Medium,
+            0.6
+        ),
+        pat!(
+            "DM-008",
+            DelimiterManipulation,
+            "End-of-sequence token",
+            r"</s>",
+            High,
+            0.9
+        ),
+        pat!(
+            "DM-009",
+            DelimiterManipulation,
+            "ChatML markers",
+            r"(?i)<\|im_start\|>|<\|im_end\|>",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "DM-010",
+            DelimiterManipulation,
+            "Excessive newline context break",
+            r"\n{10,}",
+            Medium,
+            0.5
+        ),
         // ── Category 4: System Prompt Extraction (8 patterns) ──────
-        pat!("SE-001", SystemPromptExtraction, "Repeat the/your/all instructions", r"(?i)repeat\s+(the|your|all)\s+instructions", High, 0.9),
-        pat!("SE-002", SystemPromptExtraction, "Print/show/display prompt", r"(?i)(print|show|display)\s+(the|your)\s+(prompt|instructions)", High, 0.9),
-        pat!("SE-003", SystemPromptExtraction, "Show me the original", r"(?i)show\s+me\s+the\s+original", Medium, 0.7),
-        pat!("SE-004", SystemPromptExtraction, "Tell me your rules", r"(?i)tell\s+me\s+your\s+rules", High, 0.85),
-        pat!("SE-005", SystemPromptExtraction, "What were you told / your instructions", r"(?i)what\s+(were\s+you|are\s+your)\s+(told|instructions|rules)", High, 0.85),
-        pat!("SE-006", SystemPromptExtraction, "What is your system prompt", r"(?i)what\s+is\s+your\s+system\s+prompt", Critical, 0.95),
-        pat!("SE-007", SystemPromptExtraction, "Start response with quote", r#"(?i)start\s+your\s+response\s+with\s+["']"#, Medium, 0.7),
-        pat!("SE-008", SystemPromptExtraction, "Reproduce the text above", r"(?i)reproduce\s+the\s+text\s+above", High, 0.9),
-
+        pat!(
+            "SE-001",
+            SystemPromptExtraction,
+            "Repeat the/your/all instructions",
+            r"(?i)repeat\s+(the|your|all)\s+instructions",
+            High,
+            0.9
+        ),
+        pat!(
+            "SE-002",
+            SystemPromptExtraction,
+            "Print/show/display prompt",
+            r"(?i)(print|show|display)\s+(the|your)\s+(prompt|instructions)",
+            High,
+            0.9
+        ),
+        pat!(
+            "SE-003",
+            SystemPromptExtraction,
+            "Show me the original",
+            r"(?i)show\s+me\s+the\s+original",
+            Medium,
+            0.7
+        ),
+        pat!(
+            "SE-004",
+            SystemPromptExtraction,
+            "Tell me your rules",
+            r"(?i)tell\s+me\s+your\s+rules",
+            High,
+            0.85
+        ),
+        pat!(
+            "SE-005",
+            SystemPromptExtraction,
+            "What were you told / your instructions",
+            r"(?i)what\s+(were\s+you|are\s+your)\s+(told|instructions|rules)",
+            High,
+            0.85
+        ),
+        pat!(
+            "SE-006",
+            SystemPromptExtraction,
+            "What is your system prompt",
+            r"(?i)what\s+is\s+your\s+system\s+prompt",
+            Critical,
+            0.95
+        ),
+        pat!(
+            "SE-007",
+            SystemPromptExtraction,
+            "Start response with quote",
+            r#"(?i)start\s+your\s+response\s+with\s+["']"#,
+            Medium,
+            0.7
+        ),
+        pat!(
+            "SE-008",
+            SystemPromptExtraction,
+            "Reproduce the text above",
+            r"(?i)reproduce\s+the\s+text\s+above",
+            High,
+            0.9
+        ),
         // ── Category 5: Encoding Evasion (6 patterns) ──────────────
-        pat!("EE-001", EncodingEvasion, "Unicode escape sequences", r"\\u[0-9a-fA-F]{4}", Medium, 0.6),
-        pat!("EE-002", EncodingEvasion, "URL-encoded characters", r"%[0-9a-fA-F]{2}", Medium, 0.5),
-        pat!("EE-003", EncodingEvasion, "HTML entities", r"&#x?[0-9a-fA-F]+;", Medium, 0.6),
-        pat!("EE-004", EncodingEvasion, "Base64-like high-entropy string", r"(?i)[a-zA-Z0-9+/]{20,}={0,2}", Low, 0.4),
-        pat!("EE-005", EncodingEvasion, "Encoding method reference", r"(?i)\brot13\b|\bbase64\b|\bhex\s+encode", Medium, 0.65),
-        pat!("EE-006", EncodingEvasion, "Decode this/the following", r"(?i)decode\s+(this|the\s+following)", Medium, 0.6),
+        pat!(
+            "EE-001",
+            EncodingEvasion,
+            "Unicode escape sequences",
+            r"\\u[0-9a-fA-F]{4}",
+            Medium,
+            0.6
+        ),
+        pat!(
+            "EE-002",
+            EncodingEvasion,
+            "URL-encoded characters",
+            r"%[0-9a-fA-F]{2}",
+            Medium,
+            0.5
+        ),
+        pat!(
+            "EE-003",
+            EncodingEvasion,
+            "HTML entities",
+            r"&#x?[0-9a-fA-F]+;",
+            Medium,
+            0.6
+        ),
+        pat!(
+            "EE-004",
+            EncodingEvasion,
+            "Base64-like high-entropy string",
+            r"(?i)[a-zA-Z0-9+/]{20,}={0,2}",
+            Low,
+            0.4
+        ),
+        pat!(
+            "EE-005",
+            EncodingEvasion,
+            "Encoding method reference",
+            r"(?i)\brot13\b|\bbase64\b|\bhex\s+encode",
+            Medium,
+            0.65
+        ),
+        pat!(
+            "EE-006",
+            EncodingEvasion,
+            "Decode this/the following",
+            r"(?i)decode\s+(this|the\s+following)",
+            Medium,
+            0.6
+        ),
     ]
 }
 
