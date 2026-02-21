@@ -75,7 +75,7 @@ storage-sqlite = ["sqlx"]
 telemetry-otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp"]
 
 # Phase 2: Honeytoken & normalization
-honeytoken = ["ring", "zeroize"]
+honeytoken = ["ring", "zeroize", "aho-corasick"]
 normalization-html = ["lol_html"]
 
 # Testing utilities
