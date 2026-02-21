@@ -29,6 +29,7 @@
 //! let result = executor.run(&Content::Text("hi".into()), &ctx).await;
 //! ```
 
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -57,6 +58,8 @@ pub struct PipelineResult {
     /// Whether the pipeline was forced to allow by [`FailMode::Open`] or
     /// [`FailMode::LogOnly`] despite a blocking stage.
     pub overridden: bool,
+    /// Optional refusal response text for `RefusalPolicy` integration.
+    pub refusal_response: Option<String>,
 }
 
 impl PipelineResult {
@@ -139,10 +142,11 @@ impl PipelineExecutor {
         let mut degraded_stages = Vec::new();
         let mut final_outcome = StageOutcome::allow(1.0);
         let mut overridden = false;
+        let mut current_content = Cow::Borrowed(content);
 
         for stage in &self.stages {
             let start = Instant::now();
-            let result = stage.evaluate(content, ctx).await;
+            let result = stage.evaluate(current_content.as_ref(), ctx).await;
             let duration = start.elapsed();
 
             match result {
@@ -175,7 +179,15 @@ impl PipelineExecutor {
                                 *prev = prev.min(confidence);
                             }
                         }
-                        // For Transform / Skip, keep the latest outcome.
+                        // Propagate transformed content to subsequent stages.
+                        StageOutcome::Transform {
+                            content: new_content,
+                            ..
+                        } => {
+                            current_content = Cow::Owned(new_content);
+                            final_outcome = StageOutcome::allow(1.0);
+                        }
+                        // For Skip and future variants, keep the latest outcome.
                         other => {
                             final_outcome = other;
                         }
@@ -222,6 +234,7 @@ impl PipelineExecutor {
             stage_metrics,
             degraded_stages,
             overridden,
+            refusal_response: None,
         })
     }
 
@@ -552,8 +565,133 @@ mod tests {
             ],
             degraded_stages: vec![],
             overridden: false,
+            refusal_response: None,
         };
 
         assert_eq!(result.total_duration(), Duration::from_millis(30));
+    }
+
+    // ── Transform propagation tests ────────────────────────────────
+
+    /// A stage that transforms "raw" → "normalized".
+    struct TransformStage {
+        id: &'static str,
+        from: &'static str,
+        to: &'static str,
+        priority: u32,
+    }
+
+    #[async_trait::async_trait]
+    impl GuardrailStage for TransformStage {
+        fn id(&self) -> &str {
+            self.id
+        }
+        async fn evaluate(
+            &self,
+            content: &Content,
+            _ctx: &SecurityContext,
+        ) -> Result<StageOutcome, StageError> {
+            if let Content::Text(s) = content {
+                if s == self.from {
+                    return Ok(StageOutcome::transform(
+                        Content::Text(self.to.into()),
+                        format!("transformed '{}' → '{}'", self.from, self.to),
+                    ));
+                }
+            }
+            Ok(StageOutcome::allow(1.0))
+        }
+        fn priority(&self) -> u32 {
+            self.priority
+        }
+    }
+
+    /// A stage that asserts it receives specific content.
+    struct InspectStage {
+        expected_text: &'static str,
+        priority: u32,
+    }
+
+    #[async_trait::async_trait]
+    impl GuardrailStage for InspectStage {
+        fn id(&self) -> &str {
+            "inspector"
+        }
+        async fn evaluate(
+            &self,
+            content: &Content,
+            _ctx: &SecurityContext,
+        ) -> Result<StageOutcome, StageError> {
+            match content {
+                Content::Text(s) if s == self.expected_text => {
+                    Ok(StageOutcome::allow(1.0))
+                }
+                other => Ok(StageOutcome::block(
+                    format!(
+                        "expected text '{}', got {:?}",
+                        self.expected_text, other
+                    ),
+                    Severity::High,
+                )),
+            }
+        }
+        fn priority(&self) -> u32 {
+            self.priority
+        }
+    }
+
+    #[tokio::test]
+    async fn transform_propagates_to_next_stage() {
+        let exec = PipelineExecutor::builder()
+            .add_stage(TransformStage {
+                id: "normalizer",
+                from: "raw",
+                to: "normalized",
+                priority: 10,
+            })
+            .add_stage(InspectStage {
+                expected_text: "normalized",
+                priority: 20,
+            })
+            .build();
+
+        let result = exec.run(&text("raw"), &ctx()).await.unwrap();
+        // InspectStage would block if it received "raw" instead of "normalized".
+        assert!(
+            result.is_allowed(),
+            "expected Allow, got {:?} — transform was not propagated",
+            result.outcome
+        );
+        assert_eq!(result.stage_metrics.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn multiple_transforms_chain() {
+        let exec = PipelineExecutor::builder()
+            .add_stage(TransformStage {
+                id: "step1",
+                from: "a",
+                to: "b",
+                priority: 10,
+            })
+            .add_stage(TransformStage {
+                id: "step2",
+                from: "b",
+                to: "c",
+                priority: 20,
+            })
+            .add_stage(InspectStage {
+                expected_text: "c",
+                priority: 30,
+            })
+            .build();
+
+        let result = exec.run(&text("a"), &ctx()).await.unwrap();
+        assert!(
+            result.is_allowed(),
+            "expected Allow after chained transforms, got {:?}",
+            result.outcome
+        );
+        assert_eq!(result.stage_metrics.len(), 3);
     }
 }
