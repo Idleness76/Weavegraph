@@ -87,10 +87,10 @@ pub mod pipeline;
 // docs.rs renders which feature is required.
 
 // Phase 2 (prompt & injection security)
-// #[cfg(feature = "heuristics")]
-// pub mod prompt;
-// #[cfg(feature = "heuristics")]
-// pub mod input;
+#[cfg(feature = "heuristics")]
+pub mod prompt;
+#[cfg(feature = "heuristics")]
+pub mod input;
 
 // Phase 3+ (output, tools, rag, agents, abuse, telemetry)
 // #[cfg(feature = "heuristics")]
