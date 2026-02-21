@@ -222,6 +222,11 @@ impl EnsembleScorer {
         }
     }
 
+    /// Create a scorer from a pre-boxed strategy.
+    pub fn from_boxed(strategy: Box<dyn EnsembleStrategy>) -> Self {
+        Self { strategy }
+    }
+
     /// Create a scorer with sensible defaults (`AnyAboveThreshold` at `0.7`).
     #[must_use]
     pub fn with_defaults() -> Self {
