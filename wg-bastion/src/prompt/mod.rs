@@ -2,3 +2,11 @@
 
 #[cfg(feature = "heuristics")]
 pub mod scanner;
+
+#[cfg(feature = "honeytoken")]
+pub mod honeytoken;
+
+#[cfg(feature = "heuristics")]
+pub mod template;
+
+pub mod refusal;

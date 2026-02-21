@@ -2,3 +2,7 @@
 
 #[cfg(feature = "heuristics")]
 pub mod normalization;
+#[cfg(feature = "heuristics")]
+pub mod patterns;
+#[cfg(feature = "heuristics")]
+pub mod injection;
