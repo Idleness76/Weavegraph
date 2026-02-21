@@ -10,3 +10,5 @@ pub mod injection;
 pub mod structural;
 #[cfg(feature = "heuristics")]
 pub mod ensemble;
+#[cfg(feature = "heuristics")]
+pub mod spotlight;
