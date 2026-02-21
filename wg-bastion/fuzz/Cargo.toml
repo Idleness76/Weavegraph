@@ -1,0 +1,31 @@
+[package]
+name = "wg-bastion-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[dependencies.wg-bastion]
+path = ".."
+features = ["heuristics", "honeytoken", "normalization-html"]
+
+[[bin]]
+name = "fuzz_template"
+path = "fuzz_targets/fuzz_template.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_injection"
+path = "fuzz_targets/fuzz_injection.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_normalization"
+path = "fuzz_targets/fuzz_normalization.rs"
+doc = false
