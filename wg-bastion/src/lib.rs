@@ -121,4 +121,16 @@ pub mod prelude {
 
     // Backward-compatibility adapter
     pub use crate::pipeline::compat::LegacyAdapter;
+
+    // Phase 2: Prompt protection types
+    #[cfg(feature = "heuristics")]
+    pub use crate::prompt::scanner::{ScannerConfig, SecretFinding, TemplateScanner};
+    #[cfg(feature = "heuristics")]
+    pub use crate::prompt::template::{SecureTemplate, TemplateError};
+    #[cfg(feature = "heuristics")]
+    pub use crate::prompt::isolation::{IsolationConfig, RoleIsolation};
+    #[cfg(feature = "heuristics")]
+    pub use crate::prompt::refusal::{RefusalAction, RefusalMode, RefusalPolicy};
+    #[cfg(all(feature = "heuristics", feature = "honeytoken"))]
+    pub use crate::prompt::honeytoken::{HoneytokenDetection, HoneytokenStore};
 }
