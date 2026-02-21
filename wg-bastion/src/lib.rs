@@ -133,4 +133,12 @@ pub mod prelude {
     pub use crate::prompt::refusal::{RefusalAction, RefusalMode, RefusalPolicy};
     #[cfg(all(feature = "heuristics", feature = "honeytoken"))]
     pub use crate::prompt::honeytoken::{HoneytokenDetection, HoneytokenStore};
+
+    // Phase 2: Input validation types
+    #[cfg(feature = "heuristics")]
+    pub use crate::input::injection::InjectionStage;
+    #[cfg(feature = "heuristics")]
+    pub use crate::input::normalization::NormalizationStage;
+    #[cfg(feature = "heuristics")]
+    pub use crate::input::ensemble::EnsembleScorer;
 }
