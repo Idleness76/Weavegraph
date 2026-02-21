@@ -39,6 +39,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Maximum depth for delegation parent chains. Beyond this limit,
+/// `SecurityContext::child()` will omit the parent link to prevent
+/// unbounded memory growth from deeply nested agent delegations.
+const MAX_DELEGATION_DEPTH: usize = 64;
+
 // ── SecurityContext ────────────────────────────────────────────────────
 
 /// Contextual information passed to every guardrail stage.
@@ -136,14 +141,26 @@ impl SecurityContext {
     }
 
     /// Derive a child context for agent delegation, creating a parent link.
+    ///
+    /// If the delegation chain has reached [`MAX_DELEGATION_DEPTH`], the
+    /// parent link is **silently omitted** to prevent unbounded memory
+    /// growth.  The child is still created with inherited identity and
+    /// risk score — only the ancestry chain is truncated.
     #[must_use]
     pub fn child(&self, session_id: impl Into<String>) -> Self {
+        // Cap the parent chain to avoid unbounded memory from deep delegation.
+        let parent = if self.delegation_depth() >= MAX_DELEGATION_DEPTH {
+            None
+        } else {
+            Some(Arc::new(self.clone()))
+        };
+
         Self {
             session_id: session_id.into(),
             user_id: self.user_id.clone(),
             risk_score: self.risk_score,
             metadata: HashMap::new(),
-            parent: Some(Arc::new(self.clone())),
+            parent,
         }
     }
 
@@ -378,6 +395,26 @@ mod tests {
         assert_eq!(child.delegation_depth(), 1);
         assert_eq!(grandchild.delegation_depth(), 2);
         assert_eq!(grandchild.parent().unwrap().session_id(), "child-1");
+    }
+
+    #[test]
+    fn test_delegation_depth_normal() {
+        let root = SecurityContext::builder().session_id("root").build();
+        let c1 = root.child("c1");
+        let c2 = c1.child("c2");
+        let c3 = c2.child("c3");
+
+        assert_eq!(c3.delegation_depth(), 3);
+    }
+
+    #[test]
+    fn test_delegation_depth_limit() {
+        let mut ctx = SecurityContext::builder().session_id("d-0").build();
+        for i in 1..=MAX_DELEGATION_DEPTH + 1 {
+            ctx = ctx.child(format!("d-{i}"));
+        }
+        // Depth must never exceed the configured maximum.
+        assert!(ctx.delegation_depth() <= MAX_DELEGATION_DEPTH);
     }
 
     #[tokio::test]

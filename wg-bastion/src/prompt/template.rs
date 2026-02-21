@@ -7,7 +7,7 @@
 use crate::prompt::scanner::TemplateScanner;
 use regex::Regex;
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 // ── Placeholder ────────────────────────────────────────────────────────
 
@@ -277,6 +277,7 @@ fn parse_number_range(s: &str) -> Option<(f64, f64)> {
 pub struct SecureTemplate {
     template_string: String,
     placeholders: Vec<Placeholder>,
+    scanner: Option<Arc<TemplateScanner>>,
 }
 
 impl SecureTemplate {
@@ -303,9 +304,12 @@ impl SecureTemplate {
             placeholders.push(parse_placeholder(name, typ, constraint, m.start())?);
         }
 
+        let scanner = TemplateScanner::with_defaults().ok().map(Arc::new);
+
         Ok(Self {
             template_string: template.to_owned(),
             placeholders,
+            scanner,
         })
     }
 
@@ -362,7 +366,7 @@ impl SecureTemplate {
         }
 
         // Scan rendered output for secrets.
-        if let Ok(scanner) = TemplateScanner::with_defaults()
+        if let Some(scanner) = self.scanner.as_ref()
             && let Ok(findings) = scanner.scan(&result)
                 && !findings.is_empty() {
                     // Attribute findings to the first placeholder whose value triggered them.

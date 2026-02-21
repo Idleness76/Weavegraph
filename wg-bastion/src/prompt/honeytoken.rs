@@ -83,7 +83,17 @@ fn resolve_key(source: &KeySource) -> Result<Zeroizing<Vec<u8>>, HoneytokenError
                 })?;
             Ok(Zeroizing::new(bytes))
         }
-        KeySource::Bytes(bytes) => Ok(bytes.clone()),
+        KeySource::Bytes(bytes) => {
+            if bytes.len() != AES_KEY_LEN {
+                return Err(HoneytokenError::InvalidKeyMaterial {
+                    reason: format!(
+                        "key length must be exactly {AES_KEY_LEN} bytes, got {}",
+                        bytes.len()
+                    ),
+                });
+            }
+            Ok(bytes.clone())
+        }
     }
 }
 
@@ -736,12 +746,9 @@ mod tests {
         assert!(
             matches!(
                 err,
-                HoneytokenError::KeyTooShort {
-                    expected: 32,
-                    actual: 16
-                }
+                HoneytokenError::InvalidKeyMaterial { .. }
             ),
-            "expected KeyTooShort, got: {err:?}"
+            "expected InvalidKeyMaterial, got: {err:?}"
         );
     }
 
@@ -788,6 +795,19 @@ mod tests {
         assert_eq!(
             token.hmac_fingerprint, expected,
             "HMAC fingerprint must be deterministic for same plaintext and key"
+        );
+    }
+
+    #[test]
+    fn key_too_short_rejected() {
+        let short_key = Zeroizing::new(vec![0xAAu8; 16]);
+        let config = HoneytokenConfig::builder(KeySource::Bytes(short_key))
+            .pool_size(1)
+            .build();
+        let err = HoneytokenStore::new(config).unwrap_err();
+        assert!(
+            matches!(err, HoneytokenError::InvalidKeyMaterial { ref reason } if reason.contains("32") && reason.contains("16")),
+            "expected InvalidKeyMaterial with length info, got: {err:?}"
         );
     }
 }

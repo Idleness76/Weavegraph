@@ -284,14 +284,14 @@ impl CharAccumulator {
 
         // ── Language mixing ──
         if let Some(script) = classify_script(ch) {
-            if let Some(prev) = self.prev_script {
-                if prev != script {
-                    self.transitions += 1;
-                    if (prev == "Latin" && (script == "Cyrillic" || script == "Greek"))
-                        || (script == "Latin" && (prev == "Cyrillic" || prev == "Greek"))
-                    {
-                        self.homoglyph_transitions += 1;
-                    }
+            if let Some(prev) = self.prev_script
+                && prev != script
+            {
+                self.transitions += 1;
+                if (prev == "Latin" && (script == "Cyrillic" || script == "Greek"))
+                    || (script == "Latin" && (prev == "Cyrillic" || prev == "Greek"))
+                {
+                    self.homoglyph_transitions += 1;
                 }
             }
             self.prev_script = Some(script);
