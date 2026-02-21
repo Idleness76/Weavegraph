@@ -148,18 +148,26 @@ impl StructuralAnalyzer {
     #[allow(clippy::cast_precision_loss)]
     #[must_use]
     pub fn analyze(&self, text: &str) -> StructuralReport {
-        let (suspicious_char_count, suspicious_char_positions) = detect_suspicious_chars(text);
+        // Single char pass: suspicious chars, language mixing, repetition (char-level), punctuation.
+        let mut acc = CharAccumulator::new();
+        for (byte_pos, ch) in text.char_indices() {
+            acc.process(byte_pos, ch);
+        }
+
+        // Separate word-level passes.
         let instruction_density = compute_instruction_density(text);
-        let language_mixing_score = compute_language_mixing(text);
-        let repetition_score = compute_repetition(text);
-        let punctuation_anomaly_score = compute_punctuation_anomaly(text);
+        let token_rep_count = compute_token_repetition(text);
+
+        let language_mixing_score = acc.language_mixing_score();
+        let repetition_score = acc.repetition_score(token_rep_count);
+        let punctuation_anomaly_score = acc.punctuation_anomaly_score();
 
         let cfg = &self.config;
         let thresh = cfg.suspicious_char_threshold.max(1) as f32;
-        let suspicious_component = if suspicious_char_count as f32 >= thresh {
+        let suspicious_component = if acc.suspicious_count as f32 >= thresh {
             1.0
         } else {
-            suspicious_char_count as f32 / thresh
+            acc.suspicious_count as f32 / thresh
         };
 
         let density_thresh = cfg.instruction_density_threshold.max(f32::EPSILON);
@@ -173,8 +181,8 @@ impl StructuralAnalyzer {
             .clamp(0.0, 1.0);
 
         StructuralReport {
-            suspicious_char_count,
-            suspicious_char_positions,
+            suspicious_char_count: acc.suspicious_count,
+            suspicious_char_positions: acc.suspicious_positions,
             instruction_density,
             language_mixing_score,
             repetition_score,
@@ -219,30 +227,131 @@ fn is_combining_mark(ch: char) -> bool {
     )
 }
 
-/// Detect suspicious characters and excessive combining mark stacking.
-fn detect_suspicious_chars(text: &str) -> (usize, Vec<usize>) {
-    let mut count = 0usize;
-    let mut positions = Vec::new();
-    let mut combining_run = 0u32;
+/// Accumulator for collecting suspicious-char, language-mixing, repetition,
+/// and punctuation signals in a single character pass.
+struct CharAccumulator {
+    suspicious_count: usize,
+    suspicious_positions: Vec<usize>,
+    combining_run: u32,
+    prev_script: Option<&'static str>,
+    classified_count: usize,
+    transitions: usize,
+    homoglyph_transitions: usize,
+    prev_char: Option<char>,
+    run_len: usize,
+    char_rep_count: usize,
+    bigram_counts: std::collections::HashMap<(char, char), usize>,
+    total_chars: usize,
+    punct_count: usize,
+}
 
-    for (byte_pos, ch) in text.char_indices() {
-        if is_suspicious_char(ch) {
-            count += 1;
-            positions.push(byte_pos);
-            combining_run = 0;
-        } else if is_combining_mark(ch) {
-            combining_run += 1;
-            // Excessive stacking: >3 combining chars in a row
-            if combining_run > 3 {
-                count += 1;
-                positions.push(byte_pos);
-            }
-        } else {
-            combining_run = 0;
+impl CharAccumulator {
+    fn new() -> Self {
+        Self {
+            suspicious_count: 0,
+            suspicious_positions: Vec::new(),
+            combining_run: 0,
+            prev_script: None,
+            classified_count: 0,
+            transitions: 0,
+            homoglyph_transitions: 0,
+            prev_char: None,
+            run_len: 1,
+            char_rep_count: 0,
+            bigram_counts: std::collections::HashMap::new(),
+            total_chars: 0,
+            punct_count: 0,
         }
     }
 
-    (count, positions)
+    fn process(&mut self, byte_pos: usize, ch: char) {
+        self.total_chars += 1;
+
+        // ── Suspicious chars ──
+        if is_suspicious_char(ch) {
+            self.suspicious_count += 1;
+            self.suspicious_positions.push(byte_pos);
+            self.combining_run = 0;
+        } else if is_combining_mark(ch) {
+            self.combining_run += 1;
+            if self.combining_run > 3 {
+                self.suspicious_count += 1;
+                self.suspicious_positions.push(byte_pos);
+            }
+        } else {
+            self.combining_run = 0;
+        }
+
+        // ── Language mixing ──
+        if let Some(script) = classify_script(ch) {
+            if let Some(prev) = self.prev_script {
+                if prev != script {
+                    self.transitions += 1;
+                    if (prev == "Latin" && (script == "Cyrillic" || script == "Greek"))
+                        || (script == "Latin" && (prev == "Cyrillic" || prev == "Greek"))
+                    {
+                        self.homoglyph_transitions += 1;
+                    }
+                }
+            }
+            self.prev_script = Some(script);
+            self.classified_count += 1;
+        }
+
+        // ── Repetition (char runs + bigrams) ──
+        if let Some(prev) = self.prev_char {
+            if ch == prev {
+                self.run_len += 1;
+                if self.run_len >= 10 {
+                    self.char_rep_count += 1;
+                }
+            } else {
+                self.run_len = 1;
+            }
+            *self.bigram_counts.entry((prev, ch)).or_insert(0) += 1;
+        }
+        self.prev_char = Some(ch);
+
+        // ── Punctuation ──
+        if ANOMALOUS_PUNCTUATION.contains(&ch) {
+            self.punct_count += 1;
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn language_mixing_score(&self) -> f32 {
+        if self.classified_count < 2 {
+            return 0.0;
+        }
+        let raw = (self.transitions as f32 + self.homoglyph_transitions as f32 * 2.0)
+            / self.classified_count as f32;
+        raw.min(1.0)
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn repetition_score(&self, token_rep_count: usize) -> f32 {
+        if self.total_chars == 0 {
+            return 0.0;
+        }
+        let mut bigram_rep_count = 0usize;
+        for &count in self.bigram_counts.values() {
+            if count >= 5 {
+                bigram_rep_count += count;
+            }
+        }
+        let repeated_content = self.char_rep_count + bigram_rep_count + token_rep_count;
+        let score = repeated_content as f32 / self.total_chars.max(1) as f32;
+        score.min(1.0)
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn punctuation_anomaly_score(&self) -> f32 {
+        if self.total_chars == 0 {
+            return 0.0;
+        }
+        let density = self.punct_count as f32 / self.total_chars as f32;
+        (density / 0.2).min(1.0)
+    }
 }
 
 /// Imperative/command words used in injection attempts.
@@ -327,107 +436,27 @@ fn classify_script(ch: char) -> Option<&'static str> {
     None
 }
 
-/// Compute language mixing score based on script transitions.
-#[allow(clippy::cast_precision_loss)]
-fn compute_language_mixing(text: &str) -> f32 {
-    let classified: Vec<&str> = text.chars().filter_map(classify_script).collect();
-
-    if classified.len() < 2 {
-        return 0.0;
-    }
-
-    let transitions = classified.windows(2).filter(|w| w[0] != w[1]).count();
-    // Focus on Latin↔Cyrillic and Latin↔Greek (common homoglyph attacks).
-    let homoglyph_transitions = classified
-        .windows(2)
-        .filter(|w| {
-            w[0] != w[1]
-                && ((w[0] == "Latin" && (w[1] == "Cyrillic" || w[1] == "Greek"))
-                    || (w[1] == "Latin" && (w[0] == "Cyrillic" || w[0] == "Greek")))
-        })
-        .count();
-
-    // Weight homoglyph transitions more heavily.
-    let raw = (transitions as f32 + homoglyph_transitions as f32 * 2.0) / classified.len() as f32;
-    raw.min(1.0)
-}
-
-/// Compute repetition anomaly score.
-#[allow(clippy::cast_precision_loss)]
-fn compute_repetition(text: &str) -> f32 {
-    if text.is_empty() {
-        return 0.0;
-    }
-
-    let chars: Vec<char> = text.chars().collect();
-    let total_chars = chars.len();
-
-    // 1. Character repetition: same char repeated 10+ times.
-    let mut char_rep_count = 0usize;
-    let mut run_len = 1usize;
-    for i in 1..chars.len() {
-        if chars[i] == chars[i - 1] {
-            run_len += 1;
-            if run_len >= 10 {
-                char_rep_count += 1;
-            }
-        } else {
-            run_len = 1;
-        }
-    }
-
-    // 2. Bigram repetition: same 2-char sequence repeated 5+ times.
-    let mut bigram_rep_count = 0usize;
-    if chars.len() >= 2 {
-        let mut bigram_counts = std::collections::HashMap::new();
-        for w in chars.windows(2) {
-            *bigram_counts.entry((w[0], w[1])).or_insert(0usize) += 1;
-        }
-        for &count in bigram_counts.values() {
-            if count >= 5 {
-                bigram_rep_count += count;
-            }
-        }
-    }
-
-    // 3. Token repetition: same word repeated 5+ times.
-    let mut token_rep_count = 0usize;
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if !words.is_empty() {
-        let mut word_counts = std::collections::HashMap::new();
-        for w in &words {
-            let lower = w.to_lowercase();
-            *word_counts.entry(lower).or_insert(0usize) += 1;
-        }
-        for &count in word_counts.values() {
-            if count >= 5 {
-                token_rep_count += count;
-            }
-        }
-    }
-
-    let repeated_content = char_rep_count + bigram_rep_count + token_rep_count;
-    let score = repeated_content as f32 / total_chars.max(1) as f32;
-    score.min(1.0)
-}
-
 /// Punctuation characters considered anomalous in high density.
 const ANOMALOUS_PUNCTUATION: &[char] = &['?', '!', ':', ';', '|', '>', '<', '{', '}', '[', ']'];
 
-/// Compute punctuation anomaly score.
-#[allow(clippy::cast_precision_loss)]
-fn compute_punctuation_anomaly(text: &str) -> f32 {
-    if text.is_empty() {
-        return 0.0;
+/// Compute word-level token repetition count for the repetition score.
+fn compute_token_repetition(text: &str) -> usize {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return 0;
     }
-    let total = text.chars().count();
-    let punct_count = text
-        .chars()
-        .filter(|ch| ANOMALOUS_PUNCTUATION.contains(ch))
-        .count();
-    let density = punct_count as f32 / total as f32;
-    // Scale so that threshold density → 1.0.
-    (density / 0.2).min(1.0)
+    let mut word_counts = std::collections::HashMap::new();
+    for w in &words {
+        let lower = w.to_lowercase();
+        *word_counts.entry(lower).or_insert(0usize) += 1;
+    }
+    let mut token_rep_count = 0usize;
+    for &count in word_counts.values() {
+        if count >= 5 {
+            token_rep_count += count;
+        }
+    }
+    token_rep_count
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
