@@ -363,11 +363,7 @@ fn truncate_text(input: &str, max_bytes: usize) -> Cow<'_, str> {
 /// Sorted lookup table mapping Unicode confusable characters to their
 /// ASCII equivalents.  Binary-searched at runtime — no extra dependencies.
 static CONFUSABLES: &[(char, &str)] = &[
-    // Greek lowercase
-    ('\u{03B9}', "i"),  // ι → i
-    ('\u{03BD}', "v"),  // ν → v
-    ('\u{03BF}', "o"),  // ο → o
-    // Greek uppercase
+    // Greek uppercase (U+0391–U+03A7)
     ('\u{0391}', "A"),  // Α → A
     ('\u{0392}', "B"),  // Β → B
     ('\u{0395}', "E"),  // Ε → E
@@ -380,15 +376,11 @@ static CONFUSABLES: &[(char, &str)] = &[
     ('\u{03A1}', "P"),  // Ρ → P
     ('\u{03A4}', "T"),  // Τ → T
     ('\u{03A7}', "X"),  // Χ → X
-    // Cyrillic lowercase
-    ('\u{0430}', "a"),  // а → a
-    ('\u{0435}', "e"),  // е → e
-    ('\u{043E}', "o"),  // о → o
-    ('\u{0440}', "p"),  // р → p
-    ('\u{0441}', "c"),  // с → c
-    ('\u{0443}', "y"),  // у → y
-    ('\u{0445}', "x"),  // х → x
-    // Cyrillic uppercase
+    // Greek lowercase (U+03B9–U+03BF)
+    ('\u{03B9}', "i"),  // ι → i
+    ('\u{03BD}', "v"),  // ν → v
+    ('\u{03BF}', "o"),  // ο → o
+    // Cyrillic uppercase (U+0410–U+0425)
     ('\u{0410}', "A"),  // А → A
     ('\u{0412}', "B"),  // В → B
     ('\u{0415}', "E"),  // Е → E
@@ -400,13 +392,21 @@ static CONFUSABLES: &[(char, &str)] = &[
     ('\u{0421}', "C"),  // С → C
     ('\u{0422}', "T"),  // Т → T
     ('\u{0425}', "X"),  // Х → X
-    // Common symbols
+    // Cyrillic lowercase (U+0430–U+0445)
+    ('\u{0430}', "a"),  // а → a
+    ('\u{0435}', "e"),  // е → e
+    ('\u{043E}', "o"),  // о → o
+    ('\u{0440}', "p"),  // р → p
+    ('\u{0441}', "c"),  // с → c
+    ('\u{0443}', "y"),  // у → y
+    ('\u{0445}', "x"),  // х → x
+    // Common symbols (U+2115–U+2171)
     ('\u{2115}', "N"),  // ℕ → N
     ('\u{211D}', "R"),  // ℝ → R
     ('\u{2124}', "Z"),  // ℤ → Z
+    ('\u{212E}', "e"),  // ℮ → e
     ('\u{2170}', "i"),  // ⅰ → i
     ('\u{2171}', "ii"), // ⅱ → ii
-    ('\u{212E}', "e"),  // ℮ → e
 ];
 
 /// Map Unicode confusable characters to their ASCII equivalents.

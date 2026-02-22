@@ -31,3 +31,7 @@ data/*.db
 data/*.sqlite
 data/*.tmp
 copilot-instructions.md
+
+.github/skills/*
+.github/agents/*
+todos/*
