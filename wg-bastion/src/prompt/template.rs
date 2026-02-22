@@ -368,26 +368,28 @@ impl SecureTemplate {
         // Scan rendered output for secrets.
         if let Some(scanner) = self.scanner.as_ref()
             && let Ok(findings) = scanner.scan(&result)
-                && !findings.is_empty() {
-                    // Attribute findings to the first placeholder whose value triggered them.
-                    let finding_strs: Vec<String> = findings
-                        .iter()
-                        .map(|f| format!("{}: {}", f.pattern_id, f.matched_text_redacted))
-                        .collect();
-                    // Find which placeholder's value contains a secret.
-                    let responsible = self
-                        .placeholders
-                        .iter()
-                        .find(|ph| {
-                            map.get(ph.name())
-                                .is_some_and(|v| scanner.scan(v).is_ok_and(|f| !f.is_empty()))
-                        }).map_or_else(|| "unknown".into(), |ph| ph.name().to_owned());
+            && !findings.is_empty()
+        {
+            // Attribute findings to the first placeholder whose value triggered them.
+            let finding_strs: Vec<String> = findings
+                .iter()
+                .map(|f| format!("{}: {}", f.pattern_id, f.matched_text_redacted))
+                .collect();
+            // Find which placeholder's value contains a secret.
+            let responsible = self
+                .placeholders
+                .iter()
+                .find(|ph| {
+                    map.get(ph.name())
+                        .is_some_and(|v| scanner.scan(v).is_ok_and(|f| !f.is_empty()))
+                })
+                .map_or_else(|| "unknown".into(), |ph| ph.name().to_owned());
 
-                    return Err(TemplateError::ContainsSecrets {
-                        name: responsible,
-                        findings: finding_strs,
-                    });
-                }
+            return Err(TemplateError::ContainsSecrets {
+                name: responsible,
+                findings: finding_strs,
+            });
+        }
 
         Ok(result)
     }
@@ -406,13 +408,14 @@ impl SecureTemplate {
                         return Err(TemplateError::MissingRequired { name: name.clone() });
                     }
                     if let Some(v) = value
-                        && v.chars().count() > *max_length {
-                            return Err(TemplateError::ExceedsMaxLength {
-                                name: name.clone(),
-                                actual: v.chars().count(),
-                                max: *max_length,
-                            });
-                        }
+                        && v.chars().count() > *max_length
+                    {
+                        return Err(TemplateError::ExceedsMaxLength {
+                            name: name.clone(),
+                            actual: v.chars().count(),
+                            max: *max_length,
+                        });
+                    }
                 }
                 Placeholder::Number { name, min, max } => {
                     if let Some(v) = value {
@@ -422,21 +425,23 @@ impl SecureTemplate {
                             actual: v.clone(),
                         })?;
                         if let Some(lo) = min
-                            && num < *lo {
-                                return Err(TemplateError::InvalidType {
-                                    name: name.clone(),
-                                    expected: format!("number >= {lo}"),
-                                    actual: v.clone(),
-                                });
-                            }
+                            && num < *lo
+                        {
+                            return Err(TemplateError::InvalidType {
+                                name: name.clone(),
+                                expected: format!("number >= {lo}"),
+                                actual: v.clone(),
+                            });
+                        }
                         if let Some(hi) = max
-                            && num > *hi {
-                                return Err(TemplateError::InvalidType {
-                                    name: name.clone(),
-                                    expected: format!("number <= {hi}"),
-                                    actual: v.clone(),
-                                });
-                            }
+                            && num > *hi
+                        {
+                            return Err(TemplateError::InvalidType {
+                                name: name.clone(),
+                                expected: format!("number <= {hi}"),
+                                actual: v.clone(),
+                            });
+                        }
                     }
                 }
                 Placeholder::Enum {
@@ -444,13 +449,14 @@ impl SecureTemplate {
                     allowed_values,
                 } => {
                     if let Some(v) = value
-                        && !allowed_values.iter().any(|a| a == v) {
-                            return Err(TemplateError::InvalidType {
-                                name: name.clone(),
-                                expected: format!("one of [{}]", allowed_values.join(", ")),
-                                actual: v.clone(),
-                            });
-                        }
+                        && !allowed_values.iter().any(|a| a == v)
+                    {
+                        return Err(TemplateError::InvalidType {
+                            name: name.clone(),
+                            expected: format!("one of [{}]", allowed_values.join(", ")),
+                            actual: v.clone(),
+                        });
+                    }
                 }
                 Placeholder::Json { name, .. } => {
                     if let Some(v) = value {

@@ -100,8 +100,11 @@ macro_rules! pat {
 #[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn builtin_patterns() -> Vec<InjectionPattern> {
-    use PatternCategory::{RoleConfusion, InstructionOverride, DelimiterManipulation, SystemPromptExtraction, EncodingEvasion};
-    use Severity::{High, Critical, Medium, Low};
+    use PatternCategory::{
+        DelimiterManipulation, EncodingEvasion, InstructionOverride, RoleConfusion,
+        SystemPromptExtraction,
+    };
+    use Severity::{Critical, High, Low, Medium};
 
     vec![
         // ── Category 1: Role Confusion (14 patterns) ───────────────

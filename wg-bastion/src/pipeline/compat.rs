@@ -116,6 +116,7 @@ fn translate_result(result: StageResult) -> StageOutcome {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_bound)]
 mod tests {
     use super::*;
     use crate::pipeline::{PipelineError, SecurityStage, StageResult};

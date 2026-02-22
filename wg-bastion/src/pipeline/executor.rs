@@ -9,7 +9,7 @@
 //! 4. If a stage returns `Err` and [`GuardrailStage::degradable`] is `true`, the
 //!    pipeline records it as a degraded run and continues.  Non-degradable errors
 //!    propagate immediately.
-//! 5. The [`FailMode`](crate::config::FailMode) policy knob controls whether a
+//! 5. The [`FailMode`] policy knob controls whether a
 //!    blocking outcome actually blocks the request, logs it only, or lets it
 //!    through.
 //!
@@ -310,6 +310,7 @@ impl ExecutorBuilder {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_bound)]
 mod tests {
     use super::*;
     use crate::pipeline::outcome::Severity;
@@ -591,13 +592,13 @@ mod tests {
             content: &Content,
             _ctx: &SecurityContext,
         ) -> Result<StageOutcome, StageError> {
-            if let Content::Text(s) = content {
-                if s == self.from {
-                    return Ok(StageOutcome::transform(
-                        Content::Text(self.to.into()),
-                        format!("transformed '{}' → '{}'", self.from, self.to),
-                    ));
-                }
+            if let Content::Text(s) = content
+                && s == self.from
+            {
+                return Ok(StageOutcome::transform(
+                    Content::Text(self.to.into()),
+                    format!("transformed '{}' → '{}'", self.from, self.to),
+                ));
             }
             Ok(StageOutcome::allow(1.0))
         }

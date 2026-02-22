@@ -587,11 +587,11 @@ mod tests {
         let report = a.analyze("");
         assert_eq!(report.suspicious_char_count, 0);
         assert!(report.suspicious_char_positions.is_empty());
-        assert_eq!(report.instruction_density, 0.0);
-        assert_eq!(report.language_mixing_score, 0.0);
-        assert_eq!(report.repetition_score, 0.0);
-        assert_eq!(report.punctuation_anomaly_score, 0.0);
-        assert_eq!(report.overall_risk, 0.0);
+        assert!(report.instruction_density.abs() < f32::EPSILON);
+        assert!(report.language_mixing_score.abs() < f32::EPSILON);
+        assert!(report.repetition_score.abs() < f32::EPSILON);
+        assert!(report.punctuation_anomaly_score.abs() < f32::EPSILON);
+        assert!(report.overall_risk.abs() < f32::EPSILON);
     }
 
     // 11. Tag characters detected

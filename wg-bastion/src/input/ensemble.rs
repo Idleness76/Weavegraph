@@ -220,7 +220,8 @@ impl EnsembleScorer {
     }
 
     /// Create a scorer from a pre-boxed strategy.
-    #[must_use] pub fn from_boxed(strategy: Box<dyn EnsembleStrategy>) -> Self {
+    #[must_use]
+    pub fn from_boxed(strategy: Box<dyn EnsembleStrategy>) -> Self {
         Self { strategy }
     }
 
@@ -320,6 +321,7 @@ impl EnsembleScorer {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_bound)]
 mod tests {
     use std::borrow::Cow;
     use std::ops::Range;

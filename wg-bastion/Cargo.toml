@@ -50,7 +50,6 @@ zeroize = { version = "1.8", features = ["derive"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
-tempfile = "3"
 
 [features]
 default = ["heuristics"]
@@ -87,6 +86,4 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.cargo-machete]
-ignored = ["aho-corasick", "lol_html", "opentelemetry", "ort", "redis", "regex", "reqwest", "ring", "sqlx", "unicode-normalization", "zeroize"]
-# NOTE: miette, jsonschema, schemars, ring, zeroize removed in WS3-05.
-# They will be re-added behind feature gates when their modules land.
+ignored = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "ort", "redis", "reqwest", "sqlx"]

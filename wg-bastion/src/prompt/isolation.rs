@@ -306,14 +306,15 @@ impl RoleIsolation {
 
         // Remaining unclosed start markers.
         if depth > 0
-            && let Some(last_start) = hits.iter().rev().find(|h| h.is_start) {
-                violations.push(BoundaryViolation {
-                    violation_type: ViolationType::UnmatchedMarker,
-                    position: last_start.pos..last_start.pos + last_start.len,
-                    content_excerpt: excerpt(text, last_start.pos, last_start.len),
-                    severity: Severity::Medium,
-                });
-            }
+            && let Some(last_start) = hits.iter().rev().find(|h| h.is_start)
+        {
+            violations.push(BoundaryViolation {
+                violation_type: ViolationType::UnmatchedMarker,
+                position: last_start.pos..last_start.pos + last_start.len,
+                content_excerpt: excerpt(text, last_start.pos, last_start.len),
+                severity: Severity::Medium,
+            });
+        }
 
         violations
     }
@@ -377,10 +378,12 @@ impl GuardrailStage for RoleIsolation {
 /// entropy source. Not cryptographically secure — only used for
 /// per-session marker uniqueness.
 fn generate_hex_suffix(len: usize) -> String {
-    let nanos = u64::from(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos());
+    let nanos = u64::from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos(),
+    );
 
     // Mix in the stack address for extra entropy between rapid calls.
     let stack_val: u64 = &raw const nanos as u64;
@@ -388,11 +391,7 @@ fn generate_hex_suffix(len: usize) -> String {
         .wrapping_mul(6_364_136_223_846_793_005)
         .wrapping_add(stack_val);
 
-    format!("{mixed:0>len$x}")
-        .chars()
-        .rev()
-        .take(len)
-        .collect()
+    format!("{mixed:0>len$x}").chars().rev().take(len).collect()
 }
 
 /// Extract up to 50 chars around a position for audit logging.

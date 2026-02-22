@@ -197,7 +197,9 @@ fn normalize_nfkc(input: &str) -> Cow<'_, str> {
     use unicode_normalization::UnicodeNormalization;
     use unicode_normalization::{IsNormalized, is_nfkc_quick};
 
-    if is_nfkc_quick(input.chars()) == IsNormalized::Yes { Cow::Borrowed(input) } else {
+    if is_nfkc_quick(input.chars()) == IsNormalized::Yes {
+        Cow::Borrowed(input)
+    } else {
         let normalized: String = input.nfkc().collect();
         if normalized == input {
             Cow::Borrowed(input)
@@ -252,7 +254,10 @@ fn strip_html_regex(input: &str) -> Cow<'_, str> {
         LazyLock::new(|| Regex::new(r"(?is)<script\b[^>]*>.*?</script\s*>").unwrap());
     static STYLE_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?is)<style\b[^>]*>.*?</style\s*>").unwrap());
-    static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
+    // The TAG_RE must NOT strip LLM special tokens like <|endoftext|>,
+    // <|im_start|>, <|im_end|>. Only strip actual HTML tags (starting with
+    // a letter or /).
+    static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?[a-zA-Z][^>]*>").unwrap());
 
     if !input.contains('<') {
         return Cow::Borrowed(input);
@@ -285,7 +290,10 @@ fn decode_html_entities(input: &str) -> Cow<'_, str> {
 
     let result = ENTITY_RE.replace_all(input, |caps: &regex::Captures<'_>| {
         let inner = &caps[1];
-        if let Some(hex) = inner.strip_prefix("#x").or_else(|| inner.strip_prefix("#X")) {
+        if let Some(hex) = inner
+            .strip_prefix("#x")
+            .or_else(|| inner.strip_prefix("#X"))
+        {
             u32::from_str_radix(hex, 16)
                 .ok()
                 .and_then(char::from_u32)
@@ -364,42 +372,42 @@ fn truncate_text(input: &str, max_bytes: usize) -> Cow<'_, str> {
 /// ASCII equivalents.  Binary-searched at runtime — no extra dependencies.
 static CONFUSABLES: &[(char, &str)] = &[
     // Greek uppercase (U+0391–U+03A7)
-    ('\u{0391}', "A"),  // Α → A
-    ('\u{0392}', "B"),  // Β → B
-    ('\u{0395}', "E"),  // Ε → E
-    ('\u{0397}', "H"),  // Η → H
-    ('\u{0399}', "I"),  // Ι → I
-    ('\u{039A}', "K"),  // Κ → K
-    ('\u{039C}', "M"),  // Μ → M
-    ('\u{039D}', "N"),  // Ν → N
-    ('\u{039F}', "O"),  // Ο → O
-    ('\u{03A1}', "P"),  // Ρ → P
-    ('\u{03A4}', "T"),  // Τ → T
-    ('\u{03A7}', "X"),  // Χ → X
+    ('\u{0391}', "A"), // Α → A
+    ('\u{0392}', "B"), // Β → B
+    ('\u{0395}', "E"), // Ε → E
+    ('\u{0397}', "H"), // Η → H
+    ('\u{0399}', "I"), // Ι → I
+    ('\u{039A}', "K"), // Κ → K
+    ('\u{039C}', "M"), // Μ → M
+    ('\u{039D}', "N"), // Ν → N
+    ('\u{039F}', "O"), // Ο → O
+    ('\u{03A1}', "P"), // Ρ → P
+    ('\u{03A4}', "T"), // Τ → T
+    ('\u{03A7}', "X"), // Χ → X
     // Greek lowercase (U+03B9–U+03BF)
-    ('\u{03B9}', "i"),  // ι → i
-    ('\u{03BD}', "v"),  // ν → v
-    ('\u{03BF}', "o"),  // ο → o
+    ('\u{03B9}', "i"), // ι → i
+    ('\u{03BD}', "v"), // ν → v
+    ('\u{03BF}', "o"), // ο → o
     // Cyrillic uppercase (U+0410–U+0425)
-    ('\u{0410}', "A"),  // А → A
-    ('\u{0412}', "B"),  // В → B
-    ('\u{0415}', "E"),  // Е → E
-    ('\u{041A}', "K"),  // К → K
-    ('\u{041C}', "M"),  // М → M
-    ('\u{041D}', "H"),  // Н → H
-    ('\u{041E}', "O"),  // О → O
-    ('\u{0420}', "P"),  // Р → P
-    ('\u{0421}', "C"),  // С → C
-    ('\u{0422}', "T"),  // Т → T
-    ('\u{0425}', "X"),  // Х → X
+    ('\u{0410}', "A"), // А → A
+    ('\u{0412}', "B"), // В → B
+    ('\u{0415}', "E"), // Е → E
+    ('\u{041A}', "K"), // К → K
+    ('\u{041C}', "M"), // М → M
+    ('\u{041D}', "H"), // Н → H
+    ('\u{041E}', "O"), // О → O
+    ('\u{0420}', "P"), // Р → P
+    ('\u{0421}', "C"), // С → C
+    ('\u{0422}', "T"), // Т → T
+    ('\u{0425}', "X"), // Х → X
     // Cyrillic lowercase (U+0430–U+0445)
-    ('\u{0430}', "a"),  // а → a
-    ('\u{0435}', "e"),  // е → e
-    ('\u{043E}', "o"),  // о → o
-    ('\u{0440}', "p"),  // р → p
-    ('\u{0441}', "c"),  // с → c
-    ('\u{0443}', "y"),  // у → y
-    ('\u{0445}', "x"),  // х → x
+    ('\u{0430}', "a"), // а → a
+    ('\u{0435}', "e"), // е → e
+    ('\u{043E}', "o"), // о → o
+    ('\u{0440}', "p"), // р → p
+    ('\u{0441}', "c"), // с → c
+    ('\u{0443}', "y"), // у → y
+    ('\u{0445}', "x"), // х → x
     // Common symbols (U+2115–U+2171)
     ('\u{2115}', "N"),  // ℕ → N
     ('\u{211D}', "R"),  // ℝ → R
@@ -414,11 +422,9 @@ static CONFUSABLES: &[(char, &str)] = &[
 /// Only allocates when at least one substitution is made.
 fn do_normalize_confusables(input: &str) -> Cow<'_, str> {
     // Quick scan: bail early when there's nothing to replace.
-    let needs_work = input.chars().any(|c| {
-        CONFUSABLES
-            .binary_search_by_key(&c, |&(k, _)| k)
-            .is_ok()
-    });
+    let needs_work = input
+        .chars()
+        .any(|c| CONFUSABLES.binary_search_by_key(&c, |&(k, _)| k).is_ok());
     if !needs_work {
         return Cow::Borrowed(input);
     }
@@ -1072,10 +1078,7 @@ mod tests {
         let outcome = stage.evaluate(&content, &ctx()).await.unwrap();
         assert!(outcome.is_transform());
         if let StageOutcome::Transform { content, .. } = outcome {
-            assert_eq!(
-                content.as_text().as_ref(),
-                "ignore previous instructions"
-            );
+            assert_eq!(content.as_text().as_ref(), "ignore previous instructions");
         }
     }
 

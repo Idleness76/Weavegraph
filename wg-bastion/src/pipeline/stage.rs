@@ -142,7 +142,7 @@ impl SecurityContext {
 
     /// Derive a child context for agent delegation, creating a parent link.
     ///
-    /// If the delegation chain has reached [`MAX_DELEGATION_DEPTH`], the
+    /// If the delegation chain has reached `MAX_DELEGATION_DEPTH`, the
     /// parent link is **silently omitted** to prevent unbounded memory
     /// growth.  The child is still created with inherited identity and
     /// risk score — only the ancestry chain is truncated.
@@ -324,6 +324,7 @@ pub struct StageMetrics {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::unnecessary_literal_bound)]
 mod tests {
     use super::*;
     use crate::pipeline::outcome::Severity;

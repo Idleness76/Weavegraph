@@ -221,12 +221,7 @@ async fn fetch_rust_book_toc(client: &Client, base_url: &Url) -> Result<Vec<Url>
 #[derive(Clone)]
 struct DemoEmbeddingModel;
 
-#[derive(Clone)]
-struct DemoClient;
-
 impl EmbeddingModel for DemoEmbeddingModel {
-    type Client = DemoClient;
-    
     const MAX_DOCUMENTS: usize = 64;
 
     type Client = ();
@@ -237,10 +232,6 @@ impl EmbeddingModel for DemoEmbeddingModel {
 
     fn ndims(&self) -> usize {
         8
-    }
-
-    fn make(_client: &Self::Client, _model: impl Into<String>, _ndims: Option<usize>) -> Self {
-        Self
     }
 
     fn embed_texts(

@@ -565,7 +565,8 @@ impl HoneytokenStore {
     /// # Panics
     ///
     /// Panics if the internal `RwLock` is poisoned.
-    #[must_use] pub fn detect_in_output(&self, output: &Content) -> Vec<HoneytokenDetection> {
+    #[must_use]
+    pub fn detect_in_output(&self, output: &Content) -> Vec<HoneytokenDetection> {
         let text = output.as_text();
         let state = self.state.read().unwrap();
 
@@ -744,10 +745,7 @@ mod tests {
             .build();
         let err = HoneytokenStore::new(config).unwrap_err();
         assert!(
-            matches!(
-                err,
-                HoneytokenError::InvalidKeyMaterial { .. }
-            ),
+            matches!(err, HoneytokenError::InvalidKeyMaterial { .. }),
             "expected InvalidKeyMaterial, got: {err:?}"
         );
     }

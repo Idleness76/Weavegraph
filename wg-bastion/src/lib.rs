@@ -76,7 +76,6 @@
 
 #![warn(missing_docs, clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 pub mod config;
 pub mod pipeline;
