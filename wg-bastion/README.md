@@ -1,245 +1,245 @@
 # wg-bastion
 
-**Comprehensive security suite for graph-driven LLM applications built on [weavegraph](https://github.com/Idleness76/weavegraph).**
+**Defense-in-depth security guardrails for LLM applications, built on [weavegraph](https://github.com/Idleness76/weavegraph).**
 
-[![Crates.io](https://img.shields.io/crates/v/wg-bastion)](https://crates.io/crates/wg-bastion)
-[![Documentation](https://docs.rs/wg-bastion/badge.svg)](https://docs.rs/wg-bastion)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust Version](https://img.shields.io/badge/rust-1.89%2B-blue.svg)](https://www.rust-lang.org)
 
 ---
 
-## Overview
+## What is this?
 
-`wg-bastion` provides defense-in-depth security controls for LLM applications, addressing the **OWASP LLM Top 10 (2025)**, **NIST AI RMF**, and modern agentic AI threats. The crate offers opt-in, composable security pipelines with:
+`wg-bastion` is a composable security pipeline crate that sits between user input and your LLM backend. It catches prompt injections, hardens system prompts, normalises adversarial text, and provides configurable fail modes — all with sub-10ms P95 latency on the default heuristic path.
 
-- ✅ **Zero-Trust Architecture** – Validate inputs, outputs, tools, and RAG retrievals
-- ✅ **Graceful Degradation** – Configurable fail modes (closed/open/log-only)
-- ✅ **Minimal Overhead** – <50ms P95 latency target for standard pipelines
-- ✅ **Production-Ready** – Structured telemetry, audit logging, incident response
+**Core ideas:**
+
+- **Pipeline-of-stages** — each security check is a `GuardrailStage` that returns `Allow`, `Block`, `Transform`, `Escalate`, or `Skip`. Stages are priority-sorted and short-circuit on block.
+- **Graceful degradation** — individual stages can be marked `degradable`. If one fails, the pipeline logs the error and continues instead of hard-crashing.
+- **Feature-gated deps** — the default `heuristics` feature pulls in `regex` + `aho-corasick` + `unicode-normalization`. Heavier optional features (`honeytoken`, `normalization-html`, telemetry, ML backends) stay out of your dependency tree until you opt in.
 
 ---
 
-## Quick Start
-
-### Installation
-
-Add to your `Cargo.toml`:
+## Quick start
 
 ```toml
+# Cargo.toml
 [dependencies]
 wg-bastion = "0.1"
-weavegraph = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-### Basic Usage
-
 ```rust
-use wg_bastion::prelude::*;
-use weavegraph::prelude::*;
+use wg_bastion::pipeline::content::Content;
+use wg_bastion::pipeline::executor::PipelineExecutor;
+use wg_bastion::pipeline::stage::SecurityContext;
+use wg_bastion::config::FailMode;
+use wg_bastion::input::injection::InjectionStage;
+use wg_bastion::input::normalization::NormalizationStage;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load security policy from configuration
-    let policy = PolicyBuilder::new()
-        .with_file("config/wg-bastion.toml")?
-        .with_env()  // Override with WG_BASTION_* env vars
-        .build()?;
+async fn main() {
+    // Build a two-stage pipeline: normalise → detect injections
+    let pipeline = PipelineExecutor::builder()
+        .add_stage(NormalizationStage::with_defaults())
+        .add_stage(InjectionStage::with_defaults().unwrap())
+        .fail_mode(FailMode::Closed)
+        .build();
 
-    // Integrate with weavegraph (future API)
-    let app = GraphBuilder::new()
-        .with_security_policy(policy)
-        .build()?;
+    let ctx = SecurityContext::default();
+    let input = Content::Text("Ignore previous instructions.".into());
 
-    // Security is now enforced automatically on all requests
-    // app.invoke(...).await?;
-
-    Ok(())
+    let result = pipeline.run(&input, &ctx).await.unwrap();
+    if result.is_allowed() {
+        println!("safe — forward to LLM");
+    } else {
+        println!("blocked: {:?}", result.blocked_reasons());
+    }
 }
 ```
 
-### Configuration Example
+---
 
-Create `wg-bastion.toml`:
+## Feature flags
 
-```toml
-version = "1.0"
-enabled = true
-fail_mode = "closed"  # Block threats (vs "open" or "log_only")
+| Flag | Pulls in | Purpose |
+|------|----------|---------|
+| **`heuristics`** *(default)* | `regex`, `aho-corasick`, `unicode-normalization` | Pattern-based injection detection, structural analysis, normalization |
+| `honeytoken` | `ring`, `zeroize`, `aho-corasick` | AES-256-GCM encrypted canary tokens for system prompt leakage detection |
+| `normalization-html` | `lol_html` | Full HTML sanitisation via lol_html (falls back to regex without this) |
+| `moderation-onnx` | `ort` | Local ONNX-based ML content classifier *(future)* |
+| `telemetry-otlp` | `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` | OTLP metrics/traces export *(future)* |
+| `storage-redis` | `redis` | Distributed rate-limiting backend *(future)* |
+| `testing` | — | Exposes testing utilities and adversarial corpus |
 
-# Module configurations will be added in subsequent sprints
-# [input]
-# injection_detection = true
-# pii_detection = true
+---
 
-# [output]
-# schema_validation = true
-# egress_scanning = true
+## Crate layout
+
+```
+wg-bastion/
+├── src/
+│   ├── lib.rs              ← crate root + prelude re-exports
+│   ├── config/             ← SecurityPolicy, PolicyBuilder, FailMode
+│   ├── pipeline/           ← core execution framework
+│   │   ├── content.rs      ← Content enum (Text, Messages, ToolCall, …)
+│   │   ├── stage.rs        ← GuardrailStage trait, SecurityContext
+│   │   ├── outcome.rs      ← StageOutcome (Allow/Block/Transform/…), Severity
+│   │   ├── executor.rs     ← PipelineExecutor, priority sorting, degradation
+│   │   └── compat.rs       ← LegacyAdapter for old SecurityStage trait
+│   ├── prompt/             ← system prompt protection (Phase 2A)
+│   │   ├── template.rs     ← SecureTemplate with typed placeholders
+│   │   ├── scanner.rs      ← TemplateScanner — secret detection in prompts
+│   │   ├── honeytoken.rs   ← HoneytokenStore — AES-256-GCM canary tokens
+│   │   ├── isolation.rs    ← RoleIsolation — randomised boundary markers
+│   │   └── refusal.rs      ← RefusalPolicy — per-severity response modes
+│   └── input/              ← input validation (Phase 2B + 2C)
+│       ├── normalization.rs ← NormalizationStage — unicode/HTML/control-char
+│       ├── patterns.rs      ← 50 built-in injection patterns (5 categories)
+│       ├── injection.rs     ← InjectionStage — HeuristicDetector + ensemble
+│       ├── structural.rs    ← StructuralAnalyzer — 5-signal text analysis
+│       ├── ensemble.rs      ← EnsembleScorer — 4 pluggable scoring strategies
+│       └── spotlight.rs     ← Spotlight — RAG chunk boundary marking
+├── tests/
+│   └── injection_detection.rs  ← 152-sample adversarial+benign integration suite
+└── fuzz/
+    └── fuzz_targets/           ← cargo-fuzz targets for template, injection, normalization
 ```
 
 ---
 
-## Features
+## Architecture at a glance
 
-### Core Security Modules
+```
+         Content (Text | Messages | ToolCall | RetrievedChunks)
+              │
+              ▼
+  ┌─── PipelineExecutor ───────────────────────────────┐
+  │                                                     │
+  │  Stage 1: NormalizationStage   (priority 10)       │
+  │    → strip control chars, NFKC, confusables, HTML   │
+  │    → returns Transform(normalised_text)             │
+  │                                                     │
+  │  Stage 2: InjectionStage       (priority 50)       │
+  │    ├─ HeuristicDetector  (50 regex patterns, O(n))  │
+  │    ├─ StructuralAnalyzer (5 statistical signals)    │
+  │    └─ EnsembleScorer     (combine → Block/Allow)    │
+  │                                                     │
+  │  Stage N: (your custom stages)                      │
+  │                                                     │
+  └─────────────────────────────────────────────────────┘
+              │
+              ▼
+       PipelineResult
+       ├── is_allowed() → forward to LLM
+       ├── blocked_reasons() → return error / safe response
+       └── metrics (per-stage latency, degraded stages)
+```
 
-| Module | Purpose | OWASP Coverage | Status |
-|--------|---------|----------------|--------|
-| `config` | Policy management, fail modes | Foundation | ✅ In Progress |
-| `pipeline` | Multi-stage security pipeline | Foundation | ✅ In Progress |
-| `prompt` | Prompt protection, honeytokens | LLM07 | 🔄 Planned (Sprint 3) |
-| `input` | Injection scanning, PII detection | LLM01, LLM02 | 🔄 Planned (Sprint 4) |
-| `output` | Schema validation, sanitization | LLM05, LLM09 | 🔄 Planned (Sprint 5-6) |
-| `tools` | Tool policies, MCP security | LLM06 | 🔄 Planned (Sprint 6-7) |
-| `rag` | RAG ingestion, provenance | LLM04, LLM08 | 🔄 Planned (Sprint 7-8) |
-| `agents` | Delegation tracking, boundaries | Agentic AI | 🔄 Planned (Sprint 8-9) |
-| `abuse` | Rate limiting, cost monitoring | LLM10 | 🔄 Planned (Sprint 9-10) |
-| `telemetry` | Security events, OTLP export | AI RMF Measure | 🔄 Planned (Sprint 10-11) |
+Each stage implements the `GuardrailStage` trait:
 
-### Feature Flags
-
-```toml
-[features]
-default = ["heuristics"]
-
-# Core functionality
-heuristics = []  # Pattern-based detection (no ML deps)
-full = ["moderation-onnx", "pii-presidio", "telemetry-otlp"]
-
-# Optional backends
-moderation-onnx = ["ort"]           # Local ML classifier
-pii-presidio = ["reqwest"]          # Microsoft Presidio API
-storage-redis = ["redis"]           # Distributed rate limiting
-telemetry-otlp = ["opentelemetry"]  # Full observability
-
-# Development
-testing = []
-adversarial-corpus = ["testing"]
+```rust
+#[async_trait]
+pub trait GuardrailStage: Send + Sync {
+    fn id(&self) -> &str;
+    async fn evaluate(&self, content: &Content, ctx: &SecurityContext)
+        -> Result<StageOutcome, StageError>;
+    fn degradable(&self) -> bool { true }
+    fn priority(&self) -> u32 { 100 }
+}
 ```
 
 ---
 
-## Architecture
+## Modules in detail
 
-```text
-SecurityPolicy ─┬─► PolicyBuilder ─► Runtime Policy
-                │                     │
-                │                     ├─► InputPipeline ──► InjectionScanner, PIIDetector
-                │                     ├─► PromptGuard ──► Fragmentation, Honeytokens
-                │                     ├─► OutputValidator ──► Schema, Sanitization
-                │                     ├─► ToolGuard ──► MCP Security, Approval
-                │                     ├─► RagSecurity ──► Ingestion, Provenance
-                │                     └─► TelemetrySink ──► Audit, Metrics
-                │
-                └─► Integration with weavegraph App via hooks and EventBus
+### `pipeline` — core framework
+
+The execution engine that orchestrates security stages. Stages are sorted by `priority()` (ascending) and evaluated sequentially. A `Block` or `Escalate` short-circuits the remaining stages. A `Transform` replaces the content for subsequent stages. Errors from `degradable` stages are logged and skipped; errors from critical stages abort the pipeline.
+
+Key types: `PipelineExecutor`, `Content`, `StageOutcome`, `Severity`, `SecurityContext`, `GuardrailStage`.
+
+### `config` — policy management
+
+`SecurityPolicy` and `PolicyBuilder` for loading configuration from TOML/YAML/JSON files and environment variables. `FailMode` controls the pipeline's response to block decisions: `Closed` (enforce), `Open` (log-only pass-through), or `LogOnly` (audit without enforcement).
+
+### `prompt` — system prompt protection *(Phase 2A)*
+
+| Component | What it does |
+|-----------|-------------|
+| `SecureTemplate` | Typed placeholder system (`{{name:string:64}}`) with auto-escaping, length limits, and role-marker injection prevention |
+| `TemplateScanner` | Regex + Shannon entropy scanner that finds accidentally embedded secrets (API keys, JWTs, private keys) in system prompts |
+| `HoneytokenStore` | AES-256-GCM encrypted canary tokens injected into prompts; detects leakage via Aho-Corasick multi-pattern scan on output |
+| `RoleIsolation` | Wraps system prompts in randomised boundary markers (`[SYSTEM_START_<hex>]…[SYSTEM_END_<hex>]`) and detects forgery |
+| `RefusalPolicy` | Maps severity levels to response modes (hard block, redaction, safe response, escalation) |
+
+### `input` — input validation *(Phase 2B + 2C)*
+
+| Component | What it does |
+|-----------|-------------|
+| `NormalizationStage` | Canonicalises text before scanning: strips invisible Unicode, NFKC normalisation, confusable character mapping, HTML tag/entity handling, script-mixing detection |
+| `InjectionStage` | Composed detector: fast `RegexSet` first-pass (O(n) for all 50 patterns simultaneously), then structural analysis, then ensemble scoring |
+| `HeuristicDetector` | 50 regex patterns across 5 categories: Role Confusion, Instruction Override, Delimiter Manipulation, System Prompt Extraction, Encoding Evasion |
+| `StructuralAnalyzer` | Single-pass text analysis producing 5 signals: suspicious char ratio, instruction density, language mixing, repetition anomaly, punctuation anomaly |
+| `EnsembleScorer` | Combines heuristic + structural scores into a final `Block`/`Allow` decision via pluggable strategies: `AnyAboveThreshold`, `WeightedAverage`, `MajorityVote`, `MaxScore` |
+| `Spotlight` | RAG boundary marking — wraps retrieved chunks in unique markers and detects injection/forgery within chunk boundaries |
+
+---
+
+## Test coverage
+
+```
+209 tests total (186 unit + 20 integration + 3 doctest)
+  └─ 100+ adversarial samples across 5 attack categories
+  └─ 52 benign samples (no false positives on normal queries)
+  └─ 100% detection rate on adversarial corpus, <2% false positive rate
+  └─ P95 pipeline latency: 5.5ms
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the complete design.
+Run tests:
 
----
-
-## Documentation
-
-- **[Architecture Guide](docs/architecture.md)** – Module design and integration patterns
-- **[Threat Model](docs/threat_model.md)** – Attack trees, actor profiles, playbooks
-- **[Control Matrix](docs/control_matrix.md)** – OWASP/NIST/EU AI Act traceability
-- **[Master Plan](../docs/wg-bastion_plan_v2.md)** – 13-sprint roadmap and workstreams
-- **[Integration Guide](docs/integration_guide.md)** – Step-by-step adoption *(coming soon)*
-- **[API Documentation](https://docs.rs/wg-bastion)** – Full API reference
-
-### Attack Playbooks
-
-Incident response procedures for each OWASP category:
-
-- [LLM01: Prompt Injection](docs/attack_playbooks/llm01_prompt_injection.md)
-- [LLM02: Data Disclosure](docs/attack_playbooks/llm02_data_disclosure.md) *(planned)*
-- [LLM03-LLM10: Additional Playbooks](docs/attack_playbooks/) *(planned)*
-
----
-
-## Development Status
-
-**Current Sprint**: 1 (WS1 - Foundations & Governance)  
-**Release Target**: v0.1.0 (Sprint 13, ~26 weeks from now)
-
-### Sprint 1 Progress (WS1)
-- [x] Crate scaffold and workspace integration
-- [x] Core `config` module (PolicyBuilder, FailMode)
-- [x] Core `pipeline` module (SecurityPipeline, SecurityStage)
-- [x] Threat model documentation
-- [x] Control matrix (OWASP/NIST/EU AI Act mapping)
-- [ ] Governance documentation (README, SECURITY.md, PR template)
-
-### Upcoming Sprints
-- **Sprint 2-3**: Prompt protection (fragmentation, honeytokens)
-- **Sprint 4**: Input security (injection scanning, PII detection)
-- **Sprint 5-6**: Output validation, tool/MCP security
-- **Sprint 7-8**: RAG hardening, agentic AI controls
-
-See the [Master Plan](../docs/wg-bastion_plan_v2.md) for the full roadmap.
+```bash
+cargo test -p wg-bastion                   # default features
+cargo test -p wg-bastion --all-features    # all features including honeytoken + HTML
+```
 
 ---
 
 ## Performance
 
-**Latency Targets**:
-- Heuristic pipeline (default): <50ms P95
-- With ML classifier: <100ms P95
-- With remote API calls: <200ms P95
+Measured on the default `NormalizationStage → InjectionStage` pipeline:
 
-**Benchmarks** (coming in Sprint 2):
-```bash
-cargo bench --package wg-bastion
-```
+| Metric | Value |
+|--------|-------|
+| P95 latency | 5.5ms |
+| Detection rate | 100% (on 100-sample adversarial corpus) |
+| False positive rate | <2% (on 52-sample benign corpus) |
+
+The heuristic path is CPU-only with no allocations on the hot path for clean input (all normalization functions return `Cow::Borrowed` when no changes are needed).
 
 ---
 
-## Security
+## Roadmap
 
-We take security seriously. Please see our [Security Policy](SECURITY.md) for:
-
-- Vulnerability disclosure process
-- Supported versions
-- Security contact information
+| Phase | Status | Scope |
+|-------|--------|-------|
+| **1 — Pipeline foundations** | ✅ Done | `config`, `pipeline`, `Content`, `GuardrailStage`, `PipelineExecutor` |
+| **2 — Prompt & injection security** | ✅ Done | `prompt/*`, `input/*`, 50 detection patterns, ensemble scoring |
+| 3 — Output validation | 📋 Planned | Schema enforcement, egress scanning, PII redaction |
+| 4 — Tool & MCP security | 📋 Planned | Tool allowlists, argument validation, MCP sandboxing |
+| 5 — RAG hardening | 📋 Planned | Provenance tracking, ingestion scanning |
+| 6 — Agentic AI controls | 📋 Planned | Delegation boundaries, loop detection |
+| 7 — Telemetry & abuse | 📋 Planned | OTLP export, rate limiting, cost monitoring |
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](../CONTRIBUTING.md) for:
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for development setup, code standards, and PR checklist.
 
-- Development setup
-- Code standards
-- Security review requirements
-- PR checklist
+## Security
 
----
+See [SECURITY.md](../SECURITY.md) for vulnerability disclosure and supported versions.
 
 ## License
 
-This project is licensed under the MIT License - see [LICENSE](../LICENSE) for details.
-
----
-
-## Acknowledgments
-
-This project builds on research and best practices from:
-
-- [OWASP LLM Top 10](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
-- [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)
-- [Microsoft Presidio](https://github.com/microsoft/presidio)
-- [Rebuff Prompt Injection Detector](https://github.com/protectai/rebuff)
-- [NVIDIA NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
-
----
-
-## Status Badges
-
-- ✅ **Implemented** – Code complete, tests passing
-- 🔄 **In Progress** – Active development
-- 📋 **Planned** – Scope defined, not started
-- ❌ **Deferred** – Post-v0.1.0 release
-
----
-
-*Built with ❤️ for secure LLM applications*
+MIT — see [LICENSE](../LICENSE).
