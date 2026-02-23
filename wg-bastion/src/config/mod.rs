@@ -56,6 +56,13 @@ pub enum ConfigError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
+    /// Unsupported or unrecognised configuration file extension
+    #[error("Unsupported config file format: {message}")]
+    UnsupportedFormat {
+        /// Description of the problem
+        message: String,
+    },
+
     /// Configuration validation failed
     #[error("Policy validation failed: {0}")]
     Validation(#[from] validator::ValidationErrors),
@@ -172,9 +179,9 @@ impl PolicyBuilder {
                 })?
             }
             _ => {
-                return Err(ConfigError::ParseError {
-                    format: "unknown".to_string(),
-                    source: "File extension must be .yaml, .yml, .toml, or .json".into(),
+                return Err(ConfigError::UnsupportedFormat {
+                    message: "file extension must be .yaml, .yml, .toml, or .json"
+                        .to_string(),
                 });
             }
         };

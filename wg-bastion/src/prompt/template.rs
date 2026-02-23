@@ -295,6 +295,8 @@ impl SecureTemplate {
     pub fn compile(template: &str) -> Result<Self, TemplateError> {
         let re = placeholder_regex();
         let mut placeholders = Vec::new();
+        // Track byte ranges that are consumed by valid placeholders.
+        let mut matched_ranges: Vec<std::ops::Range<usize>> = Vec::new();
 
         for caps in re.captures_iter(template) {
             let m = caps.get(0).unwrap();
@@ -302,6 +304,24 @@ impl SecureTemplate {
             let typ = &caps[2];
             let constraint = caps.get(3).map(|c| c.as_str());
             placeholders.push(parse_placeholder(name, typ, constraint, m.start())?);
+            matched_ranges.push(m.start()..m.end());
+        }
+
+        // Detect unmatched `{{` — placeholders that look like `{{...}}` but
+        // didn't satisfy the regex (unknown type, malformed name, etc.).
+        let mut search = 0;
+        while let Some(rel) = template[search..].find("{{") {
+            let pos = search + rel;
+            let covered = matched_ranges.iter().any(|r| r.start == pos);
+            if !covered {
+                // Extract a short excerpt for context.
+                let excerpt: String = template[pos..].chars().take(32).collect();
+                return Err(TemplateError::InvalidPlaceholder {
+                    position: pos,
+                    reason: format!("unrecognised or malformed placeholder near `{excerpt}`"),
+                });
+            }
+            search = pos + 2;
         }
 
         let scanner = TemplateScanner::with_defaults().ok().map(Arc::new);

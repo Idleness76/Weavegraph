@@ -7,7 +7,7 @@
 | 0.1.x   | :white_check_mark: | Current development version |
 | < 0.1.0 | :x:                | Pre-release, not supported |
 
-**Note**: wg-bastion is currently in active development (pre-v0.1.0 release). Security support begins with the first stable release.
+**Note**: wg-bastion is currently in active development and is pre-1.0. Security support is provided for versions 0.1.0 and later (see table above); earlier pre-release versions (< 0.1.0) are not supported.
 
 ---
 
@@ -21,7 +21,7 @@ Security vulnerabilities should **not** be reported via GitHub issues, discussio
 
 ### 2. Report Privately
 
-Send vulnerability reports to: **security@example.com** *(update with actual contact)*
+Submit vulnerability reports via the GitHub **"Report a vulnerability"** feature on this repository's **Security** tab (GitHub Security Advisories). This keeps the report private and lets maintainers coordinate a fix before public disclosure.
 
 Include in your report:
 - Description of the vulnerability

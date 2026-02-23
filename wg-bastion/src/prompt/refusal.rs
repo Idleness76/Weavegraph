@@ -288,8 +288,16 @@ impl RefusalPolicy {
     /// Returns `None` for non-blocking outcomes (Allow, Transform, Skip).
     /// For Block outcomes, returns a [`RefusalAction`] with the appropriate
     /// mode, response text, and optional audit entry.
+    ///
+    /// `stage_id` identifies the guardrail stage that produced the blocking
+    /// outcome so that audit records correctly attribute the source.
     #[must_use]
-    pub fn apply(&self, outcome: &StageOutcome, ctx: &SecurityContext) -> Option<RefusalAction> {
+    pub fn apply(
+        &self,
+        outcome: &StageOutcome,
+        ctx: &SecurityContext,
+        stage_id: &str,
+    ) -> Option<RefusalAction> {
         let (reason, severity) = match outcome {
             StageOutcome::Block { reason, severity } => (reason.as_str(), *severity),
             _ => return None,
@@ -314,7 +322,7 @@ impl RefusalPolicy {
                 timestamp: SystemTime::now(),
                 session_id: Some(ctx.session_id().to_owned()),
                 user_id: ctx.user_id().map(str::to_owned),
-                stage_id: "refusal_policy".into(),
+                stage_id: stage_id.to_owned(),
                 severity,
                 refusal_mode: mode.to_string(),
                 reason_hash: hash_reason(reason),
@@ -369,7 +377,7 @@ mod tests {
             .build();
         let policy = RefusalPolicy::new(config);
         let outcome = block_outcome("threat detected", Severity::High);
-        let action = policy.apply(&outcome, &ctx()).unwrap();
+        let action = policy.apply(&outcome, &ctx(), "test_stage").unwrap();
         assert_eq!(action.response_text, "Nope");
         assert!(matches!(action.mode, RefusalMode::Block { .. }));
     }
@@ -385,7 +393,7 @@ mod tests {
             .build();
         let policy = RefusalPolicy::new(config);
         let outcome = block_outcome("secret found", Severity::Low);
-        let action = policy.apply(&outcome, &ctx()).unwrap();
+        let action = policy.apply(&outcome, &ctx(), "test_stage").unwrap();
         assert_eq!(action.response_text, "[REMOVED]");
         assert!(matches!(action.mode, RefusalMode::Redact { .. }));
     }
@@ -400,7 +408,7 @@ mod tests {
             .build();
         let policy = RefusalPolicy::new(config);
         let outcome = block_outcome("injection attempt", Severity::Medium);
-        let action = policy.apply(&outcome, &ctx()).unwrap();
+        let action = policy.apply(&outcome, &ctx(), "test_stage").unwrap();
         assert_eq!(action.response_text, "Blocked: injection_detected");
     }
 
@@ -414,7 +422,7 @@ mod tests {
             .build();
         let policy = RefusalPolicy::new(config);
         let outcome = block_outcome("suspicious activity", Severity::High);
-        let action = policy.apply(&outcome, &ctx()).unwrap();
+        let action = policy.apply(&outcome, &ctx(), "test_stage").unwrap();
         assert_eq!(
             action.response_text,
             "Your request has been escalated for human review."
@@ -451,13 +459,21 @@ mod tests {
         let policy = RefusalPolicy::new(config);
 
         let low_action = policy
-            .apply(&block_outcome("minor leak", Severity::Low), &ctx())
+            .apply(
+                &block_outcome("minor leak", Severity::Low),
+                &ctx(),
+                "test_stage",
+            )
             .unwrap();
         assert_eq!(low_action.response_text, "[LOW-REDACT]");
         assert!(matches!(low_action.mode, RefusalMode::Redact { .. }));
 
         let high_action = policy
-            .apply(&block_outcome("threat", Severity::High), &ctx())
+            .apply(
+                &block_outcome("threat", Severity::High),
+                &ctx(),
+                "test_stage",
+            )
             .unwrap();
         assert_eq!(high_action.response_text, "HIGH-BLOCK");
         assert!(matches!(high_action.mode, RefusalMode::Block { .. }));
@@ -468,7 +484,7 @@ mod tests {
     fn allow_outcome_returns_none() {
         let policy = RefusalPolicy::with_defaults();
         let outcome = StageOutcome::allow(0.99);
-        assert!(policy.apply(&outcome, &ctx()).is_none());
+        assert!(policy.apply(&outcome, &ctx(), "test_stage").is_none());
     }
 
     // 7. Audit entry created with hashed reason (not raw)
@@ -477,7 +493,7 @@ mod tests {
         let policy = RefusalPolicy::new(RefusalConfig::default());
         let reason = "secret API key detected in template";
         let outcome = block_outcome(reason, Severity::Critical);
-        let action = policy.apply(&outcome, &ctx()).unwrap();
+        let action = policy.apply(&outcome, &ctx(), "injection_stage").unwrap();
 
         let audit = action
             .audit_entry
@@ -492,6 +508,7 @@ mod tests {
         assert_eq!(audit.severity, Severity::Critical);
         assert_eq!(audit.session_id.as_deref(), Some("test-session"));
         assert_eq!(audit.user_id.as_deref(), Some("user-42"));
+        assert_eq!(audit.stage_id, "injection_stage");
     }
 
     // 8. Default policy maps severities correctly
@@ -522,7 +539,7 @@ mod tests {
     fn skip_outcome_returns_none() {
         let policy = RefusalPolicy::with_defaults();
         let outcome = StageOutcome::skip("not applicable");
-        assert!(policy.apply(&outcome, &ctx()).is_none());
+        assert!(policy.apply(&outcome, &ctx(), "test_stage").is_none());
     }
 
     // 10. Reason classification covers categories
@@ -544,7 +561,7 @@ mod tests {
         let config = RefusalConfig::builder().audit_enabled(false).build();
         let policy = RefusalPolicy::new(config);
         let outcome = block_outcome("threat", Severity::High);
-        let action = policy.apply(&outcome, &ctx()).unwrap();
+        let action = policy.apply(&outcome, &ctx(), "test_stage").unwrap();
         assert!(action.audit_entry.is_none());
     }
 }

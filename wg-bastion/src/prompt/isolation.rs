@@ -227,40 +227,50 @@ impl RoleIsolation {
     /// - **Unmatched markers** — a start without an end, or vice versa
     #[must_use]
     pub fn detect_boundary_violation(&self, text: &str) -> Vec<BoundaryViolation> {
-        let lower = text.to_lowercase();
-        let prefix_lower = self.config.marker_prefix.to_lowercase();
-        let suffix_lower = self.config.marker_suffix.to_lowercase();
+        // Use ASCII-case-insensitive search directly on the original text bytes
+        // so that byte offsets always correspond to valid positions in `text`.
+        // (Unicode to_lowercase can change byte lengths, shifting indices.)
+        let prefix_bytes = self.config.marker_prefix.as_bytes();
+        let suffix_bytes = self.config.marker_suffix.as_bytes();
+
+        /// Find all byte offsets where `needle` appears in `haystack` using
+        /// ASCII-case-insensitive comparison (safe because markers are ASCII).
+        fn find_all_ascii_ci(haystack: &str, needle: &[u8]) -> Vec<usize> {
+            let hay = haystack.as_bytes();
+            if needle.is_empty() {
+                return vec![];
+            }
+            hay.windows(needle.len())
+                .enumerate()
+                .filter(|(_, w)| w.eq_ignore_ascii_case(needle))
+                .map(|(i, _)| i)
+                .collect()
+        }
 
         // Collect all marker-like hits (case-insensitive).
         let mut hits: Vec<MarkerHit> = Vec::new();
 
-        let mut search_from = 0;
-        while let Some(idx) = lower[search_from..].find(&prefix_lower) {
-            let abs = search_from + idx;
+        for abs in find_all_ascii_ci(text, prefix_bytes) {
             // Find the closing `]` to get full marker length.
-            let end = lower[abs..]
+            let end = text[abs..]
                 .find(']')
-                .map_or(abs + prefix_lower.len(), |j| abs + j + 1);
+                .map_or(abs + prefix_bytes.len(), |j| abs + j + 1);
             hits.push(MarkerHit {
                 pos: abs,
                 len: end - abs,
                 is_start: true,
             });
-            search_from = abs + 1;
         }
 
-        search_from = 0;
-        while let Some(idx) = lower[search_from..].find(&suffix_lower) {
-            let abs = search_from + idx;
-            let end = lower[abs..]
+        for abs in find_all_ascii_ci(text, suffix_bytes) {
+            let end = text[abs..]
                 .find(']')
-                .map_or(abs + suffix_lower.len(), |j| abs + j + 1);
+                .map_or(abs + suffix_bytes.len(), |j| abs + j + 1);
             hits.push(MarkerHit {
                 pos: abs,
                 len: end - abs,
                 is_start: false,
             });
-            search_from = abs + 1;
         }
 
         hits.sort_by_key(|h| h.pos);

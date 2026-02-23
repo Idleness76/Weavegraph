@@ -20,6 +20,14 @@ pub trait EnsembleStrategy: Send + Sync + std::fmt::Debug {
     /// Human-readable name of the strategy.
     fn name(&self) -> &str;
 
+    /// Decision threshold: combined scores at or above this value are blocked.
+    ///
+    /// Override this in custom strategies to expose their configured threshold.
+    /// Defaults to `0.5`.
+    fn threshold(&self) -> f32 {
+        0.5
+    }
+
     /// Combine named `(detector_id, score)` pairs into a single `0.0–1.0` score.
     fn combine(&self, scores: &[(&str, f32)]) -> f32;
 }
@@ -44,6 +52,10 @@ impl Default for AnyAboveThreshold {
 impl EnsembleStrategy for AnyAboveThreshold {
     fn name(&self) -> &'static str {
         "any_above_threshold"
+    }
+
+    fn threshold(&self) -> f32 {
+        self.threshold
     }
 
     fn combine(&self, scores: &[(&str, f32)]) -> f32 {
@@ -75,6 +87,10 @@ impl Default for WeightedAverage {
 impl EnsembleStrategy for WeightedAverage {
     fn name(&self) -> &'static str {
         "weighted_average"
+    }
+
+    fn threshold(&self) -> f32 {
+        self.threshold
     }
 
     fn combine(&self, scores: &[(&str, f32)]) -> f32 {
@@ -148,6 +164,10 @@ impl Default for MaxScore {
 impl EnsembleStrategy for MaxScore {
     fn name(&self) -> &'static str {
         "max_score"
+    }
+
+    fn threshold(&self) -> f32 {
+        self.threshold
     }
 
     fn combine(&self, scores: &[(&str, f32)]) -> f32 {
@@ -310,11 +330,7 @@ impl EnsembleScorer {
 
     /// Resolve the effective threshold for the active strategy.
     fn resolve_threshold(&self) -> f32 {
-        match self.strategy.name() {
-            "any_above_threshold" | "max_score" | "weighted_average" => 0.7,
-            // "majority_vote" and custom strategies default to 0.5.
-            _ => 0.5,
-        }
+        self.strategy.threshold()
     }
 }
 
