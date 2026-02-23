@@ -19,6 +19,9 @@ allow = [
 ignore = [
     "RUSTSEC-2025-0052", # async-std transitive dependency used only in test tooling
     "RUSTSEC-2025-0057", # fxhash via scraper/selectors; upstream is unmaintained but non-optional
+    "RUSTSEC-2026-0007", # bytes integer overflow; waiting for upstream fix
+    "RUSTSEC-2024-0421", # idna Punycode labels; transitive via reqwest, no direct exposure
+    "RUSTSEC-2024-0370", # proc-macro-error unmaintained; transitive via derive macros
 ]
 
 [bans]

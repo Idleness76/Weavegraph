@@ -1,0 +1,89 @@
+[package]
+name = "wg-bastion"
+version = "0.1.0"
+edition = "2024"
+description = "Comprehensive security suite for graph-driven LLM applications built on weavegraph"
+license = "MIT"
+repository = "https://github.com/Idleness76/weavegraph"
+readme = "README.md"
+keywords = ["security", "llm", "guardrails", "ai-safety", "prompt-injection"]
+categories = ["security", "web-programming", "algorithms"]
+rust-version = "1.89"
+homepage = "https://github.com/Idleness76/weavegraph"
+documentation = "https://docs.rs/wg-bastion"
+
+[dependencies]
+# Error handling
+thiserror = "2"
+
+# Tracing & logging
+tracing = "0.1"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+async-trait = "0.1"
+
+# Serialization & configuration
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+dotenvy = "0.15"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Optional dependencies
+aho-corasick = { version = "1", optional = true }
+lol_html = { version = "2", optional = true }
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", optional = true }
+opentelemetry-otlp = { version = "0.27", optional = true }
+ort = { version = "2.0.0-rc.10", optional = true }
+redis = { version = "0.27", optional = true }
+regex = { version = "1", optional = true }
+reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls"] }
+ring = { version = "0.17", optional = true }
+sqlx = { version = "0.8", optional = true, features = ["sqlite"] }
+unicode-normalization = { version = "0.1", optional = true }
+zeroize = { version = "1.8", features = ["derive"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+
+[features]
+default = ["heuristics"]
+
+# Core functionality
+heuristics = ["regex", "aho-corasick", "unicode-normalization"]  # Pattern-based detection
+full = ["moderation-onnx", "pii-presidio", "telemetry-otlp"]
+
+# Moderation backends
+moderation-onnx = ["ort"]
+moderation-remote = ["reqwest"]
+
+# PII detection
+pii-presidio = ["reqwest"]
+pii-local = []
+
+# Storage backends
+storage-redis = ["redis"]
+storage-sqlite = ["sqlx"]
+
+# Telemetry
+telemetry-otlp = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp"]
+
+# Phase 2: Honeytoken & normalization
+honeytoken = ["ring", "zeroize", "aho-corasick"]
+normalization-html = ["lol_html"]
+
+# Testing utilities
+testing = []
+adversarial-corpus = ["testing"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.cargo-machete]
+ignored = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "ort", "redis", "reqwest", "sqlx"]
