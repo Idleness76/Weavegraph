@@ -180,8 +180,7 @@ impl PolicyBuilder {
             }
             _ => {
                 return Err(ConfigError::UnsupportedFormat {
-                    message: "file extension must be .yaml, .yml, .toml, or .json"
-                        .to_string(),
+                    message: "file extension must be .yaml, .yml, .toml, or .json".to_string(),
                 });
             }
         };
