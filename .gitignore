@@ -30,4 +30,5 @@ external/
 data/*.db
 data/*.sqlite
 data/*.tmp
-copilot-instructions.md
+.vscode/
+tmp/
