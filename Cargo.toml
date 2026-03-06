@@ -1,9 +1,6 @@
 [workspace]
-members = ["weavegraph", "wg-ragsmith"]
+members = ["weavegraph"]
 resolver = "2"
-
-[patch.crates-io]
-wg-ragsmith = { path = "wg-ragsmith" }
 
 [workspace.package]
 edition = "2024"

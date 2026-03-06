@@ -119,6 +119,10 @@ Property-based testing with `proptest` ensures correctness across edge cases.
 
 
 
+## Related Crates
+
+- **[wg-ragsmith](https://github.com/Idleness76/wg-ragsmith)** - Semantic chunking and RAG utilities for Weavegraph nodes
+
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md).
