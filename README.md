@@ -8,10 +8,9 @@
 
 ---
 
-> **EARLY BETA**  
-> This framework is in active development (targeting v0.2.x). APIs are evolving rapidly, and **breaking changes may happen** between minor versions.  
-> The core architecture is solid, but expect rough edges, API churn, and occasional surprises. Pin exact versions if stability matters.  
-> Use in production at your own risk—or better yet, help us shape the future by reporting issues and suggesting improvements.
+> **Pre-1.0 Status**  
+> Weavegraph core APIs are stable and production-ready. However, as we approach 1.0, minor versions may introduce targeted refinements to APIs or behaviors. See [MIGRATION.md](docs/MIGRATION.md) for upgrade guidance between releases.  
+> Your feedback shapes the future—please report issues and suggest improvements as you use the framework.
 
 ---
 
@@ -34,8 +33,24 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-weavegraph = "0.2"
+weavegraph = "0.3"
 ```
+
+> **Note:** Examples and instructions in this README are current as of 0.3.x. For upgrading from 0.2.x, see [MIGRATION.md](docs/MIGRATION.md).
+
+## Dependency Compatibility
+
+Weavegraph targets **Rust 1.90+** (MSRV). The following table shows compatibility with key dependencies:
+
+| Rust Version | Tokio | Serde | SQLx |
+|--------------|-------|-------|------|
+| 1.90 (MSRV)  | 1.40+ | 1.0+  | 0.8+ |
+| Stable       | 1.40+ | 1.0+  | 0.8+ |
+| Nightly      | 1.40+ | 1.0+  | 0.8+ |
+
+**Optional dependencies:** SQLx 0.8 (postgres/sqlite features), miette 7.x (diagnostics feature), rig-core 0.30 (rig feature).
+
+See [Cargo.toml](Cargo.toml) for complete dependency versions and feature configuration.
 
 ## Documentation
 
@@ -134,8 +149,11 @@ Before merging or cutting a release, run full local parity checks:
 
 `ci-local.sh` intentionally fails if required tools are missing (`cargo-semver-checks`, `cargo-deny`) so a local pass is a meaningful signal for CI.
 
+## Resources
 
-
+- **[Migration Guide](docs/MIGRATION.md)** - Upgrade paths between releases (0.2.x → 0.3.x and beyond)
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - Deep dive into core design and internals
+- **[Examples Directory](examples/)** - Runnable patterns: graph execution, scheduling, streaming, persistence, and more
 
 ## Related Crates
 
