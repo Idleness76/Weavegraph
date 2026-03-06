@@ -15,6 +15,8 @@
 //! execution, versioned state, and structured observability. Consult the workspace
 //! `ARCHITECTURE.md` for a complete module guide, authoring patterns, and execution flow.
 
+#![warn(missing_docs)]
+
 pub mod app;
 pub mod channels;
 pub mod control;

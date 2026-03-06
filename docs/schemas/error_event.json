@@ -1,5 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://github.com/Idleness76/weavegraph/schemas/error_event.json",
     "title": "ErrorEvent",
     "description": "Represents an error event in the Weavegraph system with scope, error details, tags, and context.",
     "type": "object",

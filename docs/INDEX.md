@@ -20,5 +20,8 @@ Complete documentation for building workflows with Weavegraph.
 
 ## Additional Resources
 
+- [MIGRATION.md](MIGRATION.md) - Upgrade notes and migration guides by release
+- [Schema Definitions](schemas/) - JSON schemas for event and error payloads
+- [CHANGELOG.md](../CHANGELOG.md) - Release history (placeholder until added in §0.P.3)
 - [Examples](../weavegraph/examples/) - Runnable code for all major patterns
 - [STREAMING_QUICKSTART.md](../weavegraph/examples/STREAMING_QUICKSTART.md) - Event streaming quickstart guide
