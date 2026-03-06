@@ -20,24 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 """
 # Commit parsers for conventional commits
-[[changelog.body]]
-group = "### Added"
-types = ["feat", "feature"]
-[[changelog.body]]
-group = "### Changed"
-types = ["refactor", "perf"]
-[[changelog.body]]
-group = "### Fixed"
-types = ["fix", "bugfix"]
-[[changelog.body]]
-group = "### Deprecated"
-types = ["deprecate"]
-[[changelog.body]]
-group = "### Removed"
-types = ["remove"]
-[[changelog.body]]
-group = "### Security"
-types = ["security"]
+commit_parsers = [
+	{ message = "^(feat|feature)", group = "Added" },
+	{ message = "^(refactor|perf)", group = "Changed" },
+	{ message = "^(fix|bugfix)", group = "Fixed" },
+	{ message = "^deprecate", group = "Deprecated" },
+	{ message = "^remove", group = "Removed" },
+	{ message = "^security", group = "Security" },
+]
 
 # Package-specific configuration
 [[package]]
