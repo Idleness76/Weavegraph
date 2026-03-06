@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/Idleness76/weavegraph/discussions
+    about: Ask questions, share ideas, or discuss Weavegraph with the community
+  - name: Documentation
+    url: https://docs.rs/weavegraph
+    about: Check the official documentation for guides and API reference
