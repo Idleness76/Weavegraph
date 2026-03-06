@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# ci-quick.sh - Fast pre-push checks (skip MSRV and optional tools)
+# ci-quick.sh - Fast pre-push checks aligned to required CI settings
 # Usage: ./scripts/ci-quick.sh
 
-set -e
+set -euo pipefail
 
-echo "🚀 Running quick CI checks (stable toolchain only)..."
+REQUIRED_TOOLCHAIN="1.90.0"
+
+echo "🚀 Running quick CI checks (toolchain: ${REQUIRED_TOOLCHAIN})..."
 echo "======================================================"
 echo ""
 
@@ -30,17 +32,33 @@ run_check() {
     fi
 }
 
+if ! command -v rustup >/dev/null 2>&1; then
+    echo -e "${RED}rustup is required but not installed.${NC}"
+    exit 1
+fi
+
+if ! rustup toolchain list | grep -q "${REQUIRED_TOOLCHAIN}"; then
+    echo -e "${YELLOW}Installing Rust toolchain ${REQUIRED_TOOLCHAIN} (rustfmt, clippy)...${NC}"
+    rustup toolchain install "${REQUIRED_TOOLCHAIN}" --profile minimal --component rustfmt --component clippy
+fi
+
 # Essential checks that must pass
-run_check "cargo fmt" "cargo fmt --all -- --check"
-run_check "cargo clippy" "cargo clippy --workspace --all-targets -- -D warnings"
-run_check "cargo test" "cargo test --workspace"
-run_check "cargo doc" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo doc --workspace --all-features --no-deps"
+run_check "cargo fmt" "cargo +${REQUIRED_TOOLCHAIN} fmt --all -- --check"
+run_check "cargo clippy" "cargo +${REQUIRED_TOOLCHAIN} clippy --workspace --all-targets --all-features -- -D warnings"
+# Tests: run lib tests by default (no external dependencies); integration tests if postgres is available
+if pg_isready -h localhost -U weavegraph -d weavegraph_test >/dev/null 2>&1; then
+    run_check "cargo test" "cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features"
+else
+    echo -e "${YELLOW}⚠ Postgres not available; running library tests only${NC}"
+    run_check "cargo test (lib only)" "cargo +${REQUIRED_TOOLCHAIN} test --lib --all-features"
+fi
+run_check "cargo doc" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +${REQUIRED_TOOLCHAIN} doc --workspace --all-features --no-deps"
 
 echo "======================================================"
 if [ $FAILED -eq 0 ]; then
     echo -e "${GREEN}✅ Quick checks passed!${NC}"
     echo ""
-    echo "Note: Full CI also tests MSRV (1.89.0), deny, and machete."
+    echo "Note: Full CI also runs cargo semver-checks, cargo deny, and cargo machete advisory."
     echo "Run ./scripts/ci-local.sh for complete validation."
     exit 0
 else

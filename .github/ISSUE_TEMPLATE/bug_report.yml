@@ -1,0 +1,128 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us diagnose and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Create a graph with...
+        2. Run invoke with...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: I expected...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Instead, what happened was...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Weavegraph Version
+      description: Which version of Weavegraph are you using?
+      placeholder: "e.g., 0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: rust-version
+    attributes:
+      label: Rust Version
+      description: Output of `rustc --version`
+      placeholder: "e.g., 1.89.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What OS are you running on?
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: checkpointer
+    attributes:
+      label: Checkpointer Type
+      description: Which checkpointer are you using?
+      options:
+        - InMemory
+        - SQLite
+        - PostgreSQL
+        - N/A
+    validations:
+      required: false
+
+  - type: textarea
+    id: code-sample
+    attributes:
+      label: Minimal Code Sample
+      description: Please provide a minimal code sample that reproduces the issue
+      render: rust
+      placeholder: |
+        // Minimal reproduction
+        use weavegraph::prelude::*;
+
+        #[tokio::main]
+        async fn main() {
+            // Your code here
+        }
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: Please copy and paste any relevant log output or error messages
+      render: shell
+      placeholder: Paste error messages or logs here...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here (dependencies, configuration, etc.)
+      placeholder: Any additional information...
+    validations:
+      required: false

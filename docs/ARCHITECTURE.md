@@ -11,7 +11,7 @@ Comprehensive technical documentation for Weavegraph's internal design and modul
 
 Weavegraph originated as a capstone project for a Rust online course, developed by contributors with Python/TypeScript backgrounds and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to Rust while leveraging its performance, safety, and concurrency advantages.
 
-While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.1.x), it's still maturing—use with awareness of ongoing API evolution.
+While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.2.x), it's still maturing; use with awareness of ongoing API evolution.
 
 
 | Crate | Purpose | Highlights |
@@ -447,9 +447,9 @@ let builder = GraphBuilder::new()
 // Convert to petgraph for analysis (feature-gated)
 #[cfg(feature = "petgraph-compat")]
 {
-  use weavegraph::graphs::PetgraphConversion;
-  let pg = builder.to_petgraph();
-    
+    use weavegraph::graphs::PetgraphConversion;
+    let pg = builder.to_petgraph();
+
     // Use petgraph algorithms
     let topo_order = petgraph::algo::toposort(&pg.graph, None)?;
     let dot = petgraph::dot::Dot::new(&pg.graph);
@@ -457,8 +457,6 @@ let builder = GraphBuilder::new()
 }
 
 // Execute with Weavegraph
-  let app = builder.compile()?;
+let app = builder.compile()?;
 let result = app.invoke(initial_state).await?;
 ```
-
----

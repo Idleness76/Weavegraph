@@ -36,7 +36,6 @@ services:
 
 volumes:
   ollama_data:
-    external: true
   postgres_data:
 
 networks:

@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.3.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (skip publish and tag)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  RUST_VERSION: 1.89.0
+
+jobs:
+  release:
+    name: Release weavegraph
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Validate version format
+        run: |
+          if ! [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Version must be in format X.Y.Z (e.g., 0.3.0)"
+            exit 1
+          fi
+
+      - name: Check version in Cargo.toml
+        run: |
+          CARGO_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if [ "$CARGO_VERSION" != "${{ inputs.version }}" ]; then
+            echo "Error: Cargo.toml version ($CARGO_VERSION) doesn't match input version (${{ inputs.version }})"
+            echo "Please update Cargo.toml version field first"
+            exit 1
+          fi
+
+      - name: Check CHANGELOG.md updated
+        run: |
+          if ! grep -q "## \[${{ inputs.version }}\]" CHANGELOG.md; then
+            echo "Error: CHANGELOG.md doesn't contain release notes for v${{ inputs.version }}"
+            echo "Please update CHANGELOG.md before releasing"
+            exit 1
+          fi
+
+      - name: Run full CI checks
+        run: |
+          cargo fmt --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          cargo doc --workspace --all-features --no-deps
+
+      - name: Dry run cargo publish
+        run: cargo publish --dry-run
+
+      - name: Create git tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "weavegraph-v${{ inputs.version }}" -m "Release weavegraph v${{ inputs.version }}"
+          git push origin "weavegraph-v${{ inputs.version }}"
+
+      - name: Publish to crates.io
+        if: ${{ !inputs.dry_run }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_WEAVEGRAPH }}
+        run: cargo publish
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run }}
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: weavegraph-v${{ inputs.version }}
+          release_name: Weavegraph v${{ inputs.version }}
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md#${{ inputs.version }}) for details.
+          draft: false
+          prerelease: false
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "✓ Dry run complete - no changes published"
+          echo "Version validated: ${{ inputs.version }}"
+          echo "Tag would be created: weavegraph-v${{ inputs.version }}"
