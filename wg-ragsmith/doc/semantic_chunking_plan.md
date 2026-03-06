@@ -154,7 +154,7 @@ Also integrate with `EventBus` for streaming chunking progress.
 - Service layer responsibilities: config layering, embedder resolution (RIG -> `EmbeddingProvider` adapter), document kind detection, and centralised telemetry emission.
 - Builder should accept defaults from `SemanticChunkingModuleConfig`, optional `Arc<dyn EmbeddingModelDyn>`, and cache configuration controls (capacity toggles, shared handles where needed).
 - Request API will allow overrides per call (chunking config, preprocess knobs, embedder) and accept either raw payloads or filesystem paths; file resolution uses async I/O and extension-based dispatch.
-- Telemetry instrumentation: wrap chunking in `tracing::span!("semantic_chunk").in_scope`, record counters (cache hits/misses, fallback_used, smoothing_window) and thread them into the returned `ChunkTelemetry` payload; graft remains responsible for streaming these details over its event bus.
+- Telemetry instrumentation: wrap chunking in `tracing::span!("semantic_chunk").in_scope`, record counters (cache hits/misses, fallback_used, smoothing_window) and thread them into the returned `ChunkTelemetry` payload; weavegraph remains responsible for streaming these details over its event bus.
 - Response returns `ChunkingOutcome` plus the derived telemetry snapshot, exposing the `Vec<SemanticChunk>` for callers to mutate or enrich before persistence.
 
 ## SemanticChunkingService TODOs (2025-10-01T17:05:00Z)
@@ -173,7 +173,7 @@ Also integrate with `EventBus` for streaming chunking progress.
   2. **Download**: retrieve each chapter asynchronously (bounded concurrency/semaphore) with retry/backoff and a custom User-Agent.
   3. **Chunk**: call `SemanticChunkingService::chunk_document(ChunkSource::Html(page_html))` per chapter using a configured RIG embedding model; capture telemetry to track fallback/cache behaviour.
   4. **Persist**: upsert each chunk into a `rig_sqlite::VectorStore`, storing `SemanticChunk` content, metadata (URL, heading chain, segment positions), and embeddings (convert `Vec<f32>` back to `Vec<f64>` or adjust provider to skip downcast).
-  5. **Audit**: use graft’s event bus to log progress (per-page diagnostic and aggregate stats), and optionally serialize `ChunkTelemetry` snapshots for monitoring dashboards.
+5. **Audit**: use weavegraph's event bus to log progress (per-page diagnostic and aggregate stats), and optionally serialize `ChunkTelemetry` snapshots for monitoring dashboards.
 - CLI entrypoint `cargo run --example ingest_rust_book`:
   - Flags: `--base-url`, `--out-db`, `--embedder <provider>` (OpenAI/Cohere/Ollama), `--concurrency`, `--resume`.
   - Emits telemetry to stdout and writes checkpoint file (list of completed URLs) so reruns skip finished chapters.
@@ -181,7 +181,7 @@ Also integrate with `EventBus` for streaming chunking progress.
   - Use a mock HTTP server (e.g., `wiremock-rs`) serving two chapter fixtures to validate scraper + chunker + vector-store pipeline.
   - Unit test ensures metadata (URL, heading hierarchy, chunk ids) survives round-trip into SQLite vector store.
 - Best practices:
-  - Cache downloaded HTML under `.graft/cache/rust-book/` to avoid re-fetching during development.
+  - Cache downloaded HTML under `.wg-ragsmith/cache/rust-book/` to avoid re-fetching during development.
   - Persist chunk `id`/`prev_ids`/`next_ids` to support navigation when reconstructing context windows.
   - Wrap each page ingestion in a tracing span (`tracing::info_span!("rust_book_chapter", url)`) and propagate telemetry counters to the event bus.
 
@@ -196,13 +196,13 @@ Also integrate with `EventBus` for streaming chunking progress.
    - Write optional HTML cache file per URL (hashed path) gated behind `IngestOptions::cache_dir`.
 3. **Chunking pipeline**
    - Reuse `SemanticChunkingService`; build once with desired embedder and cache configuration.
-   - For each HTML page, call `chunk_document`, convert embeddings to `Vec<f64>` needed by `rig_sqlite`, collect telemetry for logging/streaming via graft components.
+   - For each HTML page, call `chunk_document`, convert embeddings to `Vec<f64>` needed by `rig_sqlite`, collect telemetry for logging/streaming via weavegraph components.
 4. **Vector store integration**
    - Connect to SQLite DB (create if missing); upsert chunks via `vector_store.upsert(&id, embedding, metadata_json)`.
    - Maintain mapping table for chapter URL -> chunk ids to support deletion/resume; simple table using `rusqlite` or store in metadata.
 5. **Example entrypoint (`demo5_rag.rs`)**
    - CLI args via `clap` (feature optional) or manual parsing: base URL, DB path, concurrency, resume flag, query prompt.
-   - Ingest pipeline streams diagnostics to stdout via graft’s event bus while populating DB.
+   - Ingest pipeline streams diagnostics to stdout via weavegraph's event bus while populating DB.
    - After ingest, build `VectorStoreRetriever` and run a sample query (embedding the question) to print top hits with snippet context.
 6. **Testing**
    - Unit: mock HTTP server (two chapter fixtures) verifying that ingest writes expected rows and retrieval returns chunk from fixture.
