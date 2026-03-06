@@ -15,7 +15,8 @@
 //! execution, versioned state, and structured observability. Consult the workspace
 //! `ARCHITECTURE.md` for a complete module guide, authoring patterns, and execution flow.
 
-#![warn(missing_docs)]
+// TODO(pre-v0.3.0): Re-enable once public API is documented (~232 items)
+// #![warn(missing_docs)]
 
 pub mod app;
 pub mod channels;
