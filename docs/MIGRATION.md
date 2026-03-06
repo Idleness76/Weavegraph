@@ -148,6 +148,57 @@ Enable `diagnostics` when you want `miette::Diagnostic` metadata on error enums.
 4. Enable `diagnostics` only where rich terminal diagnostics are desired
 5. All error types are now matchable enums — use pattern matching instead of `.downcast_ref()`
 
+#### 4. LLM Abstraction + Rig Feature Rename (`0.3.3` + `0.3.5`) (High Impact)
+
+**What changed:**
+- Added framework-agnostic traits under `weavegraph::llm` (`LlmProvider`, `LlmStreamProvider`, `LlmResponse`)
+- Added dedicated Rig adapter module under `weavegraph::llm::rig_adapter` (gated by `rig` feature)
+- Renamed feature flag from `llm` to `rig`
+- Kept `llm` as backward-compatible alias to `rig` for 0.3.x
+- Added both conversion impls:
+    - `From<weavegraph::message::Message> for rig::completion::message::Message`
+    - `From<rig::completion::message::Message> for weavegraph::message::Message`
+
+**Why this matters:**
+Weavegraph no longer treats a specific LLM SDK as part of its core API contract.
+Consumers can keep using Rig via feature-gated adapters while retaining a stable,
+framework-neutral integration surface.
+
+**Feature migration:**
+```toml
+# Before
+weavegraph = { version = "0.2", features = ["llm"] }
+
+# After (preferred)
+weavegraph = { version = "0.3", features = ["rig"] }
+
+# 0.3.x compatibility path (still works)
+weavegraph = { version = "0.3", features = ["llm"] }
+```
+
+**Message conversion migration:**
+```rust
+use weavegraph::message::Message;
+
+// weavegraph -> rig
+let rig_messages: Vec<rig::completion::message::Message> =
+        history.clone().into_iter().map(Into::into).collect();
+
+// rig -> weavegraph
+let wg_messages: Vec<Message> = rig_messages.into_iter().map(Into::into).collect();
+```
+
+**Role-mapping caveats:**
+- Rig completion history is user/assistant-oriented.
+- `Role::System`, `Role::Tool`, and `Role::Custom(_)` map to Rig user messages.
+- Reverse conversion cannot reconstruct original non-native roles from Rig message history.
+
+**Migration steps:**
+1. Prefer `features = ["rig"]` in `Cargo.toml`
+2. Keep `llm` only as a temporary alias while rolling upgrades
+3. Replace bespoke conversion boilerplate with `Into::into` impls
+4. If your workflow depends on preserving system/tool/custom roles across Rig round-trips, carry role metadata out-of-band
+
 ---
 
 ## v0.2.0 (Upcoming)

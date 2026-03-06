@@ -23,6 +23,7 @@ pub mod channels;
 pub mod control;
 pub mod event_bus;
 pub mod graphs;
+pub mod llm;
 pub mod message;
 pub mod node;
 pub mod reducers;

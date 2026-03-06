@@ -264,7 +264,8 @@ barrier synchronization.
 
 ### Optional Features
 
-* `llm` – Enables Rig-based LLM support (Ollama/MCP integrations).
+* `rig` – Enables Rig-based LLM support (Ollama/MCP integrations).
+* `llm` – Backward-compatible alias to `rig` for 0.3.x (planned removal in 0.4.0).
 * `sqlite-migrations` – Turns on SQLite-backed persistence (default).
 * `examples` – Pulls in extra dependencies used by a subset of examples (e.g. `reqwest`, `scraper`).
 

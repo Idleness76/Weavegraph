@@ -212,23 +212,6 @@ impl Message {
     }
 }
 
-#[cfg(feature = "llm")]
-impl From<Message> for rig::completion::Message {
-    fn from(msg: Message) -> Self {
-        match msg.role {
-            Role::User => rig::completion::Message::user(msg.content),
-            Role::Assistant => rig::completion::Message::assistant(msg.content),
-            // rig doesn't have a system message type - it's typically handled
-            // via preamble/system prompt on the completion request itself.
-            // We'll treat it as a user message for compatibility.
-            Role::System => rig::completion::Message::user(msg.content),
-            Role::Tool => rig::completion::Message::user(msg.content),
-            // For any custom roles, default to user message
-            Role::Custom(_) => rig::completion::Message::user(msg.content),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
