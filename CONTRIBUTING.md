@@ -1,8 +1,8 @@
 # Contributing to Weavegraph
 
-Thank you for your interest in contributing to Weavegraph! This project welcomes contributions from developers of all skill levels. As an early beta framework (targeting v0.2.x), we're actively evolving APIs and architecture based on real-world usage and community feedback.
+Thank you for your interest in contributing to Weavegraph! This project welcomes contributions from developers of all skill levels. Weavegraph is in active development (v0.2.x released, targeting v0.3.0 API stabilization) with ongoing improvements based on real-world usage and community feedback.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -26,59 +26,64 @@ Thank you for your interest in contributing to Weavegraph! This project welcomes
 
 3. **Run examples to understand the framework**:
    ```bash
-   # Start with basic patterns
    cargo run --example basic_nodes
-
-   # Explore advanced features
    cargo run --example advanced_patterns
-
-   # See error handling in action
-   cargo run --example errors_pretty
-   ```
-
-4. **Set up Ollama for LLM demos** (optional):
-   ```bash
-   docker-compose up -d ollama
-   # LLM-focused demos were removed during the 0.2.0 refactor; start from streaming patterns instead
    cargo run --example streaming_events
    ```
 
-## 🎯 How to Contribute
+4. **Set up local services** (optional):
+   ```bash
+   # Start Ollama and PostgreSQL for integration testing
+   docker compose up -d
+   ```
 
-We welcome various types of contributions:
+## Running CI Locally
 
-### 🐛 Bug Reports
+Before submitting a PR, run local CI checks to catch issues early:
 
-- Use the [GitHub issue tracker](https://github.com/Idleness76/weavegraph/issues)
-- Include minimal reproduction steps
-- Provide system information (OS, Rust version)
-- Include relevant log output with `RUST_LOG=debug`
+```bash
+# Quick checks (fmt, clippy, test, doc)
+./scripts/ci-quick.sh
 
-### ✨ Feature Requests
+# Full CI suite (includes MSRV 1.89, deny, machete)
+./scripts/ci-local.sh
+```
 
-- Describe the use case and motivation
-- Consider whether it fits the framework's core philosophy
-- Provide examples of how the feature would be used
-- Check existing issues for similar requests
+Both scripts mirror the GitHub Actions CI pipeline and should pass before pushing.
 
-### 🔧 Code Contributions
+## How to Contribute
 
-#### Areas We're Particularly Interested In
+### Bug Reports
 
-1. **Persistence Backends**
-   - PostgreSQL checkpointer implementation
-   - Redis-based state storage
-   - Custom persistence adapters
+Use the issue templates on GitHub. Include:
+- Minimal reproduction steps
+- System information (OS, Rust version, Weavegraph version)
+- Relevant log output with `RUST_LOG=debug`
+
+### Feature Requests
+
+Use the feature request template. Describe:
+- The use case and motivation
+- How it fits the framework's philosophy
+- Examples of proposed usage
+- Whether it would be a breaking change
+
+### Code Contributions
+
+#### Areas of Interest
+
+1. **Persistence & Backends**
+   - Custom checkpointer implementations
+   - Performance optimizations for existing backends
 
 2. **AI/LLM Integration**
    - Enhanced message types for AI workflows
-   - Integration with other LLM frameworks beyond Ollama
+   - Integration with other LLM frameworks
    - Streaming response handling patterns
 
 3. **Performance Optimizations**
    - Scheduler efficiency improvements
    - Memory usage optimizations
-   - Concurrent execution enhancements
 
 4. **Developer Experience**
    - Better error messages and diagnostics
@@ -88,72 +93,62 @@ We welcome various types of contributions:
 5. **Example Applications**
    - Real-world workflow examples
    - Integration patterns with popular frameworks
-   - Performance benchmarking examples
 
 #### Development Guidelines
 
-**Code Style and Guidelines**:
+**Code Style**:
 - Follow standard Rust formatting (`cargo fmt`)
 - Run Clippy and address warnings (`cargo clippy`)
-- Use meaningful variable and function names
 - Add comprehensive documentation for public APIs
 
 **Testing**:
 - Add unit tests for new functionality
 - Include integration tests for complex workflows
-- Use property-based testing where appropriate
 - Ensure examples continue to work
 
 **Documentation**:
 - Update relevant module documentation
-- Add or update examples in `lib.rs`
 - Include usage examples in function documentation
-- Update README if adding major features
+- Update README for major features
 
 **Commit Messages**:
 - Use conventional commit format: `type(scope): description`
-- Examples:
-  - `feat(scheduler): add bounded retry mechanism`
-  - `fix(channels): resolve version merge race condition`
-  - `docs(message): add role validation examples`
+- Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`
 
-### 📝 Documentation
+## Release Process
 
-- Improve existing documentation clarity
-- Add more real-world examples
-- Create tutorials for common patterns
-- Translate documentation (future consideration)
+Weavegraph follows semantic versioning. Releases use the `v{VERSION}` tag convention:
 
-## 💬 Community
+- **Tag format**: `weavegraph-v{MAJOR}.{MINOR}.{PATCH}` (e.g., `weavegraph-v0.3.0`)
+- **Changelog**: All user-facing changes documented in `CHANGELOG.md`
+- **Breaking changes**: Require minor version bump in 0.x, major version bump in 1.x+
+- **CI validation**: All checks must pass before release
 
-- **GitHub Discussions**: For design discussions and questions
-- **Issues**: For bug reports and feature requests
-- **Pull Requests**: For code contributions
+Contributors don't need to worry about versioning—maintainers handle releases.
 
-## 🙏 Recognition
+## Community
 
-Contributors will be recognized in:
+- **GitHub Discussions**: Design discussions and questions
+- **Issues**: Bug reports and feature requests (use templates)
+- **Pull Requests**: Code contributions
+
+## Recognition
+
+Contributors are recognized in:
 - `CHANGELOG.md` for their contributions
 - GitHub contributors list
 - Release notes for significant features
 
-We appreciate all forms of contribution, from bug reports to major features!
+We appreciate all forms of contribution!
 
-## 📜 Code of Conduct
+## Code of Conduct
 
-We are committed to providing a welcoming and inclusive environment. Please be respectful in all interactions:
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior via GitHub issues or by contacting the maintainers.
 
-- Use welcoming and inclusive language
-- Be respectful of differing viewpoints and experiences
-- Gracefully accept constructive criticism
-- Focus on what is best for the community
-- Show empathy towards other community members
+## Questions?
 
-## ❓ Questions?
+- Check [GitHub Discussions](https://github.com/Idleness76/weavegraph/discussions)
+- Review existing [issues](https://github.com/Idleness76/weavegraph/issues)
+- Consult the [documentation](https://docs.rs/weavegraph)
 
-If you have questions about contributing:
-- Check existing [GitHub issues](https://github.com/Idleness76/weavegraph/issues)
-- Open a new issue with the "question" label
-- Review the documentation and examples
-
-Thank you for helping make Weavegraph better! 🚀
+Thank you for helping make Weavegraph better!
