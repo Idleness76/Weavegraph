@@ -51,8 +51,8 @@ fn test_add_messages_appends_state() {
 
     let snapshot = state.messages.snapshot();
     assert_eq!(snapshot.len(), initial_len + 1);
-    assert_eq!(snapshot[0].role, "user");
-    assert_eq!(snapshot[1].role, "system");
+    assert_eq!(snapshot[0].role, Role::User);
+    assert_eq!(snapshot[1].role, Role::System);
     // Reducer does not bump version (barrier responsibility)
     assert_eq!(state.messages.version(), initial_version);
 }

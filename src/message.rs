@@ -115,7 +115,7 @@ impl From<Role> for String {
 ///
 /// // Using Role enum directly
 /// let msg = Message::with_role(Role::User, "Hello!");
-/// assert!(msg.is_role(Role::User));
+/// assert_eq!(msg.role, Role::User);
 ///
 /// // For custom roles
 /// let function_msg = Message::with_role(Role::Custom("function".into()), "Result: 42");
@@ -125,41 +125,44 @@ pub struct Message {
     /// The role of the message sender.
     ///
     /// This field is serialized as a string for backward compatibility.
-    /// Use [`role_type()`](Self::role_type) to get the typed [`Role`] enum,
-    /// or [`is_role()`](Self::is_role) for type-safe role checking.
-    #[serde(deserialize_with = "deserialize_role_as_string")]
-    pub role: String,
+    #[serde(with = "role_serde")]
+    pub role: Role,
     /// The text content of the message.
     pub content: String,
 }
 
-/// Custom deserializer that accepts both Role enum and plain strings.
-fn deserialize_role_as_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Ok(s)
+mod role_serde {
+    use super::Role;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(role: &Role, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(role.as_str())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Role, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Role::from(s))
+    }
 }
 
 impl Message {
-    /// User input message role.
-    #[deprecated(since = "0.2.0", note = "Use Role::User instead")]
-    pub const USER: &'static str = "user";
-    /// AI assistant response message role.
-    #[deprecated(since = "0.2.0", note = "Use Role::Assistant instead")]
-    pub const ASSISTANT: &'static str = "assistant";
-    /// System prompt or instruction message role.
-    #[deprecated(since = "0.2.0", note = "Use Role::System instead")]
-    pub const SYSTEM: &'static str = "system";
-
     /// Creates a new message with the specified role string and content.
     ///
     /// For type-safe role handling, prefer [`with_role()`](Self::with_role).
     #[must_use]
+    #[deprecated(
+        since = "0.3.0",
+        note = "Use Message::with_role(Role::..., ...) or Message::user()/assistant()/system()/tool()"
+    )]
     pub fn new(role: &str, content: &str) -> Self {
         Self {
-            role: role.to_string(),
+            role: Role::from(role),
             content: content.to_string(),
         }
     }
@@ -174,12 +177,12 @@ impl Message {
     /// use weavegraph::message::{Message, Role};
     ///
     /// let msg = Message::with_role(Role::Assistant, "Hello!");
-    /// assert!(msg.is_role(Role::Assistant));
+    /// assert_eq!(msg.role, Role::Assistant);
     /// ```
     #[must_use]
     pub fn with_role(role: Role, content: &str) -> Self {
         Self {
-            role: role.as_str().to_string(),
+            role,
             content: content.to_string(),
         }
     }
@@ -207,59 +210,12 @@ impl Message {
     pub fn tool(content: &str) -> Self {
         Self::with_role(Role::Tool, content)
     }
-
-    /// Returns the typed [`Role`] for this message.
-    ///
-    /// This parses the internal role string into the appropriate [`Role`] variant.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::message::{Message, Role};
-    ///
-    /// let msg = Message::with_role(Role::User, "Hello");
-    /// assert_eq!(msg.role_type(), Role::User);
-    ///
-    /// let custom = Message::with_role(Role::Custom("function".into()), "Result");
-    /// assert_eq!(custom.role_type(), Role::Custom("function".into()));
-    /// ```
-    #[must_use]
-    pub fn role_type(&self) -> Role {
-        Role::from(self.role.as_str())
-    }
-
-    /// Returns true if this message has the specified [`Role`].
-    ///
-    /// This is the type-safe way to check message roles.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use weavegraph::message::{Message, Role};
-    ///
-    /// let msg = Message::with_role(Role::User, "Hello");
-    /// assert!(msg.is_role(Role::User));
-    /// assert!(!msg.is_role(Role::Assistant));
-    /// ```
-    #[must_use]
-    pub fn is_role(&self, role: Role) -> bool {
-        self.role == role.as_str()
-    }
-
-    /// Returns true if this message has the specified role string.
-    ///
-    /// For type-safe role checking, prefer [`is_role()`](Self::is_role).
-    #[must_use]
-    #[deprecated(since = "0.2.0", note = "Use is_role(Role::...) instead")]
-    pub fn has_role(&self, role: &str) -> bool {
-        self.role == role
-    }
 }
 
 #[cfg(feature = "llm")]
 impl From<Message> for rig::completion::Message {
     fn from(msg: Message) -> Self {
-        match msg.role_type() {
+        match msg.role {
             Role::User => rig::completion::Message::user(msg.content),
             Role::Assistant => rig::completion::Message::assistant(msg.content),
             // rig doesn't have a system message type - it's typically handled
@@ -296,28 +252,28 @@ mod tests {
     }
 
     #[test]
-    fn test_message_role_type() {
+    fn test_message_role_typed_field() {
         let msg = Message::user("hello");
-        assert_eq!(msg.role_type(), Role::User);
+        assert_eq!(msg.role, Role::User);
 
         let msg = Message::assistant("hi");
-        assert_eq!(msg.role_type(), Role::Assistant);
+        assert_eq!(msg.role, Role::Assistant);
 
-        let msg = Message::new("custom", "data");
-        assert_eq!(msg.role_type(), Role::Custom("custom".into()));
+        let msg = Message::with_role(Role::Custom("custom".into()), "data");
+        assert_eq!(msg.role, Role::Custom("custom".into()));
     }
 
     #[test]
-    fn test_message_is_role() {
-        let msg = Message::user("hello");
-        assert!(msg.is_role(Role::User));
-        assert!(!msg.is_role(Role::Assistant));
+    #[allow(deprecated)]
+    fn test_message_new_deprecated_compat() {
+        let msg = Message::new("custom", "data");
+        assert_eq!(msg.role, Role::Custom("custom".into()));
     }
 
     #[test]
     fn test_message_with_role() {
         let msg = Message::with_role(Role::Tool, "result");
-        assert_eq!(msg.role, "tool");
+        assert_eq!(msg.role, Role::Tool);
         assert_eq!(msg.content, "result");
     }
 
@@ -339,7 +295,6 @@ mod tests {
         // Old-style JSON should still parse
         let json = r#"{"role": "user", "content": "hello"}"#;
         let msg: Message = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.role, "user");
-        assert!(msg.is_role(Role::User));
+        assert_eq!(msg.role, Role::User);
     }
 }

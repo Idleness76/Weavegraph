@@ -5,6 +5,68 @@ migration guidance for upgrading your code.
 
 ---
 
+## v0.3.0 (Upcoming)
+
+### Breaking Changes
+
+#### 1. `Message.role` is now `Role` (High Impact)
+
+**What changed:**
+`Message.role` changed from `String` to typed [`Role`](weavegraph::message::Role).
+
+Serialization remains wire-compatible: roles still encode as plain JSON strings
+(`"user"`, `"assistant"`, etc.) and decode from plain strings.
+
+**Before (v0.2.x):**
+```rust
+use weavegraph::message::{Message, Role};
+
+if msg.role == "user" {
+    // ...
+}
+
+let role = msg.role_type();
+if msg.is_role(Role::Assistant) {
+    // ...
+}
+```
+
+**After (v0.3.0):**
+```rust
+use weavegraph::message::{Message, Role};
+
+if msg.role == Role::User {
+    // ...
+}
+
+let role = msg.role.clone();
+let role_str = msg.role.as_str();
+```
+
+**Migration steps:**
+1. Replace string comparisons like `msg.role == "user"` with `msg.role == Role::User`
+2. Replace `msg.is_role(Role::X)` with `msg.role == Role::X`
+3. Replace `msg.role_type()` with `msg.role` (or `msg.role.clone()`)
+4. For string interop, use `msg.role.as_str()`
+
+#### 2. Role helper removals and deprecations (High Impact)
+
+**Removed in v0.3.0:**
+- `Message::role_type()`
+- `Message::is_role(...)`
+- `Message::has_role(...)`
+- `Message::USER`, `Message::ASSISTANT`, `Message::SYSTEM`
+
+**Deprecated in v0.3.0 (removed in v0.4.0):**
+- `Message::new(role: &str, content: &str)`
+
+**Replacement guidance:**
+- Use `Message::with_role(Role::..., ...)` for typed construction
+- Use `Message::user(...)`, `Message::assistant(...)`, `Message::system(...)`, `Message::tool(...)` for common roles
+- Use `Message::with_role(Role::Custom("name".into()), ...)` for custom roles
+
+---
+
 ## v0.2.0 (Upcoming)
 
 ### Breaking Changes
@@ -234,5 +296,6 @@ If you encounter issues during migration:
 
 | Weavegraph | Rust MSRV | rig-core | tokio |
 |------------|-----------|----------|-------|
+| 0.3.x      | 1.90.0    | 0.30.x   | 1.x   |
 | 0.2.x      | 1.89.0    | 0.28+    | 1.x   |
 | 0.1.x      | 1.89.0    | 0.28+    | 1.x   |

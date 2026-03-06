@@ -150,7 +150,10 @@ async fn test_node_trait_success() {
     let result = node.run(snapshot, ctx).await;
     assert!(result.is_ok());
     let partial = result.unwrap();
-    assert_eq!(partial.messages.unwrap()[0].role, "dummy");
+    assert_eq!(
+        partial.messages.unwrap()[0].role,
+        Role::Custom("dummy".to_string())
+    );
 }
 
 #[tokio::test]

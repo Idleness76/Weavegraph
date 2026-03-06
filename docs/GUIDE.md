@@ -21,7 +21,7 @@ let function_msg = Message::with_role(Role::Custom("function".into()), "Processi
 
 // Role helpers
 let tool_msg = Message::with_role(Role::Tool, "Tool output");
-assert!(tool_msg.is_role(Role::Tool));
+assert_eq!(tool_msg.role, Role::Tool);
 ```
 
 ## State Management {#state}

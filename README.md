@@ -80,7 +80,7 @@ async fn main() -> miette::Result<()> {
         let state = VersionedState::new_with_user_message("Hi!");
         let result = app.invoke(state).await?;
         for message in result.messages.snapshot() {
-                println!("{}: {}", message.role_type(), message.content);
+                println!("{}: {}", message.role, message.content);
         }
         Ok(())
 }

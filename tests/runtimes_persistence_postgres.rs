@@ -19,6 +19,7 @@ use std::sync::Arc;
 use tokio::sync::Barrier;
 use weavegraph::channels::Channel;
 use weavegraph::channels::errors::{ErrorEvent, LadderError};
+use weavegraph::message::Role;
 use weavegraph::runtimes::checkpointer_postgres::StepQuery as PgStepQuery;
 use weavegraph::runtimes::{Checkpoint, Checkpointer, PostgresCheckpointer};
 use weavegraph::types::NodeKind;
@@ -98,7 +99,7 @@ async fn test_postgres_checkpointer_roundtrip() {
             .copied(),
         Some(1)
     );
-    assert_eq!(loaded.state.messages.snapshot()[0].role, "user");
+    assert_eq!(loaded.state.messages.snapshot()[0].role, Role::User);
     assert_extra_has(&loaded.state, "k");
     assert_eq!(
         loaded.state.extra.snapshot().get("k"),
