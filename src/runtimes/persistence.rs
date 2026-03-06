@@ -114,23 +114,29 @@ pub struct PersistedCheckpoint {
     pub updated_channels: Vec<String>,
 }
 
-use miette::Diagnostic;
 use thiserror::Error;
 
 /// Bidirectional conversion and serialization errors for persistence models.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum PersistenceError {
     #[error("missing field: {0}")]
-    #[diagnostic(
-        code(weavegraph::persistence::missing_field),
-        help("Populate the field in the persisted JSON before conversion.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::persistence::missing_field),
+            help("Populate the field in the persisted JSON before conversion.")
+        )
     )]
     MissingField(&'static str),
 
     #[error("JSON serialization/deserialization failed: {source}")]
-    #[diagnostic(
-        code(weavegraph::persistence::serde),
-        help("Ensure the JSON structure matches Persisted* types; serde error: {source}.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::persistence::serde),
+            help("Ensure the JSON structure matches Persisted* types; serde error: {source}.")
+        )
     )]
     Serde {
         #[source]
@@ -138,7 +144,10 @@ pub enum PersistenceError {
     },
 
     #[error("persistence error: {0}")]
-    #[diagnostic(code(weavegraph::persistence::other))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::persistence::other))
+    )]
     Other(String),
 }
 

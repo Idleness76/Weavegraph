@@ -43,7 +43,6 @@ use crate::node::{Node, NodeContext, NodeError, NodePartial};
 use crate::state::StateSnapshot;
 use crate::types::NodeKind;
 use futures_util::stream::{self, StreamExt};
-use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -208,7 +207,8 @@ pub struct Scheduler {
 ///     }
 /// }
 /// ```
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum SchedulerError {
     /// A node in the frontier was not found in the registry.
     ///
@@ -216,9 +216,12 @@ pub enum SchedulerError {
     /// contains a node that doesn't exist in the node registry. This should
     /// not occur with properly compiled graphs.
     #[error("node {kind:?} in frontier not found in registry at step {step}")]
-    #[diagnostic(
-        code(weavegraph::scheduler::node_not_found),
-        help("Ensure all nodes in the graph are registered before execution.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::scheduler::node_not_found),
+            help("Ensure all nodes in the graph are registered before execution.")
+        )
     )]
     NodeNotFound { kind: NodeKind, step: u64 },
 
@@ -233,7 +236,7 @@ pub enum SchedulerError {
     /// - `step`: The workflow step number when the failure occurred
     /// - `source`: The underlying `NodeError` that caused the failure
     #[error("node run error at step {step} for {kind:?}: {source}")]
-    #[diagnostic(code(weavegraph::scheduler::node))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::scheduler::node)))]
     NodeRun {
         kind: NodeKind,
         step: u64,
@@ -252,7 +255,7 @@ pub enum SchedulerError {
     /// - Runtime shutdown during execution
     /// - Task cancellation due to timeout or external signal
     #[error("task join error: {0}")]
-    #[diagnostic(code(weavegraph::scheduler::join))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::scheduler::join)))]
     Join(#[from] tokio::task::JoinError),
 }
 

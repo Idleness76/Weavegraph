@@ -17,7 +17,6 @@
 //! ```
 
 use async_trait::async_trait;
-use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use tracing::info;
@@ -30,6 +29,8 @@ use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Simple demonstration node that adds an assistant message.
 ///
@@ -125,19 +126,13 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    // Pretty panic reports
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
     demo().await
 }
 
-async fn demo() -> Result<()> {
+async fn demo() -> ExampleResult<()> {
     info!("\n╔══════════════════════════════════════════════════════════╗");
     info!("║                        Demo 1                           ║");
     info!("║              Basic Graph Building & Execution           ║");
@@ -303,7 +298,7 @@ async fn demo() -> Result<()> {
     let barrier_outcome = app
         .apply_barrier(&mut barrier_state, &run_ids, vec![partial_a, partial_b])
         .await
-        .map_err(|e| miette::miette!("Barrier operation failed: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("Barrier operation failed: {e}")))?;
 
     info!("   ✓ Barrier applied successfully");
     info!(
@@ -334,7 +329,7 @@ async fn demo() -> Result<()> {
     let noop_outcome = app
         .apply_barrier(&mut barrier_state, &[], noop_partials)
         .await
-        .map_err(|e| miette::miette!("No-op barrier failed: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("No-op barrier failed: {e}")))?;
 
     let post_noop_version = barrier_state.messages.version();
     info!("   ✓ No-op barrier completed");
@@ -368,7 +363,7 @@ async fn demo() -> Result<()> {
     let _ = app
         .apply_barrier(&mut saturation_state, &[], vec![saturation_partial])
         .await
-        .map_err(|e| miette::miette!("Saturation test failed: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("Saturation test failed: {e}")))?;
 
     let post_saturation_version = saturation_state.messages.version();
     info!("   ✓ Version saturation test completed");

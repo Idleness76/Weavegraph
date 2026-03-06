@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use weavegraph::channels::errors::ErrorEvent;
 use weavegraph::event_bus::EventBus;
 use weavegraph::message::{Message, Role};
-use weavegraph::node::{Node, NodeContext, NodeContextError, NodeError, NodePartial};
+use weavegraph::node::{
+    Node, NodeContext, NodeContextError, NodeError, NodePartial, NodeResultExt,
+};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::utils::collections::new_extra_map;
 
@@ -114,6 +116,24 @@ fn test_node_error_variants() {
     let err = NodeError::EventBus(NodeContextError::EventBusUnavailable);
     match err {
         NodeError::EventBus(NodeContextError::EventBusUnavailable) => (),
+        _ => panic!("Wrong variant"),
+    }
+
+    // Other
+    let err = NodeError::other(std::io::Error::other("boom"));
+    match err {
+        NodeError::Other(inner) => assert_eq!(inner.to_string(), "boom"),
+        _ => panic!("Wrong variant"),
+    }
+}
+
+#[test]
+fn test_node_result_ext_maps_external_error() {
+    let result: std::result::Result<String, std::io::Error> = Err(std::io::Error::other("io boom"));
+    let err = result.node_err().unwrap_err();
+
+    match err {
+        NodeError::Other(inner) => assert_eq!(inner.to_string(), "io boom"),
         _ => panic!("Wrong variant"),
     }
 }

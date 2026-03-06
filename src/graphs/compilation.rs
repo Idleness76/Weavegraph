@@ -8,7 +8,8 @@ use crate::types::NodeKind;
 use rustc_hash::FxHashMap;
 
 /// Errors that can occur when compiling a graph.
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum GraphCompileError {
     /// No entry edge was defined from the virtual Start node.
     #[error("missing entry: no edge or conditional edge originates from Start")]

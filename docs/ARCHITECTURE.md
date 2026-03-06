@@ -196,7 +196,7 @@ let result = app.invoke(initial).await?;
 - Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](GUIDE.md#messages)
 - Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](GUIDE.md#state)
 - Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout
-- Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
+- Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`, `NodeError::Other`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
 
 ### Custom Reducers {#custom-reducers}
 

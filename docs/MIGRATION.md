@@ -65,6 +65,53 @@ let role_str = msg.role.as_str();
 - Use `Message::user(...)`, `Message::assistant(...)`, `Message::system(...)`, `Message::tool(...)` for common roles
 - Use `Message::with_role(Role::Custom("name".into()), ...)` for custom roles
 
+#### 3. Error System Redesign (`0.3.2-alt`) (High Impact)
+
+**What changed:**
+- `NodeError` remains a structured public enum (library-friendly and matchable)
+- `NodeError::Anyhow(...)` was removed from the public API
+- `NodeError::Other(Box<dyn Error + Send + Sync>)` remains the generic fallback
+- Rich diagnostics are now optional via `diagnostics` feature
+- New ergonomic helper: `NodeResultExt::node_err()` for natural `?` propagation
+
+This keeps public APIs typed and introspectable while reducing dependency pressure.
+
+**Before (v0.2.x / early v0.3 drafts):**
+```rust
+return Err(NodeError::Provider {
+    provider: "mcp",
+    message: err.to_string(),
+});
+```
+
+**After (v0.3.0):**
+```rust
+use weavegraph::node::{NodeError, NodeResultExt};
+
+// Keep Provider for real provider identity.
+return Err(NodeError::Provider {
+    provider: "mcp",
+    message: "upstream rejected request".to_string(),
+});
+
+// Generic external errors use Other.
+let parsed = std::fs::read_to_string("config.json").node_err()?;
+```
+
+**Optional diagnostics metadata:**
+```toml
+[features]
+diagnostics = ["dep:miette"]
+```
+
+Enable `diagnostics` when you want `miette::Diagnostic` metadata on error enums.
+
+**Migration steps:**
+1. Keep `NodeError::Provider` only for true provider/service errors
+2. Replace generic wrapping with `NodeError::other(...)` or `.node_err()?`
+3. Remove use of `NodeError::Anyhow` and the `anyhow` crate feature
+4. Enable `diagnostics` only where rich terminal diagnostics are desired
+
 ---
 
 ## v0.2.0 (Upcoming)

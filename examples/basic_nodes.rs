@@ -9,7 +9,6 @@
 //! Run with: `cargo run --example basic_nodes`
 
 use async_trait::async_trait;
-use miette::Result;
 use serde_json::json;
 use std::sync::Arc;
 use tracing::info;
@@ -22,6 +21,8 @@ use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::utils::collections::new_extra_map;
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A simple message processing node that counts and logs messages.
 ///
@@ -225,15 +226,9 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    // Pretty panic reports
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
 
     info!("🔧 Basic Node Examples");
     info!("======================");

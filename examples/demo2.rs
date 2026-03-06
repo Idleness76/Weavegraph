@@ -12,7 +12,6 @@
 //! providing efficient concurrent execution while respecting the dependency graph.
 
 use async_trait::async_trait;
-use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::time::Duration;
@@ -27,6 +26,8 @@ use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A demonstration node that simulates variable execution time
 /// to showcase scheduler behavior with dependencies
@@ -115,7 +116,7 @@ impl Node for SchedulerDemoNode {
 }
 
 /// Main demonstration function showing scheduler-driven execution
-async fn run_demo2() -> miette::Result<()> {
+async fn run_demo2() -> ExampleResult<()> {
     info!("\n╔══════════════════════════════════════════════════════════╗");
     info!("║                        Demo 2                           ║");
     info!("║         Scheduler-Driven Workflow Execution             ║");
@@ -257,14 +258,8 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    // Pretty panic reports
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> miette::Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
     run_demo2().await
 }

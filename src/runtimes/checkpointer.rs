@@ -150,27 +150,39 @@ impl Checkpoint {
 }
 
 /// Errors from checkpointer operations.
-#[derive(Debug, thiserror::Error, miette::Diagnostic)]
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum CheckpointerError {
     /// Session was not found in the checkpointer.
     #[error("session not found: {session_id}")]
-    #[diagnostic(
-        code(weavegraph::checkpointer::not_found),
-        help("Ensure the session ID `{session_id}` is correct and the session has been created.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::checkpointer::not_found),
+            help(
+                "Ensure the session ID `{session_id}` is correct and the session has been created."
+            )
+        )
     )]
     NotFound { session_id: String },
 
     /// Backend storage error (database, filesystem, etc.).
     #[error("backend error: {message}")]
-    #[diagnostic(
-        code(weavegraph::checkpointer::backend),
-        help("Check backend connectivity and permissions; backend message: {message}.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::checkpointer::backend),
+            help("Check backend connectivity and permissions; backend message: {message}.")
+        )
     )]
     Backend { message: String },
 
     /// Other checkpointer errors.
     #[error("checkpointer error: {message}")]
-    #[diagnostic(code(weavegraph::checkpointer::other))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::checkpointer::other))
+    )]
     Other { message: String },
 }
 

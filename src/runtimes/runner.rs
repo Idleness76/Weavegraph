@@ -27,7 +27,6 @@ use crate::runtimes::{
 use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
 use crate::state::VersionedState;
 use crate::types::NodeKind;
-use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -140,52 +139,71 @@ pub struct AppRunner {
 }
 
 /// Errors that can occur during workflow execution.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum RunnerError {
     /// The requested session was not found.
     #[error("session not found: {session_id}")]
-    #[diagnostic(code(weavegraph::runner::session_not_found))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::session_not_found))
+    )]
     SessionNotFound { session_id: String },
 
     /// No nodes are reachable from the Start node.
     #[error("no nodes to run from START (empty frontier)")]
-    #[diagnostic(
-        code(weavegraph::runner::no_start_nodes),
-        help("Add edges from Start or set the entry node correctly.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::runner::no_start_nodes),
+            help("Add edges from Start or set the entry node correctly.")
+        )
     )]
     NoStartNodes,
 
     /// Execution paused unexpectedly during run_until_complete.
     #[error("unexpected pause during run_until_complete")]
-    #[diagnostic(code(weavegraph::runner::unexpected_pause))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::unexpected_pause))
+    )]
     UnexpectedPause,
 
     /// The join handle was already consumed by a previous call.
     #[error("join handle already consumed")]
-    #[diagnostic(
-        code(weavegraph::runner::join_handle_consumed),
-        help("InvocationHandle::join() can only be called once.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::runner::join_handle_consumed),
+            help("InvocationHandle::join() can only be called once.")
+        )
     )]
     JoinHandleConsumed,
 
     /// The workflow task failed to join.
     #[error("workflow task join error: {0}")]
-    #[diagnostic(code(weavegraph::runner::join))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::runner::join)))]
     Join(#[from] JoinError),
 
     /// Checkpointer operation failed.
     #[error(transparent)]
-    #[diagnostic(code(weavegraph::runner::checkpointer))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::checkpointer))
+    )]
     Checkpointer(#[from] CheckpointerError),
 
     /// Barrier application failed.
     #[error("app barrier error: {0}")]
-    #[diagnostic(code(weavegraph::runner::barrier))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::runner::barrier)))]
     AppBarrier(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// Scheduler error during step execution.
     #[error(transparent)]
-    #[diagnostic(code(weavegraph::runner::scheduler))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::scheduler))
+    )]
     Scheduler(#[from] SchedulerError),
 }
 

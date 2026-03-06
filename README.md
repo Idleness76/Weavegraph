@@ -70,7 +70,7 @@ impl Node for HelloNode {
 }
 
 #[tokio::main]
-async fn main() -> miette::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use weavegraph::types::NodeKind;
         let app = GraphBuilder::new()
                 .add_node(NodeKind::Custom("hello".into()), HelloNode)

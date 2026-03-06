@@ -301,7 +301,7 @@ impl App {
     /// use weavegraph::event_bus::{Event, MemorySink};
     /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
     ///
-    /// # async fn example(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
+    /// # async fn example(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> Result<(), Box<dyn std::error::Error>> {
     /// let mut handle = app.event_stream();
     /// handle.event_bus().add_sink(MemorySink::new());
     /// let (event_bus, event_stream) = handle
@@ -401,7 +401,7 @@ impl App {
     /// use futures_util::StreamExt;
     /// use tokio::time::{sleep, Duration};
     /// use weavegraph::event_bus::STREAM_END_SCOPE;
-    /// # async fn run(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
+    /// # async fn run(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> Result<(), Box<dyn std::error::Error>> {
     /// let (handle, events) = app.invoke_streaming(state).await;
     /// let mut handle_slot = Some(handle);
     ///

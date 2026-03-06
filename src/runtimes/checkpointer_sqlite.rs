@@ -52,7 +52,6 @@ NodeKinds are encoded as strings for JSON storage:
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use miette::Diagnostic;
 use serde_json::Value;
 use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
 use thiserror::Error;
@@ -108,35 +107,45 @@ pub struct StepQueryResult {
     pub page_info: PageInfo,
 }
 
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum SQLiteCheckpointerError {
     #[error("SQLx error: {0}")]
-    #[diagnostic(
-        code(weavegraph::sqlite::sqlx),
-        help("Ensure the SQLite database URL is valid and accessible.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::sqlite::sqlx),
+            help("Ensure the SQLite database URL is valid and accessible.")
+        )
     )]
     Sqlx(#[from] sqlx::Error),
 
     #[error("JSON serialization error: {0}")]
-    #[diagnostic(
-        code(weavegraph::sqlite::serde),
-        help("Check serialized shapes for state/frontier/versions_seen.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::sqlite::serde),
+            help("Check serialized shapes for state/frontier/versions_seen.")
+        )
     )]
     Serde(#[from] serde_json::Error),
 
     #[error("Missing persisted field: {0}")]
-    #[diagnostic(
-        code(weavegraph::sqlite::missing),
-        help("Backfill or re-run migrations to populate the missing field.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::sqlite::missing),
+            help("Backfill or re-run migrations to populate the missing field.")
+        )
     )]
     Missing(&'static str),
 
     #[error("Backend error: {0}")]
-    #[diagnostic(code(weavegraph::sqlite::backend))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::sqlite::backend)))]
     Backend(String),
 
     #[error("Other error: {0}")]
-    #[diagnostic(code(weavegraph::sqlite::other))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::sqlite::other)))]
     Other(String),
 }
 

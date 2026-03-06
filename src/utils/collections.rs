@@ -4,18 +4,21 @@
 //! common collection patterns throughout the codebase, particularly for
 //! extra data maps, state snapshots, and channel operations.
 
-use miette::{Diagnostic, Result};
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 use std::collections::HashMap;
 use thiserror::Error;
 
 /// Errors that can occur during collection operations.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum CollectionError {
     /// Attempted to access a key that doesn't exist.
     #[error("Key '{key}' not found in collection")]
-    #[diagnostic(code(weavegraph::collections::missing_key))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::collections::missing_key))
+    )]
     MissingKey {
         /// The key that was not found
         key: String,
@@ -23,7 +26,10 @@ pub enum CollectionError {
 
     /// Invalid type conversion during value extraction.
     #[error("Invalid type conversion for key '{key}': expected {expected}, found {found}")]
-    #[diagnostic(code(weavegraph::collections::type_mismatch))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::collections::type_mismatch))
+    )]
     TypeMismatch {
         /// The key where the type mismatch occurred
         key: String,
@@ -35,7 +41,10 @@ pub enum CollectionError {
 
     /// JSON serialization/deserialization error.
     #[error("JSON operation failed: {source}")]
-    #[diagnostic(code(weavegraph::collections::json))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::collections::json))
+    )]
     Json {
         /// The underlying JSON error
         #[from]

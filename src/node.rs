@@ -5,7 +5,6 @@
 
 // Standard library and external crates
 use async_trait::async_trait;
-use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use serde_json;
 use thiserror::Error;
@@ -333,13 +332,17 @@ impl NodePartial {
 // ============================================================================
 
 /// Errors that can occur when using NodeContext methods.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum NodeContextError {
     /// Event could not be sent due to event bus disconnection or capacity issues.
     #[error("failed to emit event: event bus unavailable")]
-    #[diagnostic(
-        code(weavegraph::node::event_bus_unavailable),
-        help("The event bus may be disconnected or at capacity. Check workflow state.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::node::event_bus_unavailable),
+            help("The event bus may be disconnected or at capacity. Check workflow state.")
+        )
     )]
     EventBusUnavailable,
 }
@@ -349,39 +352,83 @@ pub enum NodeContextError {
 /// `NodeError` represents fatal errors that should halt workflow execution.
 /// For recoverable errors that should be tracked but not halt execution,
 /// use `NodePartial.errors` instead.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum NodeError {
     /// Expected input data is missing from the state snapshot.
     #[error("missing expected input: {what}")]
-    #[diagnostic(
-        code(weavegraph::node::missing_input),
-        help("Check that the previous node produced the required data: {what}.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::node::missing_input),
+            help("Check that the previous node produced the required data: {what}.")
+        )
     )]
     MissingInput { what: &'static str },
 
     /// External provider or service error.
     #[error("provider error ({provider}): {message}")]
-    #[diagnostic(code(weavegraph::node::provider))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::node::provider)))]
     Provider {
         provider: &'static str,
         message: String,
     },
 
+    /// Arbitrary external error for cases that do not fit structured variants.
+    #[error(transparent)]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::node::other)))]
+    Other(#[from] Box<dyn std::error::Error + Send + Sync>),
+
     /// JSON serialization/deserialization error.
     #[error(transparent)]
-    #[diagnostic(code(weavegraph::node::serde_json))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::node::serde_json))
+    )]
     Serde(#[from] serde_json::Error),
 
     /// Input validation failed.
     #[error("validation failed: {0}")]
-    #[diagnostic(
-        code(weavegraph::node::validation),
-        help("Check input data format and required fields.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::node::validation),
+            help("Check input data format and required fields.")
+        )
     )]
     ValidationFailed(String),
 
     /// Event bus communication error.
     #[error("event bus error: {0}")]
-    #[diagnostic(code(weavegraph::node::event_bus))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::node::event_bus)))]
     EventBus(#[from] NodeContextError),
+}
+
+impl NodeError {
+    /// Wrap an arbitrary error into [`NodeError::Other`].
+    #[must_use]
+    pub fn other<E>(error: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self::Other(Box::new(error))
+    }
+}
+
+/// Canonical node result type for framework and user node implementations.
+pub type NodeResult<T> = std::result::Result<T, NodeError>;
+
+/// Extension trait for ergonomic conversion into [`NodeError`].
+pub trait NodeResultExt<T> {
+    /// Convert any error type into [`NodeError::Other`] for `?` propagation.
+    fn node_err(self) -> NodeResult<T>;
+}
+
+impl<T, E> NodeResultExt<T> for std::result::Result<T, E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn node_err(self) -> NodeResult<T> {
+        self.map_err(NodeError::other)
+    }
 }
