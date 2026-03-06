@@ -73,8 +73,43 @@ let role_str = msg.role.as_str();
 - `NodeError::Other(Box<dyn Error + Send + Sync>)` remains the generic fallback
 - Rich diagnostics are now optional via `diagnostics` feature
 - New ergonomic helper: `NodeResultExt::node_err()` for natural `?` propagation
+- **All public error types now follow a uniform architecture** (see below)
 
 This keeps public APIs typed and introspectable while reducing dependency pressure.
+
+**Uniform Error Architecture (0.3.2-alt):**
+
+All public error enums in Weavegraph now follow this pattern for consistency and feature-gating:
+
+```rust
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+pub enum MyError {
+    #[error("user-facing description")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::module::variant),
+            help("Optional help text for debugging")
+        )
+    )]
+    VariantName(/* fields */),
+}
+```
+
+This pattern applies to:
+- `NodeError` & `NodeContextError` (node execution)
+- `RunnerError` & `SchedulerError` (workflow runtime)
+- `CheckpointerError` (state persistence)
+- `PersistenceError` (serialization/deserialization)
+- `GraphCompileError` (graph validation)
+- `JsonError` & `CollectionError` (data operations)
+- `IdError` (ID generation)
+- `EmitterError` (event bus)
+- `AppEventStreamError` (event stream lifecycle)
+- `ReducerError` (state reduction)
 
 **Before (v0.2.x / early v0.3 drafts):**
 ```rust
@@ -111,6 +146,7 @@ Enable `diagnostics` when you want `miette::Diagnostic` metadata on error enums.
 2. Replace generic wrapping with `NodeError::other(...)` or `.node_err()?`
 3. Remove use of `NodeError::Anyhow` and the `anyhow` crate feature
 4. Enable `diagnostics` only where rich terminal diagnostics are desired
+5. All error types are now matchable enums — use pattern matching instead of `.downcast_ref()`
 
 ---
 

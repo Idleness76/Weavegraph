@@ -78,8 +78,16 @@ pub struct AppEventStream {
 /// Errors returned when accessing an [`AppEventStream`] after its subscription
 /// has already been consumed.
 #[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum AppEventStreamError {
     #[error("event stream has already been taken")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::app::event_stream),
+            help("Verify stream subscription and event channel capacity.")
+        )
+    )]
     AlreadyTaken,
 }
 
