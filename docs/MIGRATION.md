@@ -199,6 +199,59 @@ let wg_messages: Vec<Message> = rig_messages.into_iter().map(Into::into).collect
 3. Replace bespoke conversion boilerplate with `Into::into` impls
 4. If your workflow depends on preserving system/tool/custom roles across Rig round-trips, carry role metadata out-of-band
 
+#### 5. Checkpointer Custom Escape Hatch + Precedence (`0.3.4`) (Medium Impact)
+
+**What changed:**
+- Added `AppRunner::builder().checkpointer_custom(Arc<dyn Checkpointer>)`
+- Added `RuntimeConfig::checkpointer_custom(Arc<dyn Checkpointer>)`
+- Kept enum convenience route (`CheckpointerType`) for in-memory/SQLite/Postgres
+- Added deterministic precedence when both are present: custom checkpointer wins
+- Marked `RuntimeConfig.checkpointer` field as deprecated for planned removal in `0.4.0`
+
+**Precedence rules:**
+1. If a custom checkpointer is set, it is always used
+2. Otherwise, enum-based `CheckpointerType` is used
+3. If neither is set, runtime falls back to `CheckpointerType::InMemory`
+
+**Before (enum only):**
+```rust
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .build()
+    .await;
+```
+
+**After (custom override):**
+```rust
+use std::sync::Arc;
+use weavegraph::runtimes::{AppRunner, Checkpointer, CheckpointerType};
+
+let custom: Arc<dyn Checkpointer> = Arc::new(MyCheckpointer::new());
+
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory) // convenience default
+    .checkpointer_custom(custom) // takes precedence
+    .build()
+    .await;
+```
+
+**RuntimeConfig migration:**
+```rust
+use std::sync::Arc;
+use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};
+
+let cfg = RuntimeConfig::new(None, Some(CheckpointerType::InMemory), None)
+    .checkpointer_custom(Arc::new(MyCheckpointer::new()));
+```
+
+**Migration steps:**
+1. Keep enum configuration for standard backends
+2. Use `checkpointer_custom(...)` when injecting custom storage backends
+3. Treat `RuntimeConfig.checkpointer` field as deprecated and migrate call sites to `RuntimeConfig::with_checkpointer(...)`/`checkpointer_custom(...)`
+4. If both are configured, **custom always wins** (add tests for your expected resume behavior)
+
 ---
 
 ## v0.2.0 (Upcoming)

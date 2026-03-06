@@ -288,6 +288,7 @@ pub enum RunnerError {
 pub struct AppRunnerBuilder {
     app: Option<Arc<App>>,
     checkpointer_type: CheckpointerType,
+    checkpointer_custom: Option<Arc<dyn Checkpointer>>,
     autosave: bool,
     event_bus: Option<EventBus>,
     start_listener: bool,
@@ -312,6 +313,7 @@ impl AppRunnerBuilder {
         Self {
             app: None,
             checkpointer_type: CheckpointerType::InMemory,
+            checkpointer_custom: None,
             autosave: true,
             event_bus: None,
             start_listener: true,
@@ -342,6 +344,16 @@ impl AppRunnerBuilder {
     #[must_use]
     pub fn checkpointer(mut self, checkpointer_type: CheckpointerType) -> Self {
         self.checkpointer_type = checkpointer_type;
+        self
+    }
+
+    /// Set a custom checkpointer implementation.
+    ///
+    /// When both enum-based and custom checkpointers are configured, the custom
+    /// checkpointer takes precedence.
+    #[must_use]
+    pub fn checkpointer_custom(mut self, checkpointer: Arc<dyn Checkpointer>) -> Self {
+        self.checkpointer_custom = Some(checkpointer);
         self
     }
 
@@ -397,6 +409,7 @@ impl AppRunnerBuilder {
             AppRunner::with_arc_and_bus(
                 app,
                 self.checkpointer_type,
+                self.checkpointer_custom,
                 self.autosave,
                 event_bus,
                 self.start_listener,
@@ -580,7 +593,7 @@ impl AppRunner {
     ) -> Self {
         let bus = app.runtime_config().event_bus.build_event_bus();
         let app = Arc::new(app);
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
+        Self::with_arc_and_bus(app, checkpointer_type, None, autosave, bus, true).await
     }
 
     #[deprecated(
@@ -593,7 +606,7 @@ impl AppRunner {
         autosave: bool,
     ) -> Self {
         let bus = app.runtime_config().event_bus.build_event_bus();
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
+        Self::with_arc_and_bus(app, checkpointer_type, None, autosave, bus, true).await
     }
 
     /// Create an AppRunner with a custom EventBus for advanced event handling.
@@ -738,7 +751,15 @@ impl AppRunner {
         start_listener: bool,
     ) -> Self {
         let app = Arc::new(app);
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, event_bus, start_listener).await
+        Self::with_arc_and_bus(
+            app,
+            checkpointer_type,
+            None,
+            autosave,
+            event_bus,
+            start_listener,
+        )
+        .await
     }
 
     /// Variant that accepts a preconfigured EventBus for an existing `Arc<App>`.
@@ -760,18 +781,33 @@ impl AppRunner {
         event_bus: EventBus,
         start_listener: bool,
     ) -> Self {
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, event_bus, start_listener).await
+        Self::with_arc_and_bus(
+            app,
+            checkpointer_type,
+            None,
+            autosave,
+            event_bus,
+            start_listener,
+        )
+        .await
     }
 
     async fn with_arc_and_bus(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
+        checkpointer_custom: Option<Arc<dyn Checkpointer>>,
         autosave: bool,
         event_bus: EventBus,
         start_listener: bool,
     ) -> Self {
-        let sqlite_db_name = app.runtime_config().sqlite_db_name.clone();
-        let checkpointer = Self::create_checkpointer(checkpointer_type, sqlite_db_name).await;
+        // Precedence rule: custom checkpointer always wins when provided.
+        // If custom is None, fall back to enum-based factory instantiation.
+        let checkpointer = if let Some(custom) = checkpointer_custom {
+            Some(custom)
+        } else {
+            let sqlite_db_name = app.runtime_config().sqlite_db_name.clone();
+            Self::create_checkpointer(checkpointer_type, sqlite_db_name).await
+        };
         if start_listener {
             event_bus.listen_for_events();
         }
