@@ -80,7 +80,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         working-directory: weavegraph
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_WEAVEGRAPH }}
         run: cargo publish
 
       - name: Create GitHub release
