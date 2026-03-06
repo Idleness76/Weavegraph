@@ -42,7 +42,7 @@ jobs:
         with:
           prefix-key: clippy-${{ matrix.toolchain }}
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     name: test (${{ matrix.toolchain }})
@@ -60,7 +60,7 @@ jobs:
         with:
           prefix-key: test-${{ matrix.toolchain }}
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace --all-features
 
   doc:
     name: doc
@@ -77,6 +77,23 @@ jobs:
         env:
           RUSTDOCFLAGS: "--cfg docsrs -D warnings"
         run: cargo doc --workspace --all-features --no-deps
+
+  semver-checks:
+    name: cargo semver-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: semver-checks
+      - name: Check semver
+        run: cargo semver-checks check-release --workspace
 
   deny:
     name: cargo deny
