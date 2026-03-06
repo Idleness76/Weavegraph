@@ -1,0 +1,50 @@
+# Configuration for release-plz
+# https://release-plz.ieni.dev/docs/
+
+[workspace]
+# Allow pre-release versions (0.x.y)
+allow_dirty = false
+# Git tag format
+git_tag_name = "weavegraph-v{{ version }}"
+# Git release name format
+git_release_name = "Weavegraph v{{ version }}"
+
+# Changelog configuration
+[changelog]
+header = """# Changelog
+
+All notable changes to Weavegraph will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+"""
+# Commit parsers for conventional commits
+[[changelog.body]]
+group = "### Added"
+types = ["feat", "feature"]
+[[changelog.body]]
+group = "### Changed"
+types = ["refactor", "perf"]
+[[changelog.body]]
+group = "### Fixed"
+types = ["fix", "bugfix"]
+[[changelog.body]]
+group = "### Deprecated"
+types = ["deprecate"]
+[[changelog.body]]
+group = "### Removed"
+types = ["remove"]
+[[changelog.body]]
+group = "### Security"
+types = ["security"]
+
+# Package-specific configuration
+[[package]]
+name = "weavegraph"
+# Publish to crates.io
+publish = true
+# Changelog path (workspace-relative)
+changelog_path = "CHANGELOG.md"
+# Update changelog on release
+changelog_update = true
