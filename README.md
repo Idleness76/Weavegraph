@@ -116,6 +116,24 @@ cargo test integration:: -- --nocapture
 
 Property-based testing with `proptest` ensures correctness across edge cases.
 
+## CI Parity
+
+To minimize local/CI drift, this repository pins Rust with `rust-toolchain.toml` to `1.89.0` and runs required CI checks on that version.
+
+Before opening a PR, run:
+
+```bash
+./scripts/ci-quick.sh
+```
+
+Before merging or cutting a release, run full local parity checks:
+
+```bash
+./scripts/ci-local.sh
+```
+
+`ci-local.sh` intentionally fails if required tools are missing (`cargo-semver-checks`, `cargo-deny`) so a local pass is a meaningful signal for CI.
+
 
 
 

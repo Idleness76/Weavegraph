@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# ci-local.sh - Run all CI checks locally before pushing
+# ci-local.sh - Run all required CI checks locally before pushing
 # Usage: ./scripts/ci-local.sh
 
-set -e  # Exit on first error
+set -euo pipefail
 
-echo "🔍 Running local CI checks..."
+REQUIRED_TOOLCHAIN="1.89.0"
+
+echo "🔍 Running local CI checks (required toolchain: ${REQUIRED_TOOLCHAIN})..."
 echo "=============================="
 echo ""
 
@@ -32,59 +34,48 @@ run_check() {
     fi
 }
 
+require_cmd() {
+    local cmd="$1"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo -e "${RED}Missing required command: $cmd${NC}"
+        FAILED=1
+    fi
+}
+
+echo -e "${YELLOW}Verifying required tooling${NC}"
+require_cmd rustup
+require_cmd cargo
+require_cmd cargo-semver-checks
+require_cmd cargo-deny
+if [ $FAILED -ne 0 ]; then
+    echo -e "${RED}Install missing tools, then rerun.${NC}"
+    exit 1
+fi
+
+if ! rustup toolchain list | grep -q "${REQUIRED_TOOLCHAIN}"; then
+    echo -e "${YELLOW}Installing Rust toolchain ${REQUIRED_TOOLCHAIN} (rustfmt, clippy)...${NC}"
+    rustup toolchain install "${REQUIRED_TOOLCHAIN}" --profile minimal --component rustfmt --component clippy
+fi
+
 # 1. Format check (fmt job)
-run_check "cargo fmt" "cargo fmt --all -- --check"
+run_check "cargo fmt (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} fmt --all -- --check"
 
-# 2. Clippy on MSRV (clippy job - 1.89.0)
-# Note: Only run if you have rustup and want to test MSRV locally
-if command -v rustup &> /dev/null; then
-    if rustup toolchain list | grep -q "1.89.0"; then
-        run_check "cargo clippy (MSRV 1.89.0)" "cargo +1.89.0 clippy --workspace --all-targets --all-features -- -D warnings"
-    else
-        echo -e "${YELLOW}⚠ Skipping MSRV clippy (1.89.0 not installed)${NC}"
-        echo "  Install with: rustup toolchain install 1.89.0"
-        echo ""
-    fi
-fi
+# 2. Clippy on required toolchain (blocking)
+run_check "cargo clippy (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} clippy --workspace --all-targets --all-features -- -D warnings"
 
-# 3. Clippy on stable (clippy job - stable)
-run_check "cargo clippy (stable)" "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+# 3. Tests on required toolchain (blocking)
+run_check "cargo test (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features"
 
-# 4. Tests on MSRV (test job - 1.89.0)
-if command -v rustup &> /dev/null; then
-    if rustup toolchain list | grep -q "1.89.0"; then
-        run_check "cargo test (MSRV 1.89.0)" "cargo +1.89.0 test --workspace --all-features"
-    else
-        echo -e "${YELLOW}⚠ Skipping MSRV tests (1.89.0 not installed)${NC}"
-        echo ""
-    fi
-fi
+# 4. Doc build (blocking)
+run_check "cargo doc (${REQUIRED_TOOLCHAIN})" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +${REQUIRED_TOOLCHAIN} doc --workspace --all-features --no-deps"
 
-# 5. Tests on stable (test job - stable)
-run_check "cargo test (stable)" "cargo test --workspace --all-features"
+# 5. Cargo semver-checks (blocking)
+run_check "cargo semver-checks" "cargo semver-checks check-release --workspace"
 
-# 6. Doc build (doc job)
-run_check "cargo doc" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo doc --workspace --all-features --no-deps"
+# 6. Cargo deny (blocking)
+run_check "cargo deny" "cargo deny check"
 
-# 7. Cargo semver-checks (semver-checks job)
-if command -v cargo-semver-checks &> /dev/null; then
-    run_check "cargo semver-checks" "cargo semver-checks check-release --workspace"
-else
-    echo -e "${YELLOW}⚠ Skipping cargo semver-checks (not installed)${NC}"
-    echo "  Install with: cargo install cargo-semver-checks"
-    echo ""
-fi
-
-# 8. Cargo deny (deny job)
-if command -v cargo-deny &> /dev/null; then
-    run_check "cargo deny" "cargo deny check"
-else
-    echo -e "${YELLOW}⚠ Skipping cargo deny (not installed)${NC}"
-    echo "  Install with: cargo install cargo-deny"
-    echo ""
-fi
-
-# 9. Cargo machete (machete job - continue-on-error in CI)
+# 7. Cargo machete (advisory in CI)
 if command -v cargo-machete &> /dev/null; then
     echo -e "${YELLOW}Running: cargo machete (advisory only)${NC}"
     if cargo machete --with-metadata; then
@@ -99,9 +90,9 @@ else
     echo ""
 fi
 
-# 10. Quick benchmark run (benchmarks job - validates benchmarks compile and run)
+# 8. Quick benchmark run (benchmarks job - validates benchmarks compile and run)
 echo -e "${YELLOW}Running: benchmark compilation check${NC}"
-if cargo bench --workspace --no-run 2>/dev/null; then
+if cargo +${REQUIRED_TOOLCHAIN} bench --workspace --no-run 2>/dev/null; then
     echo -e "${GREEN}✓ benchmarks compile successfully${NC}"
 else
     echo -e "${YELLOW}⚠ benchmark compilation failed (non-blocking)${NC}"
