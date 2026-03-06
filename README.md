@@ -118,7 +118,7 @@ Property-based testing with `proptest` ensures correctness across edge cases.
 
 ## CI Parity
 
-To minimize local/CI drift, this repository pins Rust with `rust-toolchain.toml` to `1.89.0` and runs required CI checks on that version.
+To minimize local/CI drift, this repository pins Rust with `rust-toolchain.toml` to `1.90.0` and runs required CI checks on that version.
 
 Before opening a PR, run:
 

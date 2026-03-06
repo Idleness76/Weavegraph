@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-REQUIRED_TOOLCHAIN="1.89.0"
+REQUIRED_TOOLCHAIN="1.90.0"
 
 echo "🚀 Running quick CI checks (toolchain: ${REQUIRED_TOOLCHAIN})..."
 echo "======================================================"
@@ -45,7 +45,13 @@ fi
 # Essential checks that must pass
 run_check "cargo fmt" "cargo +${REQUIRED_TOOLCHAIN} fmt --all -- --check"
 run_check "cargo clippy" "cargo +${REQUIRED_TOOLCHAIN} clippy --workspace --all-targets --all-features -- -D warnings"
-run_check "cargo test" "cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features"
+# Tests: run lib tests by default (no external dependencies); integration tests if postgres is available
+if pg_isready -h localhost -U weavegraph -d weavegraph_test >/dev/null 2>&1; then
+    run_check "cargo test" "cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features"
+else
+    echo -e "${YELLOW}⚠ Postgres not available; running library tests only${NC}"
+    run_check "cargo test (lib only)" "cargo +${REQUIRED_TOOLCHAIN} test --lib --all-features"
+fi
 run_check "cargo doc" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +${REQUIRED_TOOLCHAIN} doc --workspace --all-features --no-deps"
 
 echo "======================================================"

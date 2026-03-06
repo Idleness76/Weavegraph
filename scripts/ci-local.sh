@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-REQUIRED_TOOLCHAIN="1.89.0"
+REQUIRED_TOOLCHAIN="1.90.0"
 
 echo "🔍 Running local CI checks (required toolchain: ${REQUIRED_TOOLCHAIN})..."
 echo "=============================="
@@ -64,7 +64,16 @@ run_check "cargo fmt (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} fmt 
 run_check "cargo clippy (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} clippy --workspace --all-targets --all-features -- -D warnings"
 
 # 3. Tests on required toolchain (blocking)
-run_check "cargo test (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features"
+# Note: Integration tests with postgres require `docker-compose up postgres`.
+# By default, run lib tests only (no external dependencies).
+if pg_isready -h localhost -U weavegraph -d weavegraph_test >/dev/null 2>&1; then
+    run_check "cargo test (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features"
+else
+    echo -e "${YELLOW}⚠ Postgres not available at localhost:5432; running library tests only${NC}"
+    echo -e "${YELLOW}  To run all tests: docker-compose up postgres && cargo +${REQUIRED_TOOLCHAIN} test --workspace --all-features${NC}"
+    echo ""
+    run_check "cargo test (${REQUIRED_TOOLCHAIN}, lib only)" "cargo +${REQUIRED_TOOLCHAIN} test --lib --all-features"
+fi
 
 # 4. Doc build (blocking)
 run_check "cargo doc (${REQUIRED_TOOLCHAIN})" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +${REQUIRED_TOOLCHAIN} doc --workspace --all-features --no-deps"
