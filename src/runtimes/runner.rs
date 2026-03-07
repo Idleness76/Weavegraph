@@ -11,7 +11,7 @@
 
 use crate::app::{App, BarrierOutcome};
 use crate::channels::Channel;
-use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
+use crate::channels::errors::{ErrorEvent, ErrorScope, WeaveError};
 use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
@@ -966,7 +966,7 @@ impl AppRunner {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
                                 scope: ErrorScope::Scheduler { step: *step },
-                                error: LadderError::msg(format!(
+                                error: WeaveError::msg(format!(
                                     "node {:?} not found in registry",
                                     kind
                                 )),
@@ -983,7 +983,7 @@ impl AppRunner {
                                     kind: kind.encode().to_string(),
                                     step: *step,
                                 },
-                                error: LadderError::msg(format!("{}", source)),
+                                error: WeaveError::msg(format!("{}", source)),
                                 tags: vec!["node".into()],
                                 context: serde_json::json!({}),
                             }
@@ -993,7 +993,7 @@ impl AppRunner {
                             scope: ErrorScope::Scheduler {
                                 step: session_state.step,
                             },
-                            error: LadderError::msg(format!("{}", e)),
+                            error: WeaveError::msg(format!("{}", e)),
                             tags: vec!["scheduler".into()],
                             context: serde_json::json!({}),
                         },
@@ -1004,7 +1004,7 @@ impl AppRunner {
                             session: session_id.to_string(),
                             step: session_state.step,
                         },
-                        error: LadderError::msg(format!("{}", e)),
+                        error: WeaveError::msg(format!("{}", e)),
                         tags: vec!["runner".into()],
                         context: serde_json::json!({
                             "frontier": session_state.frontier.iter().map(|k| k.encode()).collect::<Vec<_>>()

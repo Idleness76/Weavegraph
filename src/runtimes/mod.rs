@@ -43,10 +43,12 @@
 
 pub mod checkpointer;
 #[cfg(feature = "postgres")]
+#[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]
 pub mod checkpointer_postgres;
 #[cfg(feature = "postgres")]
 mod checkpointer_postgres_helpers;
 #[cfg(feature = "sqlite")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
 pub mod checkpointer_sqlite;
 #[cfg(feature = "sqlite")]
 mod checkpointer_sqlite_helpers;
@@ -63,11 +65,13 @@ pub use checkpointer::{
     restore_session_state,
 };
 #[cfg(feature = "postgres")]
+#[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]
 pub use checkpointer_postgres::{
     PageInfo as PgPageInfo, PostgresCheckpointer, StepQuery as PgStepQuery,
     StepQueryResult as PgStepQueryResult,
 };
 #[cfg(feature = "sqlite")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
 pub use checkpointer_sqlite::{PageInfo, SQLiteCheckpointer, StepQuery, StepQueryResult};
 
 // Re-export execution types

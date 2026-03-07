@@ -1,6 +1,6 @@
 use chrono::Utc;
 use serde_json::json;
-use weavegraph::channels::errors::{ErrorEvent, LadderError};
+use weavegraph::channels::errors::{ErrorEvent, WeaveError};
 use weavegraph::event_bus::Event;
 use weavegraph::telemetry::{
     CONTEXT_COLOR, FormatterMode, LINE_COLOR, PlainFormatter, RESET_COLOR, TelemetryFormatter,
@@ -28,13 +28,13 @@ fn render_errors_formats_scope_lines_and_details() {
     let mut e1 = ErrorEvent::runner(
         "sess",
         3,
-        LadderError::msg("boom").with_cause(LadderError::msg("inner")),
+        WeaveError::msg("boom").with_cause(WeaveError::msg("inner")),
     )
     .with_tag("t1")
     .with_context(json!({"k":1}));
     e1.when = now;
 
-    let mut e2 = ErrorEvent::app(LadderError::msg("oops"));
+    let mut e2 = ErrorEvent::app(WeaveError::msg("oops"));
     e2.when = now;
 
     let renders = fmt.render_errors(&[e1.clone(), e2.clone()]);
@@ -107,7 +107,7 @@ fn formatter_mode_plain_excludes_ansi_codes() {
 fn formatter_mode_colored_errors_include_colors() {
     let fmt = PlainFormatter::with_mode(FormatterMode::Colored);
     let events = vec![
-        ErrorEvent::node("parser", 1, LadderError::msg("Parse error"))
+        ErrorEvent::node("parser", 1, WeaveError::msg("Parse error"))
             .with_tag("validation")
             .with_context(json!({"line": 42})),
     ];
@@ -127,7 +127,7 @@ fn formatter_mode_colored_errors_include_colors() {
 fn formatter_mode_plain_errors_exclude_colors() {
     let fmt = PlainFormatter::with_mode(FormatterMode::Plain);
     let events = vec![
-        ErrorEvent::node("parser", 1, LadderError::msg("Parse error"))
+        ErrorEvent::node("parser", 1, WeaveError::msg("Parse error"))
             .with_tag("validation")
             .with_context(json!({"line": 42})),
     ];
@@ -152,8 +152,8 @@ fn formatter_mode_plain_errors_exclude_colors() {
 #[test]
 fn formatter_mode_plain_nested_errors_exclude_colors() {
     let fmt = PlainFormatter::with_mode(FormatterMode::Plain);
-    let nested_error = LadderError::msg("Root error")
-        .with_cause(LadderError::msg("First cause").with_cause(LadderError::msg("Second cause")));
+    let nested_error = WeaveError::msg("Root error")
+        .with_cause(WeaveError::msg("First cause").with_cause(WeaveError::msg("Second cause")));
 
     let events = vec![ErrorEvent::scheduler(1, nested_error)];
     let renders = fmt.render_errors(&events);

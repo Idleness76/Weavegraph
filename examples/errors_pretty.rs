@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use serde_json::json;
-use weavegraph::channels::errors::{ErrorEvent, LadderError, pretty_print, pretty_print_with_mode};
+use weavegraph::channels::errors::{ErrorEvent, WeaveError, pretty_print, pretty_print_with_mode};
 use weavegraph::telemetry::FormatterMode;
 
 use tracing_error::ErrorLayer;
@@ -41,7 +41,7 @@ fn main() {
         // App-scoped error with builder pattern
         {
             let mut err = ErrorEvent::app(
-                LadderError::msg("application init failure")
+                WeaveError::msg("application init failure")
                     .with_details(json!({"component":"bootstrap"})),
             )
             .with_tag("startup")
@@ -55,9 +55,8 @@ fn main() {
             let mut err = ErrorEvent::node(
                 "Other:Parser",
                 12,
-                LadderError::msg("parse error: unexpected token").with_cause(
-                    LadderError::msg("line 3, col 15")
-                        .with_cause(LadderError::msg("file corrupted")),
+                WeaveError::msg("parse error: unexpected token").with_cause(
+                    WeaveError::msg("line 3, col 15").with_cause(WeaveError::msg("file corrupted")),
                 ),
             )
             .with_tag("retryable")
@@ -70,8 +69,8 @@ fn main() {
             let mut err = ErrorEvent::runner(
                 "sess-42",
                 99,
-                LadderError::msg("I/O failure")
-                    .with_cause(LadderError::msg("connection reset by peer")),
+                WeaveError::msg("I/O failure")
+                    .with_cause(WeaveError::msg("connection reset by peer")),
             )
             .with_context(json!({"remote":"10.0.0.2:443"}));
             err.when = when2;

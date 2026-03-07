@@ -3,7 +3,7 @@
 Comprehensive technical documentation for Weavegraph's internal design and module organization.
 
 **Related Documentation:**
-- [Developer Guide](GUIDE.md) - Core concepts, messages, state, and graphs
+- [Quickstart](QUICKSTART.md) - Core concepts, messages, state, and graphs
 - [Operations Guide](OPERATIONS.md) - Event streaming, persistence, testing, and production
 - [Documentation Index](INDEX.md) - Complete reference with anchor links
 
@@ -193,8 +193,8 @@ let result = app.invoke(initial).await?;
 
 **Key practices:**
 
-- Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](GUIDE.md#messages)
-- Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](GUIDE.md#state)
+- Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](QUICKSTART.md#messages)
+- Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](QUICKSTART.md#state)
 - Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout
 - Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`, `NodeError::Other`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
 
@@ -247,7 +247,7 @@ barrier synchronization.
 
 1. **Authoring** – Build a graph with `GraphBuilder`, registering nodes (implementations of `Node`)
    and the edges that connect them. Conditional edges can inspect `StateSnapshot` at runtime.
-   See [Graph Building](GUIDE.md#graphs) for details.
+   See [Graph Building](QUICKSTART.md#graphs) for details.
 2. **Compilation** – `GraphBuilder::compile()` validates topology and produces an `App`.
 3. **Invocation** – `App::invoke()` (or streaming variants like `invoke_streaming`, `invoke_with_channel`)
    constructs an `AppRunner` with the chosen checkpointer (`InMemory` or SQLite), and event bus configuration.
@@ -273,9 +273,9 @@ barrier synchronization.
 
 * `weavegraph/tests/` – Covers state channels, reducers, scheduler semantics, checkpointer, and event bus.
   See [Testing](OPERATIONS.md#testing) for running tests and patterns.
-* `weavegraph/examples/` – Progressive walkthroughs:
-  * `basic_nodes.rs`, `demo1.rs`, `demo2.rs` show core messaging and state channels.
-    See [Messages](GUIDE.md#messages) and [State](GUIDE.md#state).
+* `examples/` – Progressive walkthroughs:
+  * `basic_nodes.rs`, `graph_execution.rs`, `scheduler_fanout.rs` show core messaging and state channels.
+    See [Messages](QUICKSTART.md#messages) and [State](QUICKSTART.md#state).
   * `advanced_patterns.rs` covers conditional routing and control-flow helpers.
   * `streaming_events.rs`, `convenience_streaming.rs` demonstrate the
     broadcast event bus and web-friendly streaming patterns.
@@ -300,7 +300,7 @@ an `EventBus` directly with custom capacity via `EventBus::with_capacity`.
 
 For practical guidance and code samples, see:
 - [Event Streaming](OPERATIONS.md#event-streaming) for patterns and sink configuration
-- `weavegraph/examples/STREAMING_QUICKSTART.md` for detailed tuning guidance
+- `docs/STREAMING.md` for detailed tuning guidance
 
 ## `wg-ragsmith` Crate
 

@@ -6,6 +6,7 @@
 pub mod traits;
 
 #[cfg(feature = "rig")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rig")))]
 pub mod rig_adapter;
 
 pub use traits::{LlmError, LlmProvider, LlmResponse, LlmStreamProvider};

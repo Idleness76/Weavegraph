@@ -252,6 +252,48 @@ let cfg = RuntimeConfig::new(None, Some(CheckpointerType::InMemory), None)
 3. Treat `RuntimeConfig.checkpointer` field as deprecated and migrate call sites to `RuntimeConfig::with_checkpointer(...)`/`checkpointer_custom(...)`
 4. If both are configured, **custom always wins** (add tests for your expected resume behavior)
 
+#### 6. Examples and Guide Renames (`0.3.7`) (Low Impact)
+
+**What changed:**
+- `examples/demo1.rs` -> `examples/graph_execution.rs`
+- `examples/demo2.rs` -> `examples/scheduler_fanout.rs`
+- `examples/STREAMING_QUICKSTART.md` moved to `docs/STREAMING.md`
+- `docs/QUICKSTART.md` now replaces the old guide entrypoint
+- `examples/README.md` was reduced to a lean runnable index
+
+**Migration steps:**
+1. Update local scripts and docs that run `cargo run --example demo1` to `cargo run --example graph_execution`
+2. Update local scripts and docs that run `cargo run --example demo2` to `cargo run --example scheduler_fanout`
+3. Update links from old streaming/example docs paths to `docs/STREAMING.md`
+4. Update guide links to `docs/QUICKSTART.md`
+
+#### 7. `LadderError` renamed to `WeaveError` (`0.3.8`) (Medium Impact)
+
+**What changed:**
+- Canonical error type in `channels::errors` is now `WeaveError`
+- A 0.3.x compatibility alias remains:
+    `#[deprecated] pub type LadderError = WeaveError;`
+- Alias removal is planned for `0.4.0`
+
+**Before:**
+```rust
+use weavegraph::channels::errors::{ErrorEvent, LadderError};
+
+let event = ErrorEvent::app(LadderError::msg("startup failed"));
+```
+
+**After (preferred):**
+```rust
+use weavegraph::channels::errors::{ErrorEvent, WeaveError};
+
+let event = ErrorEvent::app(WeaveError::msg("startup failed"));
+```
+
+**Migration steps:**
+1. Replace imports of `LadderError` with `WeaveError`
+2. Replace explicit type annotations (`LadderError`) with `WeaveError`
+3. If you consume JSON schema names directly, update references from `LadderError` to `WeaveError`
+
 ---
 
 ## v0.2.0 (Upcoming)
@@ -473,7 +515,7 @@ for node in builder.topological_sort() {
 
 If you encounter issues during migration:
 
-1. Check the [examples](weavegraph/examples/) for updated usage patterns
+1. Check the [examples](examples/) for updated usage patterns
 2. Review the [ARCHITECTURE.md](docs/ARCHITECTURE.md) for design context
 3. Open an issue on [GitHub](https://github.com/Idleness76/weavegraph/issues)
 

@@ -32,7 +32,7 @@ app.invoke_with_sinks(
 
 ### Production Pattern (Web Servers)
 
-Use [`App::invoke_streaming`](../../src/app.rs) to launch the workflow and get an `EventStream` you can forward to SSE/WebSocket clients:
+Use [`App::invoke_streaming`](../src/app.rs) to launch the workflow and get an `EventStream` you can forward to SSE/WebSocket clients:
 
 ```rust
 use std::sync::Arc;

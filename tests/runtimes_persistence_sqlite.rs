@@ -2,7 +2,7 @@
 use chrono::Utc;
 use rustc_hash::FxHashMap;
 use weavegraph::channels::Channel;
-use weavegraph::channels::errors::{ErrorEvent, LadderError};
+use weavegraph::channels::errors::{ErrorEvent, WeaveError};
 use weavegraph::message::Role;
 use weavegraph::runtimes::{Checkpoint, Checkpointer, SQLiteCheckpointer, StepQuery};
 use weavegraph::types::NodeKind;
@@ -152,7 +152,7 @@ async fn test_error_persistence_roundtrip() {
         .expect("connect");
     let mut state = state_with_user("err");
 
-    let err = ErrorEvent::app(LadderError::msg("boom"))
+    let err = ErrorEvent::app(WeaveError::msg("boom"))
         .with_tag("t")
         .with_context(serde_json::json!({"a":1}));
 

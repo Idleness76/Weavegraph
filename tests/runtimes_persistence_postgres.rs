@@ -18,7 +18,7 @@ use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tokio::sync::Barrier;
 use weavegraph::channels::Channel;
-use weavegraph::channels::errors::{ErrorEvent, LadderError};
+use weavegraph::channels::errors::{ErrorEvent, WeaveError};
 use weavegraph::message::Role;
 use weavegraph::runtimes::checkpointer_postgres::StepQuery as PgStepQuery;
 use weavegraph::runtimes::{Checkpoint, Checkpointer, PostgresCheckpointer};
@@ -201,7 +201,7 @@ async fn test_error_persistence_roundtrip() {
     let session_id = unique_session_id("err");
     let mut state = state_with_user("err");
 
-    let err = ErrorEvent::app(LadderError::msg("boom"))
+    let err = ErrorEvent::app(WeaveError::msg("boom"))
         .with_tag("t")
         .with_context(serde_json::json!({"a":1}));
 

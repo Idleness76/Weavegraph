@@ -46,7 +46,7 @@ use std::sync::Arc;
 /// ```rust,no_run
 /// use weavegraph::node::{Node, NodeContext, NodePartial, NodeError};
 /// use weavegraph::state::StateSnapshot;
-/// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+/// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
 /// use async_trait::async_trait;
 ///
 /// struct ValidationNode {
@@ -67,7 +67,7 @@ use std::sync::Arc;
 ///         // Demonstrate the fluent API for success with warnings
 ///         if snapshot.messages.is_empty() {
 ///             let warning = ErrorEvent {
-///                 error: LadderError {
+///                 error: WeaveError {
 ///                     message: "No messages to validate, but continuing".to_string(),
 ///                     ..Default::default()
 ///                 },
@@ -218,7 +218,7 @@ impl NodeContext {
 /// ```rust
 /// use weavegraph::node::NodePartial;
 /// use weavegraph::message::{Message, Role};
-/// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+/// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
 /// use serde_json::json;
 /// use weavegraph::utils::collections::new_extra_map;
 ///
@@ -239,7 +239,7 @@ impl NodeContext {
 ///
 /// // Response with warnings
 /// let errors = vec![ErrorEvent {
-///     error: LadderError {
+///     error: WeaveError {
 ///         message: "Low confidence result".to_string(),
 ///         ..Default::default()
 ///     },

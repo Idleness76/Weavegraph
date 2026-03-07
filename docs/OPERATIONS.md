@@ -45,7 +45,7 @@ app.invoke_with_sinks(
 
 ### Web Servers (SSE/WebSockets)
 
-Use `App::invoke_streaming` to run a workflow while streaming events to clients. See [STREAMING_QUICKSTART.md](../weavegraph/examples/STREAMING_QUICKSTART.md) for full details.
+Use `App::invoke_streaming` to run a workflow while streaming events to clients. See [STREAMING.md](STREAMING.md) for full details.
 
 ### Sink Diagnostics
 
@@ -353,4 +353,4 @@ let mut runner = AppRunner::builder()
     .await;
 ```
 
-See also: [Developer Guide](GUIDE.md), [Architecture](ARCHITECTURE.md)
+See also: [Quickstart](QUICKSTART.md), [Architecture](ARCHITECTURE.md)

@@ -1,7 +1,7 @@
-//! Demo 2: Scheduler-Driven Workflow Execution
+//! Scheduler Fanout: Scheduler-Driven Workflow Execution
 //!
 //! This example demonstrates the advanced scheduler-driven execution model in Weavegraph.
-//! Unlike the basic graph execution in demo1, this shows how to:
+//! Unlike the baseline flow in `graph_execution`, this shows how to:
 //!
 //! 1. Create nodes with variable execution times for scheduling demonstration
 //! 2. Build complex dependency graphs with fan-out and convergence
@@ -115,10 +115,10 @@ impl Node for SchedulerDemoNode {
     }
 }
 
-/// Main demonstration function showing scheduler-driven execution
-async fn run_demo2() -> ExampleResult<()> {
+/// Main demonstration function showing scheduler-driven execution.
+async fn run_scheduler_fanout() -> ExampleResult<()> {
     info!("\n╔══════════════════════════════════════════════════════════╗");
-    info!("║                        Demo 2                           ║");
+    info!("║          Scheduler Fanout Example                       ║");
     info!("║         Scheduler-Driven Workflow Execution             ║");
     info!("╚══════════════════════════════════════════════════════════╝\n");
 
@@ -154,7 +154,7 @@ async fn run_demo2() -> ExampleResult<()> {
         init.extra.snapshot().keys().collect::<Vec<_>>()
     );
 
-    // ✅ STEP 2: Building a Complex Graph for Scheduler Demo
+    // ✅ STEP 2: Building a Complex Graph for Scheduler Example
     info!("\n🔗 Step 2: Building complex graph with dependencies and fan-out");
 
     let app = GraphBuilder::new()
@@ -221,7 +221,7 @@ async fn run_demo2() -> ExampleResult<()> {
     let final_state = app.invoke(init).await?;
     let total_time = start_time.elapsed();
 
-    info!("\n✅ Demo 2 completed - Scheduler execution successful!");
+    info!("\n✅ Scheduler fanout example completed - Execution successful!");
     info!("   ⏱️  Total execution time: {:?}", total_time);
     info!(
         "   📨 Final messages: {}",
@@ -261,5 +261,5 @@ fn init_tracing() {
 #[tokio::main]
 async fn main() -> ExampleResult<()> {
     init_tracing();
-    run_demo2().await
+    run_scheduler_fanout().await
 }

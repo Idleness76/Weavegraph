@@ -54,11 +54,11 @@ See [Cargo.toml](Cargo.toml) for complete dependency versions and feature config
 
 ## Documentation
 
-- **[Developer Guide](docs/GUIDE.md)** - Messages, state, and graph building
+- **[Quickstart](docs/QUICKSTART.md)** - Fast path to building and running workflows
 - **[Operations Guide](docs/OPERATIONS.md)** - Event streaming, persistence, testing, and production
 - **[Architecture](docs/ARCHITECTURE.md)** - Core architecture and custom reducers
 - **[Documentation Index](docs/INDEX.md)** - Complete topic reference with anchor links
-- **[Examples](weavegraph/examples/)** - Runnable code for all patterns
+- **[Examples](examples/)** - Runnable code for all patterns
 
 ## Minimal Example
 

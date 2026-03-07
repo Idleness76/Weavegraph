@@ -487,6 +487,7 @@ impl GraphBuilder {
     /// assert!(!is_cyclic_directed(&pg.graph));
     /// ```
     #[cfg(feature = "petgraph-compat")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "petgraph-compat")))]
     #[must_use]
     pub fn to_petgraph(&self) -> super::petgraph_compat::PetgraphConversion {
         super::petgraph_compat::to_petgraph(&self.edges)
@@ -520,6 +521,7 @@ impl GraphBuilder {
     /// // Then run: dot -Tpng workflow.dot -o workflow.png
     /// ```
     #[cfg(feature = "petgraph-compat")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "petgraph-compat")))]
     #[must_use]
     pub fn to_dot(&self) -> String {
         super::petgraph_compat::to_dot(&self.edges)
@@ -534,6 +536,7 @@ impl GraphBuilder {
     ///
     /// This method requires the `petgraph-compat` feature.
     #[cfg(feature = "petgraph-compat")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "petgraph-compat")))]
     #[must_use]
     pub fn is_cyclic_petgraph(&self) -> bool {
         super::petgraph_compat::is_cyclic(&self.edges)

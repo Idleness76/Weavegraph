@@ -204,9 +204,11 @@ pub enum CheckpointerType {
     /// In‑memory (non‑durable) checkpointing.
     InMemory,
     #[cfg(feature = "sqlite")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
     /// SQLite‑backed durable checkpointing (see `SQLiteCheckpointer`).
     SQLite,
     #[cfg(feature = "postgres")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]
     /// PostgreSQL‑backed durable checkpointing (see `PostgresCheckpointer`).
     Postgres,
 }
