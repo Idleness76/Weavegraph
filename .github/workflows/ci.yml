@@ -91,7 +91,7 @@ jobs:
       - name: cargo doc
         env:
           RUSTDOCFLAGS: "--cfg docsrs -D warnings"
-        run: cargo doc --workspace --all-features --no-deps
+        run: cargo +nightly doc --workspace --all-features --no-deps
 
   semver-checks:
     name: cargo semver-checks
@@ -157,7 +157,7 @@ jobs:
         with:
           prefix-key: bench
       - name: Run benchmarks
-        run: cargo bench --workspace -- --noplot
+        run: cargo bench --workspace
       - name: Store benchmark results
         uses: actions/upload-artifact@v4
         with:
