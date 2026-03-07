@@ -52,7 +52,7 @@ else
     echo -e "${YELLOW}⚠ Postgres not available; running library tests only${NC}"
     run_check "cargo test (lib only)" "cargo +${REQUIRED_TOOLCHAIN} test --lib --all-features"
 fi
-run_check "cargo doc" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +${REQUIRED_TOOLCHAIN} doc --workspace --all-features --no-deps"
+run_check "cargo doc (nightly)" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +nightly doc --workspace --all-features --no-deps"
 
 echo "======================================================"
 if [ $FAILED -eq 0 ]; then

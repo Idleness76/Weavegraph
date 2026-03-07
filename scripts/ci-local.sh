@@ -57,6 +57,12 @@ if ! rustup toolchain list | grep -q "${REQUIRED_TOOLCHAIN}"; then
     rustup toolchain install "${REQUIRED_TOOLCHAIN}" --profile minimal --component rustfmt --component clippy
 fi
 
+# Install nightly for doc builds (doc_cfg feature requires nightly)
+if ! rustup toolchain list | grep -q "nightly"; then
+    echo -e "${YELLOW}Installing nightly toolchain for doc builds...${NC}"
+    rustup toolchain install nightly --profile minimal
+fi
+
 # 1. Format check (fmt job)
 run_check "cargo fmt (${REQUIRED_TOOLCHAIN})" "cargo +${REQUIRED_TOOLCHAIN} fmt --all -- --check"
 
@@ -75,8 +81,8 @@ else
     run_check "cargo test (${REQUIRED_TOOLCHAIN}, lib only)" "cargo +${REQUIRED_TOOLCHAIN} test --lib --all-features"
 fi
 
-# 4. Doc build (blocking)
-run_check "cargo doc (${REQUIRED_TOOLCHAIN})" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +${REQUIRED_TOOLCHAIN} doc --workspace --all-features --no-deps"
+# 4. Doc build (blocking) - uses nightly for doc_cfg feature
+run_check "cargo doc (nightly)" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +nightly doc --workspace --all-features --no-deps"
 
 # 5. Cargo semver-checks (blocking)
 run_check "cargo semver-checks" "cargo semver-checks check-release --workspace"
