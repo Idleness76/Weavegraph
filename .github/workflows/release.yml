@@ -102,6 +102,12 @@ jobs:
       - name: Dry run cargo publish
         run: cargo publish --dry-run
 
+      - name: Publish to crates.io
+        if: ${{ !inputs.dry_run }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
+
       - name: Create git tag
         if: ${{ !inputs.dry_run }}
         run: |
@@ -109,12 +115,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "weavegraph-v${{ inputs.version }}" -m "Release weavegraph v${{ inputs.version }}"
           git push origin "weavegraph-v${{ inputs.version }}"
-
-      - name: Publish to crates.io
-        if: ${{ !inputs.dry_run }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish
 
       - name: Create GitHub release
         if: ${{ !inputs.dry_run }}
