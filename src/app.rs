@@ -9,7 +9,7 @@ use crate::message::*;
 use crate::node::*;
 use crate::reducers::ReducerRegistry;
 use crate::runtimes::runner::RunnerError;
-use crate::runtimes::{AppRunner, CheckpointerType, RuntimeConfig, SessionInit};
+use crate::runtimes::{AppRunner, Checkpointer, CheckpointerType, RuntimeConfig, SessionInit};
 use crate::state::*;
 use crate::types::*;
 use crate::utils::collections::new_extra_map;
@@ -78,8 +78,16 @@ pub struct AppEventStream {
 /// Errors returned when accessing an [`AppEventStream`] after its subscription
 /// has already been consumed.
 #[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum AppEventStreamError {
     #[error("event stream has already been taken")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::app::event_stream),
+            help("Verify stream subscription and event channel capacity.")
+        )
+    )]
     AlreadyTaken,
 }
 
@@ -301,7 +309,7 @@ impl App {
     /// use weavegraph::event_bus::{Event, MemorySink};
     /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
     ///
-    /// # async fn example(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
+    /// # async fn example(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> Result<(), Box<dyn std::error::Error>> {
     /// let mut handle = app.event_stream();
     /// handle.event_bus().add_sink(MemorySink::new());
     /// let (event_bus, event_stream) = handle
@@ -337,10 +345,17 @@ impl App {
         AppEventStream::new(event_bus, event_stream)
     }
 
-    fn resolve_checkpointer(&self, override_config: Option<CheckpointerType>) -> CheckpointerType {
-        override_config
-            .or_else(|| self.runtime_config.checkpointer.clone())
-            .unwrap_or(CheckpointerType::InMemory)
+    fn resolve_checkpointer(
+        &self,
+        override_config: Option<CheckpointerType>,
+    ) -> (CheckpointerType, Option<Arc<dyn Checkpointer>>) {
+        let checkpointer_type = override_config
+            .or_else(|| self.runtime_config.checkpointer_type())
+            .unwrap_or(CheckpointerType::InMemory);
+        // Precedence rule: custom checkpointer always wins when provided.
+        // The enum-based factory (checkpointer_type) is only used if custom is None.
+        let custom_checkpointer = self.runtime_config.custom_checkpointer();
+        (checkpointer_type, custom_checkpointer)
     }
 
     /// Internal helper that centralises runner setup for the public `invoke*` helpers.
@@ -366,17 +381,22 @@ impl App {
         F: FnOnce() -> (EventBus, R),
     {
         let (event_bus, output) = build_event_bus();
-        let checkpointer_type = self.resolve_checkpointer(checkpointer_override);
+        let (checkpointer_type, custom_checkpointer) =
+            self.resolve_checkpointer(checkpointer_override);
 
-        #[allow(deprecated)]
-        let runner = AppRunner::with_options_and_bus(
-            self.clone(),
-            checkpointer_type,
-            autosave,
-            event_bus,
-            true,
-        )
-        .await;
+        let mut runner_builder = AppRunner::builder()
+            .app(self.clone())
+            .autosave(autosave)
+            .event_bus(event_bus)
+            .start_listener(true);
+
+        runner_builder = if let Some(custom) = custom_checkpointer {
+            runner_builder.checkpointer_custom(custom)
+        } else {
+            runner_builder.checkpointer(checkpointer_type)
+        };
+
+        let runner = runner_builder.build().await;
 
         let session_id = self.next_session_id();
         let result = Self::run_session(runner, session_id, initial_state).await;
@@ -401,7 +421,7 @@ impl App {
     /// use futures_util::StreamExt;
     /// use tokio::time::{sleep, Duration};
     /// use weavegraph::event_bus::STREAM_END_SCOPE;
-    /// # async fn run(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> miette::Result<()> {
+    /// # async fn run(app: weavegraph::app::App, state: weavegraph::state::VersionedState) -> Result<(), Box<dyn std::error::Error>> {
     /// let (handle, events) = app.invoke_streaming(state).await;
     /// let mut handle_slot = Some(handle);
     ///
@@ -442,7 +462,7 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> (InvocationHandle, EventStream) {
-        let checkpointer_type = self.resolve_checkpointer(None);
+        let (checkpointer_type, custom_checkpointer) = self.resolve_checkpointer(None);
 
         let event_handle = self.event_stream();
         // SAFETY: We just created the event handle via event_stream(), so the stream
@@ -452,10 +472,19 @@ impl App {
             unreachable!("fresh App::event_stream() always yields unused stream")
         });
 
-        #[allow(deprecated)]
-        let runner =
-            AppRunner::with_options_and_bus(self.clone(), checkpointer_type, true, event_bus, true)
-                .await;
+        let mut runner_builder = AppRunner::builder()
+            .app(self.clone())
+            .autosave(true)
+            .event_bus(event_bus)
+            .start_listener(true);
+
+        runner_builder = if let Some(custom) = custom_checkpointer {
+            runner_builder.checkpointer_custom(custom)
+        } else {
+            runner_builder.checkpointer(checkpointer_type)
+        };
+
+        let runner = runner_builder.build().await;
 
         let session_id = self.next_session_id();
         let join = tokio::spawn(Self::run_session(runner, session_id, initial_state));
@@ -566,12 +595,9 @@ impl App {
         &self,
         initial_state: VersionedState,
     ) -> Result<VersionedState, RunnerError> {
-        self.invoke_with_bus_builder(
-            initial_state,
-            true,
-            self.runtime_config.checkpointer.clone(),
-            || (self.runtime_config.event_bus.build_event_bus(), ()),
-        )
+        self.invoke_with_bus_builder(initial_state, true, None, || {
+            (self.runtime_config.event_bus.build_event_bus(), ())
+        })
         .await
         .0
     }
@@ -695,17 +721,12 @@ impl App {
         Result<VersionedState, RunnerError>,
         flume::Receiver<crate::event_bus::Event>,
     ) {
-        self.invoke_with_bus_builder(
-            initial_state,
-            false,
-            self.runtime_config.checkpointer.clone(),
-            || {
-                let (tx, rx) = flume::unbounded();
-                let event_bus = self.runtime_config.event_bus.build_event_bus();
-                event_bus.add_sink(ChannelSink::new(tx));
-                (event_bus, rx)
-            },
-        )
+        self.invoke_with_bus_builder(initial_state, false, None, || {
+            let (tx, rx) = flume::unbounded();
+            let event_bus = self.runtime_config.event_bus.build_event_bus();
+            event_bus.add_sink(ChannelSink::new(tx));
+            (event_bus, rx)
+        })
         .await
     }
 
@@ -807,18 +828,13 @@ impl App {
         initial_state: VersionedState,
         sinks: Vec<Box<dyn crate::event_bus::EventSink>>,
     ) -> Result<VersionedState, RunnerError> {
-        self.invoke_with_bus_builder(
-            initial_state,
-            false,
-            self.runtime_config.checkpointer.clone(),
-            move || {
-                let event_bus = self.runtime_config.event_bus.build_event_bus();
-                for sink in sinks {
-                    event_bus.add_boxed_sink(sink);
-                }
-                (event_bus, ())
-            },
-        )
+        self.invoke_with_bus_builder(initial_state, false, None, move || {
+            let event_bus = self.runtime_config.event_bus.build_event_bus();
+            for sink in sinks {
+                event_bus.add_boxed_sink(sink);
+            }
+            (event_bus, ())
+        })
         .await
         .0
     }

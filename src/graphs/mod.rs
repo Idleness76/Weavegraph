@@ -154,4 +154,5 @@ pub use edges::{ConditionalEdge, EdgePredicate};
 pub use iteration::{EdgesIter, NodesIter};
 
 #[cfg(feature = "petgraph-compat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "petgraph-compat")))]
 pub use petgraph_compat::{NodeIndexMap, PetgraphConversion, WeaveDiGraph, is_cyclic};

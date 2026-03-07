@@ -45,7 +45,7 @@ app.invoke_with_sinks(
 
 ### Web Servers (SSE/WebSockets)
 
-Use `App::invoke_streaming` to run a workflow while streaming events to clients. See [STREAMING_QUICKSTART.md](../weavegraph/examples/STREAMING_QUICKSTART.md) for full details.
+Use `App::invoke_streaming` to run a workflow while streaming events to clients. See [STREAMING.md](STREAMING.md) for full details.
 
 ### Sink Diagnostics
 
@@ -269,12 +269,13 @@ Weavegraph uses `proptest` to ensure correctness across edge cases. See the test
 
 ## Error Handling {#errors}
 
-Weavegraph provides structured error propagation and beautiful diagnostics via `miette` and `thiserror`.
+Weavegraph provides structured, matchable error enums via `thiserror`.
+Rich diagnostic metadata is available behind the optional `diagnostics` feature.
 
 ### Basic Usage
 
 ```rust
-fn main() -> miette::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Your workflow code here
     Ok(())
 }
@@ -286,28 +287,24 @@ fn main() -> miette::Result<()> {
 use weavegraph::graphs::{GraphBuilder, GraphCompileError};
 use weavegraph::types::NodeKind;
 
-fn build_app() -> Result<weavegraph::app::App, miette::Report> {
+fn build_app() -> Result<weavegraph::app::App, weavegraph::graphs::GraphCompileError> {
     match GraphBuilder::new()
         .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
         .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
         .compile()
     {
         Ok(app) => Ok(app),
-        Err(GraphCompileError::MissingEntry) => {
-            Err(miette::miette!("graph has no Start entry"))
-        }
-        Err(GraphCompileError::UnknownNode(nk)) => {
-            Err(miette::miette!("unknown node referenced: {nk}"))
-        }
-        Err(e) => Err(miette::miette!("graph validation failed: {e}")),
+        Err(GraphCompileError::MissingEntry) => Err(GraphCompileError::MissingEntry),
+        Err(GraphCompileError::UnknownNode(nk)) => Err(GraphCompileError::UnknownNode(nk)),
+        Err(e) => Err(e),
     }
 }
 ```
 
 **Features:**
-- Automatic error context and pretty printing
 - Match on error variants for custom handling
-- Rich diagnostic output with source code context
+- Lightweight core error model for library consumers
+- Optional diagnostic metadata (`--features diagnostics`) for richer terminal reporting
 
 See `examples/errors_pretty.rs` for comprehensive error handling patterns.
 
@@ -356,4 +353,4 @@ let mut runner = AppRunner::builder()
     .await;
 ```
 
-See also: [Developer Guide](GUIDE.md), [Architecture](ARCHITECTURE.md)
+See also: [Quickstart](QUICKSTART.md), [Architecture](ARCHITECTURE.md)

@@ -50,10 +50,10 @@ use crate::telemetry::{FormatterMode, PlainFormatter, TelemetryFormatter};
 /// Using constructors and builders:
 ///
 /// ```
-/// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+/// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
 /// use serde_json::json;
 ///
-/// let event = ErrorEvent::node("Parser", 1, LadderError::msg("Parse error"))
+/// let event = ErrorEvent::node("Parser", 1, WeaveError::msg("Parse error"))
 ///     .with_tag("validation")
 ///     .with_context(json!({"line": 42}));
 ///
@@ -67,7 +67,7 @@ pub struct ErrorEvent {
     #[serde(default)]
     pub scope: ErrorScope,
     #[serde(default)]
-    pub error: LadderError,
+    pub error: WeaveError,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
@@ -79,11 +79,11 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     ///
-    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Something failed"));
+    /// let err = ErrorEvent::node("my_node", 1, WeaveError::msg("Something failed"));
     /// ```
-    pub fn node<S: Into<String>>(kind: S, step: u64, error: LadderError) -> Self {
+    pub fn node<S: Into<String>>(kind: S, step: u64, error: WeaveError) -> Self {
         Self {
             when: Utc::now(),
             scope: ErrorScope::Node {
@@ -100,11 +100,11 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     ///
-    /// let err = ErrorEvent::scheduler(5, LadderError::msg("Scheduling conflict"));
+    /// let err = ErrorEvent::scheduler(5, WeaveError::msg("Scheduling conflict"));
     /// ```
-    pub fn scheduler(step: u64, error: LadderError) -> Self {
+    pub fn scheduler(step: u64, error: WeaveError) -> Self {
         Self {
             when: Utc::now(),
             scope: ErrorScope::Scheduler { step },
@@ -118,11 +118,11 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     ///
-    /// let err = ErrorEvent::runner("session_123", 10, LadderError::msg("Runtime error"));
+    /// let err = ErrorEvent::runner("session_123", 10, WeaveError::msg("Runtime error"));
     /// ```
-    pub fn runner<S: Into<String>>(session: S, step: u64, error: LadderError) -> Self {
+    pub fn runner<S: Into<String>>(session: S, step: u64, error: WeaveError) -> Self {
         Self {
             when: Utc::now(),
             scope: ErrorScope::Runner {
@@ -139,11 +139,11 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     ///
-    /// let err = ErrorEvent::app(LadderError::msg("Application startup failed"));
+    /// let err = ErrorEvent::app(WeaveError::msg("Application startup failed"));
     /// ```
-    pub fn app(error: LadderError) -> Self {
+    pub fn app(error: WeaveError) -> Self {
         Self {
             when: Utc::now(),
             scope: ErrorScope::App,
@@ -157,9 +157,9 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     ///
-    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Invalid input"))
+    /// let err = ErrorEvent::node("my_node", 1, WeaveError::msg("Invalid input"))
     ///     .with_tags(vec!["validation".to_string(), "critical".to_string()]);
     /// ```
     pub fn with_tags(mut self, tags: Vec<String>) -> Self {
@@ -171,9 +171,9 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     ///
-    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Invalid input"))
+    /// let err = ErrorEvent::node("my_node", 1, WeaveError::msg("Invalid input"))
     ///     .with_tag("validation");
     /// ```
     pub fn with_tag<S: Into<String>>(mut self, tag: S) -> Self {
@@ -185,10 +185,10 @@ impl ErrorEvent {
     ///
     /// # Example
     /// ```
-    /// use weavegraph::channels::errors::{ErrorEvent, LadderError};
+    /// use weavegraph::channels::errors::{ErrorEvent, WeaveError};
     /// use serde_json::json;
     ///
-    /// let err = ErrorEvent::node("my_node", 1, LadderError::msg("Invalid input"))
+    /// let err = ErrorEvent::node("my_node", 1, WeaveError::msg("Invalid input"))
     ///     .with_context(json!({"field": "username", "value": ""}));
     /// ```
     pub fn with_context(mut self, context: serde_json::Value) -> Self {
@@ -197,6 +197,7 @@ impl ErrorEvent {
     }
 }
 
+/// Scope metadata describing where an [`ErrorEvent`] originated.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum ErrorScope {
@@ -215,18 +216,24 @@ pub enum ErrorScope {
     App,
 }
 
+/// Structured error payload used by [`ErrorEvent`].
+///
+/// This type supports nested causes and optional machine-readable details.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct LadderError {
+pub struct WeaveError {
+    /// Primary human-readable error message.
     pub message: String,
+    /// Optional nested cause for error chaining.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cause: Option<Box<LadderError>>,
+    pub cause: Option<Box<WeaveError>>,
+    /// Optional structured metadata attached to the error.
     #[serde(default)]
     pub details: serde_json::Value,
 }
 
-impl Default for LadderError {
+impl Default for WeaveError {
     fn default() -> Self {
-        LadderError {
+        WeaveError {
             message: String::new(),
             cause: None,
             details: serde_json::Value::Null,
@@ -234,37 +241,47 @@ impl Default for LadderError {
     }
 }
 
-impl std::fmt::Display for LadderError {
+impl std::fmt::Display for WeaveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
 }
 
-impl std::error::Error for LadderError {
+impl std::error::Error for WeaveError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         self.cause.as_ref().map(|c| c as &dyn std::error::Error)
     }
 }
 
-impl LadderError {
+impl WeaveError {
+    /// Construct an error from a message.
     pub fn msg<M: Into<String>>(m: M) -> Self {
-        LadderError {
+        WeaveError {
             message: m.into(),
             cause: None,
             details: serde_json::Value::Null,
         }
     }
 
+    /// Attach structured details to this error.
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = details;
         self
     }
 
-    pub fn with_cause(mut self, cause: LadderError) -> Self {
+    /// Attach a nested cause to this error.
+    pub fn with_cause(mut self, cause: WeaveError) -> Self {
         self.cause = Some(Box::new(cause));
         self
     }
 }
+
+/// Deprecated compatibility alias retained in 0.3.x.
+#[deprecated(
+    since = "0.3.0",
+    note = "Use WeaveError instead; this alias is removed in 0.4.0"
+)]
+pub type LadderError = WeaveError;
 
 /// Format error events with explicit color mode control.
 ///
@@ -276,11 +293,11 @@ impl LadderError {
 /// # Examples
 ///
 /// ```
-/// use weavegraph::channels::errors::{ErrorEvent, LadderError, pretty_print_with_mode};
+/// use weavegraph::channels::errors::{ErrorEvent, WeaveError, pretty_print_with_mode};
 /// use weavegraph::telemetry::FormatterMode;
 ///
 /// let events = vec![
-///     ErrorEvent::node("parser", 1, LadderError::msg("Parse failed"))
+///     ErrorEvent::node("parser", 1, WeaveError::msg("Parse failed"))
 /// ];
 ///
 /// // Force plain output (no colors) for log files
@@ -313,10 +330,10 @@ pub fn pretty_print_with_mode(events: &[ErrorEvent], mode: FormatterMode) -> Str
 /// # Examples
 ///
 /// ```
-/// use weavegraph::channels::errors::{ErrorEvent, LadderError, pretty_print};
+/// use weavegraph::channels::errors::{ErrorEvent, WeaveError, pretty_print};
 ///
 /// let events = vec![
-///     ErrorEvent::node("parser", 1, LadderError::msg("Parse failed"))
+///     ErrorEvent::node("parser", 1, WeaveError::msg("Parse failed"))
 /// ];
 ///
 /// let output = pretty_print(&events);

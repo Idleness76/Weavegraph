@@ -151,7 +151,7 @@ impl Default for PlainFormatter {
 }
 
 fn format_error_chain(
-    error: &crate::channels::errors::LadderError,
+    error: &crate::channels::errors::WeaveError,
     indent: usize,
     use_color: bool,
 ) -> Vec<String> {

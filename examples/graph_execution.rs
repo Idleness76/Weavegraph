@@ -1,4 +1,4 @@
-//! Demo 1: Basic Graph Building and Execution
+//! Graph Execution: Basic Graph Building and Execution
 //!
 //! This demonstration showcases the fundamental graph building and execution patterns
 //! in the Weavegraph framework. It covers basic workflow construction, state management,
@@ -11,13 +11,12 @@
 //! 4. Barrier Operations: Manual state updates and version management
 //! 5. Error Handling: Validation and expected failure scenarios
 //!
-//! Running This Demo:
+//! Running This Example:
 //! ```bash
-//! cargo run --example demo1
+//! cargo run --example graph_execution
 //! ```
 
 use async_trait::async_trait;
-use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use tracing::info;
@@ -30,6 +29,8 @@ use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Simple demonstration node that adds an assistant message.
 ///
@@ -84,7 +85,7 @@ impl Node for SimpleNode {
 
 /// Demonstration showcasing basic graph building and execution patterns.
 ///
-/// This demo illustrates:
+/// This example illustrates:
 /// 1. Modern message and state construction patterns
 /// 2. Simple graph building with the GraphBuilder API
 /// 3. Full workflow execution using the `invoke` method
@@ -101,7 +102,7 @@ impl Node for SimpleNode {
 ///
 /// # Expected Output
 ///
-/// The demo will show:
+/// This example will show:
 /// - Graph compilation and execution
 /// - State snapshots before and after mutations
 /// - Barrier operation results with channel updates
@@ -125,21 +126,15 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    // Pretty panic reports
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
-    demo().await
+    run_example().await
 }
 
-async fn demo() -> Result<()> {
+async fn run_example() -> ExampleResult<()> {
     info!("\n╔══════════════════════════════════════════════════════════╗");
-    info!("║                        Demo 1                           ║");
+    info!("║              Graph Execution Example                    ║");
     info!("║              Basic Graph Building & Execution           ║");
     info!("╚══════════════════════════════════════════════════════════╝\n");
 
@@ -153,7 +148,7 @@ async fn demo() -> Result<()> {
         .with_extra(
             "metadata",
             json!({
-                "demo": "demo1",
+                "example": "graph_execution",
                 "stage": "initialization",
                 "patterns": ["modern_messages", "state_builder"]
             }),
@@ -253,7 +248,7 @@ async fn demo() -> Result<()> {
     mutated_state.extra.get_mut().insert(
         "post_mutation".into(),
         json!({
-            "added_at": "demo1",
+            "added_at": "graph_execution",
             "operation": "mutation_demonstration"
         }),
     );
@@ -303,7 +298,7 @@ async fn demo() -> Result<()> {
     let barrier_outcome = app
         .apply_barrier(&mut barrier_state, &run_ids, vec![partial_a, partial_b])
         .await
-        .map_err(|e| miette::miette!("Barrier operation failed: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("Barrier operation failed: {e}")))?;
 
     info!("   ✓ Barrier applied successfully");
     info!(
@@ -334,7 +329,7 @@ async fn demo() -> Result<()> {
     let noop_outcome = app
         .apply_barrier(&mut barrier_state, &[], noop_partials)
         .await
-        .map_err(|e| miette::miette!("No-op barrier failed: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("No-op barrier failed: {e}")))?;
 
     let post_noop_version = barrier_state.messages.version();
     info!("   ✓ No-op barrier completed");
@@ -368,7 +363,7 @@ async fn demo() -> Result<()> {
     let _ = app
         .apply_barrier(&mut saturation_state, &[], vec![saturation_partial])
         .await
-        .map_err(|e| miette::miette!("Saturation test failed: {e}"))?;
+        .map_err(|e| std::io::Error::other(format!("Saturation test failed: {e}")))?;
 
     let post_saturation_version = saturation_state.messages.version();
     info!("   ✓ Version saturation test completed");
@@ -379,7 +374,7 @@ async fn demo() -> Result<()> {
 
     // ✅ FINAL SUMMARY
     info!("\n╔══════════════════════════════════════════════════════════╗");
-    info!("║                      Demo 1 Complete                    ║");
+    info!("║            Graph Execution Example Complete             ║");
     info!("╚══════════════════════════════════════════════════════════╝");
     info!("\n✅ Key patterns demonstrated:");
     info!("   • Modern message construction with typed roles");
@@ -388,7 +383,7 @@ async fn demo() -> Result<()> {
     info!("   • State snapshots and mutation safety");
     info!("   • Manual barrier operations");
     info!("   • Error handling and validation");
-    info!("\n🎯 Next: Run demo2 to see scheduler-driven execution patterns");
+    info!("\n🎯 Next: Run scheduler_fanout for dependency fan-out patterns");
 
     Ok(())
 }

@@ -1,21 +1,42 @@
+use std::sync::Arc;
+
 use crate::event_bus::{EventBus, EventSink, MemorySink, StdOutSink};
 
-use super::CheckpointerType;
+use super::{Checkpointer, CheckpointerType};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RuntimeConfig {
     pub session_id: Option<String>,
+    #[deprecated(
+        since = "0.3.4",
+        note = "Use RuntimeConfig::with_checkpointer(...) for enum convenience or RuntimeConfig::checkpointer_custom(...) for custom backends; field will be removed in 0.4.0"
+    )]
     pub checkpointer: Option<CheckpointerType>,
+    pub checkpointer_custom: Option<Arc<dyn Checkpointer>>,
     pub sqlite_db_name: Option<String>,
     pub event_bus: EventBusConfig,
 }
 
+impl std::fmt::Debug for RuntimeConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeConfig")
+            .field("session_id", &self.session_id)
+            .field("checkpointer", &self.checkpointer_type())
+            .field("checkpointer_custom", &self.checkpointer_custom.is_some())
+            .field("sqlite_db_name", &self.sqlite_db_name)
+            .field("event_bus", &self.event_bus)
+            .finish()
+    }
+}
+
 impl Default for RuntimeConfig {
+    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             // Generate session identifiers lazily so helpers can pick a fresh id per run.
             session_id: None,
             checkpointer: Some(CheckpointerType::InMemory),
+            checkpointer_custom: None,
             sqlite_db_name: Self::resolve_sqlite_db_name(None),
             event_bus: EventBusConfig::default(),
         }
@@ -31,6 +52,7 @@ impl RuntimeConfig {
         Some(std::env::var("SQLITE_DB_NAME").unwrap_or_else(|_| "weavegraph.db".to_string()))
     }
 
+    #[allow(deprecated)]
     pub fn new(
         session_id: Option<String>,
         checkpointer: Option<CheckpointerType>,
@@ -39,9 +61,36 @@ impl RuntimeConfig {
         Self {
             session_id,
             checkpointer,
+            checkpointer_custom: None,
             sqlite_db_name: Self::resolve_sqlite_db_name(sqlite_db_name),
             event_bus: EventBusConfig::default(),
         }
+    }
+
+    #[allow(deprecated)]
+    #[must_use]
+    pub fn with_checkpointer(mut self, checkpointer: Option<CheckpointerType>) -> Self {
+        self.checkpointer = checkpointer;
+        self
+    }
+
+    #[must_use]
+    pub fn checkpointer_type(&self) -> Option<CheckpointerType> {
+        #[allow(deprecated)]
+        {
+            self.checkpointer.clone()
+        }
+    }
+
+    #[must_use]
+    pub fn checkpointer_custom(mut self, checkpointer: Arc<dyn Checkpointer>) -> Self {
+        self.checkpointer_custom = Some(checkpointer);
+        self
+    }
+
+    #[must_use]
+    pub fn custom_checkpointer(&self) -> Option<Arc<dyn Checkpointer>> {
+        self.checkpointer_custom.clone()
     }
 
     #[must_use]

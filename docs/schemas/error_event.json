@@ -100,7 +100,7 @@
             ]
         },
         "error": {
-            "$ref": "#/definitions/LadderError"
+            "$ref": "#/definitions/WeaveError"
         },
         "tags": {
             "type": "array",
@@ -116,7 +116,7 @@
         }
     },
     "definitions": {
-        "LadderError": {
+        "WeaveError": {
             "type": "object",
             "required": [
                 "message"
@@ -129,7 +129,7 @@
                 "cause": {
                     "oneOf": [
                         {
-                            "$ref": "#/definitions/LadderError"
+                            "$ref": "#/definitions/WeaveError"
                         },
                         {
                             "type": "null"

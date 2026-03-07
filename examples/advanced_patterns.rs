@@ -33,10 +33,11 @@ use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::utils::collections::new_extra_map;
 
-use miette::Result;
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A node that simulates external API calls with potential failures and retry logic.
 ///
@@ -120,13 +121,10 @@ impl Node for ApiCallNode {
         }
 
         // All retries exhausted
-        Err(NodeError::Provider {
-            provider: "external_api",
-            message: format!(
-                "{} service failed after {} attempts",
-                self.service_name, self.max_retries
-            ),
-        })
+        Err(NodeError::other(std::io::Error::other(format!(
+            "{} service failed after {} attempts",
+            self.service_name, self.max_retries
+        ))))
     }
 }
 
@@ -363,14 +361,9 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
 
     info!("🚀 Advanced Node Patterns Example");
     info!("==================================");

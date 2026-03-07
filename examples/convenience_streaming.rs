@@ -41,10 +41,11 @@ use weavegraph::{
     types::NodeKind,
 };
 
-use miette::{IntoDiagnostic, Result};
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A node that simulates work with progress updates
 #[derive(Debug, Clone)]
@@ -88,14 +89,9 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
 
     info!("=== Convenience Streaming Examples ===\n");
     info!("This example demonstrates two new convenience methods for event streaming:\n");
@@ -151,7 +147,9 @@ async fn main() -> Result<()> {
     );
 
     // Wait for event collection
-    let event_count = event_handler.await.into_diagnostic()?;
+    let event_count = event_handler
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     info!("   📊 Received {} events total\n", event_count);
 
     // Give some time before next example
@@ -188,8 +186,7 @@ async fn main() -> Result<()> {
                 Box::new(ChannelSink::new(tx)),
             ],
         )
-        .await
-        .into_diagnostic()?;
+        .await?;
 
     info!(
         "\n   ✅ Workflow completed with {} messages",
@@ -197,7 +194,9 @@ async fn main() -> Result<()> {
     );
 
     // Get channel events
-    let channel_events = channel_collector.await.into_diagnostic()?;
+    let channel_events = channel_collector
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     info!("   📊 Channel received {} events", channel_events.len());
     info!("   📊 Events were also printed to stdout above\n");
 

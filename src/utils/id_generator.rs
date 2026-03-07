@@ -4,23 +4,29 @@
 //! throughout the Weavegraph framework. Supports both random UUID-based generation
 //! and deterministic seeded generation for testing and reproducibility.
 
-use miette::{Diagnostic, Result};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 use uuid::Uuid;
 
 /// Errors that can occur during ID generation.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum IdError {
     /// Invalid format for ID parsing or validation.
     #[error("Invalid ID format: {format}")]
-    #[diagnostic(code(weavegraph::id::invalid_format))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::id::invalid_format))
+    )]
     InvalidFormat { format: String },
 
     /// ID generation failed due to system constraints.
     #[error("ID generation failed: {reason}")]
-    #[diagnostic(code(weavegraph::id::generation_failed))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::id::generation_failed))
+    )]
     GenerationFailed { reason: String },
 }
 

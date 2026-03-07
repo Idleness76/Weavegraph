@@ -57,13 +57,27 @@ fn smoke_test_basic_nodes() {
 }
 
 #[test]
-fn smoke_test_demo1() {
+fn smoke_test_graph_execution() {
     if std::env::var("WEAVEGRAPH_SMOKE_TESTS").is_err() {
-        eprintln!("Skipping smoke test smoke_test_demo1 (set WEAVEGRAPH_SMOKE_TESTS=1 to enable)");
+        eprintln!(
+            "Skipping smoke test smoke_test_graph_execution (set WEAVEGRAPH_SMOKE_TESTS=1 to enable)"
+        );
         return;
     }
 
-    run_example("demo1");
+    run_example("graph_execution");
+}
+
+#[test]
+fn smoke_test_scheduler_fanout() {
+    if std::env::var("WEAVEGRAPH_SMOKE_TESTS").is_err() {
+        eprintln!(
+            "Skipping smoke test smoke_test_scheduler_fanout (set WEAVEGRAPH_SMOKE_TESTS=1 to enable)"
+        );
+        return;
+    }
+
+    run_example("scheduler_fanout");
 }
 
 #[test]

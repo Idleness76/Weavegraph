@@ -1,7 +1,7 @@
-//! Demo 2: Scheduler-Driven Workflow Execution
+//! Scheduler Fanout: Scheduler-Driven Workflow Execution
 //!
 //! This example demonstrates the advanced scheduler-driven execution model in Weavegraph.
-//! Unlike the basic graph execution in demo1, this shows how to:
+//! Unlike the baseline flow in `graph_execution`, this shows how to:
 //!
 //! 1. Create nodes with variable execution times for scheduling demonstration
 //! 2. Build complex dependency graphs with fan-out and convergence
@@ -12,7 +12,6 @@
 //! providing efficient concurrent execution while respecting the dependency graph.
 
 use async_trait::async_trait;
-use miette::Result;
 use rustc_hash::FxHashMap;
 use serde_json::json;
 use std::time::Duration;
@@ -27,6 +26,8 @@ use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A demonstration node that simulates variable execution time
 /// to showcase scheduler behavior with dependencies
@@ -114,10 +115,10 @@ impl Node for SchedulerDemoNode {
     }
 }
 
-/// Main demonstration function showing scheduler-driven execution
-async fn run_demo2() -> miette::Result<()> {
+/// Main demonstration function showing scheduler-driven execution.
+async fn run_scheduler_fanout() -> ExampleResult<()> {
     info!("\n╔══════════════════════════════════════════════════════════╗");
-    info!("║                        Demo 2                           ║");
+    info!("║          Scheduler Fanout Example                       ║");
     info!("║         Scheduler-Driven Workflow Execution             ║");
     info!("╚══════════════════════════════════════════════════════════╝\n");
 
@@ -153,7 +154,7 @@ async fn run_demo2() -> miette::Result<()> {
         init.extra.snapshot().keys().collect::<Vec<_>>()
     );
 
-    // ✅ STEP 2: Building a Complex Graph for Scheduler Demo
+    // ✅ STEP 2: Building a Complex Graph for Scheduler Example
     info!("\n🔗 Step 2: Building complex graph with dependencies and fan-out");
 
     let app = GraphBuilder::new()
@@ -220,7 +221,7 @@ async fn run_demo2() -> miette::Result<()> {
     let final_state = app.invoke(init).await?;
     let total_time = start_time.elapsed();
 
-    info!("\n✅ Demo 2 completed - Scheduler execution successful!");
+    info!("\n✅ Scheduler fanout example completed - Execution successful!");
     info!("   ⏱️  Total execution time: {:?}", total_time);
     info!(
         "   📨 Final messages: {}",
@@ -257,14 +258,8 @@ fn init_tracing() {
         .init();
 }
 
-fn init_miette() {
-    // Pretty panic reports
-    miette::set_panic_hook();
-}
-
 #[tokio::main]
-async fn main() -> miette::Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
-    run_demo2().await
+    run_scheduler_fanout().await
 }

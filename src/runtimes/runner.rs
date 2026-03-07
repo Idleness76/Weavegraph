@@ -11,7 +11,7 @@
 
 use crate::app::{App, BarrierOutcome};
 use crate::channels::Channel;
-use crate::channels::errors::{ErrorEvent, ErrorScope, LadderError};
+use crate::channels::errors::{ErrorEvent, ErrorScope, WeaveError};
 use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
@@ -27,7 +27,6 @@ use crate::runtimes::{
 use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
 use crate::state::VersionedState;
 use crate::types::NodeKind;
-use miette::Diagnostic;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -140,52 +139,71 @@ pub struct AppRunner {
 }
 
 /// Errors that can occur during workflow execution.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum RunnerError {
     /// The requested session was not found.
     #[error("session not found: {session_id}")]
-    #[diagnostic(code(weavegraph::runner::session_not_found))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::session_not_found))
+    )]
     SessionNotFound { session_id: String },
 
     /// No nodes are reachable from the Start node.
     #[error("no nodes to run from START (empty frontier)")]
-    #[diagnostic(
-        code(weavegraph::runner::no_start_nodes),
-        help("Add edges from Start or set the entry node correctly.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::runner::no_start_nodes),
+            help("Add edges from Start or set the entry node correctly.")
+        )
     )]
     NoStartNodes,
 
     /// Execution paused unexpectedly during run_until_complete.
     #[error("unexpected pause during run_until_complete")]
-    #[diagnostic(code(weavegraph::runner::unexpected_pause))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::unexpected_pause))
+    )]
     UnexpectedPause,
 
     /// The join handle was already consumed by a previous call.
     #[error("join handle already consumed")]
-    #[diagnostic(
-        code(weavegraph::runner::join_handle_consumed),
-        help("InvocationHandle::join() can only be called once.")
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::runner::join_handle_consumed),
+            help("InvocationHandle::join() can only be called once.")
+        )
     )]
     JoinHandleConsumed,
 
     /// The workflow task failed to join.
     #[error("workflow task join error: {0}")]
-    #[diagnostic(code(weavegraph::runner::join))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::runner::join)))]
     Join(#[from] JoinError),
 
     /// Checkpointer operation failed.
     #[error(transparent)]
-    #[diagnostic(code(weavegraph::runner::checkpointer))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::checkpointer))
+    )]
     Checkpointer(#[from] CheckpointerError),
 
     /// Barrier application failed.
     #[error("app barrier error: {0}")]
-    #[diagnostic(code(weavegraph::runner::barrier))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::runner::barrier)))]
     AppBarrier(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// Scheduler error during step execution.
     #[error(transparent)]
-    #[diagnostic(code(weavegraph::runner::scheduler))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::runner::scheduler))
+    )]
     Scheduler(#[from] SchedulerError),
 }
 
@@ -270,6 +288,7 @@ pub enum RunnerError {
 pub struct AppRunnerBuilder {
     app: Option<Arc<App>>,
     checkpointer_type: CheckpointerType,
+    checkpointer_custom: Option<Arc<dyn Checkpointer>>,
     autosave: bool,
     event_bus: Option<EventBus>,
     start_listener: bool,
@@ -294,6 +313,7 @@ impl AppRunnerBuilder {
         Self {
             app: None,
             checkpointer_type: CheckpointerType::InMemory,
+            checkpointer_custom: None,
             autosave: true,
             event_bus: None,
             start_listener: true,
@@ -324,6 +344,16 @@ impl AppRunnerBuilder {
     #[must_use]
     pub fn checkpointer(mut self, checkpointer_type: CheckpointerType) -> Self {
         self.checkpointer_type = checkpointer_type;
+        self
+    }
+
+    /// Set a custom checkpointer implementation.
+    ///
+    /// When both enum-based and custom checkpointers are configured, the custom
+    /// checkpointer takes precedence.
+    #[must_use]
+    pub fn checkpointer_custom(mut self, checkpointer: Arc<dyn Checkpointer>) -> Self {
+        self.checkpointer_custom = Some(checkpointer);
         self
     }
 
@@ -379,6 +409,7 @@ impl AppRunnerBuilder {
             AppRunner::with_arc_and_bus(
                 app,
                 self.checkpointer_type,
+                self.checkpointer_custom,
                 self.autosave,
                 event_bus,
                 self.start_listener,
@@ -562,7 +593,7 @@ impl AppRunner {
     ) -> Self {
         let bus = app.runtime_config().event_bus.build_event_bus();
         let app = Arc::new(app);
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
+        Self::with_arc_and_bus(app, checkpointer_type, None, autosave, bus, true).await
     }
 
     #[deprecated(
@@ -575,7 +606,7 @@ impl AppRunner {
         autosave: bool,
     ) -> Self {
         let bus = app.runtime_config().event_bus.build_event_bus();
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, bus, true).await
+        Self::with_arc_and_bus(app, checkpointer_type, None, autosave, bus, true).await
     }
 
     /// Create an AppRunner with a custom EventBus for advanced event handling.
@@ -720,7 +751,15 @@ impl AppRunner {
         start_listener: bool,
     ) -> Self {
         let app = Arc::new(app);
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, event_bus, start_listener).await
+        Self::with_arc_and_bus(
+            app,
+            checkpointer_type,
+            None,
+            autosave,
+            event_bus,
+            start_listener,
+        )
+        .await
     }
 
     /// Variant that accepts a preconfigured EventBus for an existing `Arc<App>`.
@@ -742,18 +781,33 @@ impl AppRunner {
         event_bus: EventBus,
         start_listener: bool,
     ) -> Self {
-        Self::with_arc_and_bus(app, checkpointer_type, autosave, event_bus, start_listener).await
+        Self::with_arc_and_bus(
+            app,
+            checkpointer_type,
+            None,
+            autosave,
+            event_bus,
+            start_listener,
+        )
+        .await
     }
 
     async fn with_arc_and_bus(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
+        checkpointer_custom: Option<Arc<dyn Checkpointer>>,
         autosave: bool,
         event_bus: EventBus,
         start_listener: bool,
     ) -> Self {
-        let sqlite_db_name = app.runtime_config().sqlite_db_name.clone();
-        let checkpointer = Self::create_checkpointer(checkpointer_type, sqlite_db_name).await;
+        // Precedence rule: custom checkpointer always wins when provided.
+        // If custom is None, fall back to enum-based factory instantiation.
+        let checkpointer = if let Some(custom) = checkpointer_custom {
+            Some(custom)
+        } else {
+            let sqlite_db_name = app.runtime_config().sqlite_db_name.clone();
+            Self::create_checkpointer(checkpointer_type, sqlite_db_name).await
+        };
         if start_listener {
             event_bus.listen_for_events();
         }
@@ -912,7 +966,7 @@ impl AppRunner {
                             ErrorEvent {
                                 when: chrono::Utc::now(),
                                 scope: ErrorScope::Scheduler { step: *step },
-                                error: LadderError::msg(format!(
+                                error: WeaveError::msg(format!(
                                     "node {:?} not found in registry",
                                     kind
                                 )),
@@ -929,7 +983,7 @@ impl AppRunner {
                                     kind: kind.encode().to_string(),
                                     step: *step,
                                 },
-                                error: LadderError::msg(format!("{}", source)),
+                                error: WeaveError::msg(format!("{}", source)),
                                 tags: vec!["node".into()],
                                 context: serde_json::json!({}),
                             }
@@ -939,7 +993,7 @@ impl AppRunner {
                             scope: ErrorScope::Scheduler {
                                 step: session_state.step,
                             },
-                            error: LadderError::msg(format!("{}", e)),
+                            error: WeaveError::msg(format!("{}", e)),
                             tags: vec!["scheduler".into()],
                             context: serde_json::json!({}),
                         },
@@ -950,7 +1004,7 @@ impl AppRunner {
                             session: session_id.to_string(),
                             step: session_state.step,
                         },
-                        error: LadderError::msg(format!("{}", e)),
+                        error: WeaveError::msg(format!("{}", e)),
                         tags: vec!["runner".into()],
                         context: serde_json::json!({
                             "frontier": session_state.frontier.iter().map(|k| k.encode()).collect::<Vec<_>>()

@@ -172,7 +172,7 @@ impl VersionedState {
     /// let snapshot = state.snapshot();
     ///
     /// assert_eq!(snapshot.messages.len(), 1);
-    /// assert_eq!(snapshot.messages[0].role, "user");
+    /// assert_eq!(snapshot.messages[0].role, weavegraph::message::Role::User);
     /// assert_eq!(snapshot.messages[0].content, "Analyze this data");
     /// assert_eq!(snapshot.messages_version, 1);
     /// assert!(snapshot.extra.is_empty());
@@ -280,7 +280,7 @@ impl VersionedState {
     ///
     /// let snapshot = state.snapshot();
     /// assert_eq!(snapshot.messages.len(), 2);
-    /// assert_eq!(snapshot.messages[1].role, "assistant");
+    /// assert_eq!(snapshot.messages[1].role, weavegraph::message::Role::Assistant);
     /// ```
     #[must_use = "consider using the returned self for method chaining"]
     pub fn add_message(&mut self, role: &str, content: &str) -> &mut Self {

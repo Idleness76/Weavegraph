@@ -3,6 +3,7 @@ use chrono::Utc;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use weavegraph::channels::Channel;
+use weavegraph::message::Role;
 use weavegraph::runtimes::SessionState;
 use weavegraph::runtimes::checkpointer::{
     Checkpoint, Checkpointer, InMemoryCheckpointer, restore_session_state,
@@ -174,7 +175,7 @@ async fn test_sqlite_checkpointer_roundtrip() {
             .copied(),
         Some(1)
     );
-    assert_eq!(loaded.state.messages.snapshot()[0].role, "user");
+    assert_eq!(loaded.state.messages.snapshot()[0].role, Role::User);
     assert_eq!(
         loaded.state.extra.snapshot().get("k"),
         Some(&serde_json::json!(42))

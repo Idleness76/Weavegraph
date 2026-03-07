@@ -3,22 +3,28 @@
 //! Provides utilities for deep merging JSON objects, pointer-based access,
 //! and common JSON manipulation patterns used throughout the framework.
 
-use miette::{Diagnostic, Result};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use thiserror::Error;
 
 /// Errors that can occur during JSON operations.
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum JsonError {
     /// Invalid JSON pointer format.
     #[error("Invalid JSON pointer: {pointer}")]
-    #[diagnostic(code(weavegraph::json::invalid_pointer))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::json::invalid_pointer))
+    )]
     InvalidPointer { pointer: String },
 
     /// JSON merge conflict that cannot be resolved.
     #[error("Merge conflict at path '{path}': cannot merge {left_type} with {right_type}")]
-    #[diagnostic(code(weavegraph::json::merge_conflict))]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::json::merge_conflict))
+    )]
     MergeConflict {
         path: String,
         left_type: String,
@@ -27,7 +33,7 @@ pub enum JsonError {
 
     /// Serialization/deserialization error.
     #[error("JSON serialization error: {source}")]
-    #[diagnostic(code(weavegraph::json::serde))]
+    #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::json::serde)))]
     Serde {
         #[from]
         source: serde_json::Error,

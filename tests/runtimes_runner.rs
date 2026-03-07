@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicUsize, Ordering},
+};
+
 use async_trait::async_trait;
 #[cfg(feature = "sqlite")]
 use weavegraph::channels::Channel;
@@ -5,8 +10,10 @@ use weavegraph::graphs::{EdgePredicate, GraphBuilder};
 use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
 use weavegraph::runtimes::{
-    AppRunner, CheckpointerType, PausedReason, RuntimeConfig, SessionInit, StepOptions, StepResult,
+    AppRunner, Checkpoint, Checkpointer, CheckpointerType, PausedReason, RuntimeConfig,
+    SessionInit, SessionState, StepOptions, StepResult,
 };
+use weavegraph::schedulers::{Scheduler, SchedulerState};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
 use weavegraph::{FrontierCommand, NodeRoute};
@@ -22,6 +29,79 @@ fn make_test_app() -> weavegraph::app::App {
     builder = builder.add_edge(NodeKind::Start, NodeKind::Custom("test".into()));
     builder = builder.add_edge(NodeKind::Custom("test".into()), NodeKind::End);
     builder.compile().unwrap()
+}
+
+#[derive(Default)]
+struct ProbeCheckpointer {
+    checkpoints: RwLock<std::collections::HashMap<String, Checkpoint>>,
+    load_calls: AtomicUsize,
+    save_calls: AtomicUsize,
+}
+
+impl ProbeCheckpointer {
+    fn with_checkpoint(checkpoint: Checkpoint) -> Self {
+        let mut checkpoints = std::collections::HashMap::new();
+        checkpoints.insert(checkpoint.session_id.clone(), checkpoint);
+        Self {
+            checkpoints: RwLock::new(checkpoints),
+            load_calls: AtomicUsize::new(0),
+            save_calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn load_calls(&self) -> usize {
+        self.load_calls.load(Ordering::SeqCst)
+    }
+
+    fn save_calls(&self) -> usize {
+        self.save_calls.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl Checkpointer for ProbeCheckpointer {
+    async fn save(&self, checkpoint: Checkpoint) -> weavegraph::runtimes::checkpointer::Result<()> {
+        self.save_calls.fetch_add(1, Ordering::SeqCst);
+        self.checkpoints
+            .write()
+            .expect("probe checkpointer lock poisoned")
+            .insert(checkpoint.session_id.clone(), checkpoint);
+        Ok(())
+    }
+
+    async fn load_latest(
+        &self,
+        session_id: &str,
+    ) -> weavegraph::runtimes::checkpointer::Result<Option<Checkpoint>> {
+        self.load_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(self
+            .checkpoints
+            .read()
+            .expect("probe checkpointer lock poisoned")
+            .get(session_id)
+            .cloned())
+    }
+
+    async fn list_sessions(&self) -> weavegraph::runtimes::checkpointer::Result<Vec<String>> {
+        Ok(self
+            .checkpoints
+            .read()
+            .expect("probe checkpointer lock poisoned")
+            .keys()
+            .cloned()
+            .collect())
+    }
+}
+
+fn checkpoint_from_state(session_id: &str, step: u64, state: VersionedState) -> Checkpoint {
+    let session_state = SessionState {
+        state,
+        step,
+        frontier: vec![NodeKind::End],
+        scheduler: Scheduler::new(1),
+        scheduler_state: SchedulerState::default(),
+    };
+    Checkpoint::from_session(session_id, &session_state)
 }
 
 #[tokio::test]
@@ -131,6 +211,73 @@ async fn test_create_session() {
         .unwrap();
     assert_eq!(result, SessionInit::Fresh);
     assert!(runner.get_session("test_session").is_some());
+}
+
+#[tokio::test]
+async fn test_builder_custom_checkpointer_takes_precedence_over_enum() {
+    let app = make_test_app();
+    let session_id = "builder-custom-precedence";
+    let checkpoint = checkpoint_from_state(
+        session_id,
+        7,
+        VersionedState::new_with_user_message("restored-via-custom"),
+    );
+    let probe = Arc::new(ProbeCheckpointer::with_checkpoint(checkpoint));
+
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .checkpointer_custom(probe.clone())
+        .build()
+        .await;
+
+    let init = runner
+        .create_session(session_id.to_string(), state_with_user("ignored"))
+        .await
+        .expect("create_session should read from custom checkpointer");
+
+    assert_eq!(init, SessionInit::Resumed { checkpoint_step: 7 });
+    assert!(probe.load_calls() > 0);
+}
+
+#[tokio::test]
+async fn test_runtime_config_custom_checkpointer_takes_precedence() {
+    let session_id = "runtime-config-custom-precedence";
+    let checkpoint = checkpoint_from_state(
+        session_id,
+        3,
+        VersionedState::new_with_user_message("restored-from-runtime-config"),
+    );
+    let probe = Arc::new(ProbeCheckpointer::with_checkpoint(checkpoint));
+
+    let runtime_config = RuntimeConfig::new(
+        Some(session_id.to_string()),
+        Some(CheckpointerType::InMemory),
+        None,
+    )
+    .checkpointer_custom(probe.clone())
+    .with_checkpointer(Some(CheckpointerType::InMemory));
+
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("test".into()), TestNode { name: "test" })
+        .add_edge(NodeKind::Start, NodeKind::Custom("test".into()))
+        .add_edge(NodeKind::Custom("test".into()), NodeKind::End)
+        .with_runtime_config(runtime_config)
+        .compile()
+        .expect("app should compile");
+
+    let final_state = app
+        .invoke(state_with_user("fresh-state"))
+        .await
+        .expect("app invoke should succeed");
+
+    assert_message_contains(&final_state, "restored-from-runtime-config");
+    assert!(
+        probe.load_calls() > 0,
+        "custom checkpointer should be invoked"
+    );
+    assert_eq!(probe.save_calls(), 0);
+    assert!(probe.load_calls() > 0);
 }
 
 #[tokio::test]

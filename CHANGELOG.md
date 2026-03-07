@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-07
+
+### Added
+- Custom checkpointer support via `RuntimeConfig::checkpointer_custom` field
+- `NodeError::Other` variant for extensible error handling
+
+### Changed
+- **BREAKING**: `RuntimeConfig` struct gains new `checkpointer_custom` field (breaking for struct literal construction)
+- **BREAKING**: `RuntimeConfig` no longer implements `UnwindSafe` and `RefUnwindSafe` auto traits
+- **BREAKING**: `NodeError` enum gains `Other` variant (exhaustive enum)
+
+### Removed
+- **BREAKING**: Cargo features `rmcp` and `rig-core` removed
+- **BREAKING**: `Message::USER`, `Message::ASSISTANT`, `Message::SYSTEM` constants removed (use `Role` enum)
+- **BREAKING**: `Message::role_type()`, `Message::is_role()`, `Message::has_role()` methods removed
+
 ## [0.2.0] - 2026-02-11
 
 ### Added

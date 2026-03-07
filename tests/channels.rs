@@ -6,13 +6,13 @@ use weavegraph::channels::{Channel, ErrorsChannel};
 use weavegraph::types::ChannelType;
 
 /********************
- * LadderError tests
+ * WeaveError tests
  ********************/
 
 #[test]
 fn ladder_error_msg_and_chain() {
-    let base = LadderError::msg("root cause").with_details(json!({"k":"v"}));
-    let wrapped = LadderError::msg("top").with_cause(base.clone());
+    let base = WeaveError::msg("root cause").with_details(json!({"k":"v"}));
+    let wrapped = WeaveError::msg("top").with_cause(base.clone());
 
     assert_eq!(base.message, "root cause");
     assert_eq!(wrapped.message, "top");
@@ -23,12 +23,12 @@ fn ladder_error_msg_and_chain() {
 
 #[test]
 fn ladder_error_serde_roundtrip() {
-    let err = LadderError::msg("boom")
+    let err = WeaveError::msg("boom")
         .with_details(json!({"code": 500}))
-        .with_cause(LadderError::msg("inner"));
+        .with_cause(WeaveError::msg("inner"));
 
     let ser = serde_json::to_string(&err).expect("serialize");
-    let de: LadderError = serde_json::from_str(&ser).expect("deserialize");
+    let de: WeaveError = serde_json::from_str(&ser).expect("deserialize");
     assert_eq!(de, err);
 }
 
@@ -81,7 +81,7 @@ fn error_event_defaults_and_roundtrip() {
     let ev = ErrorEvent {
         when,
         scope: ErrorScope::App,
-        error: LadderError::msg("oops"),
+        error: WeaveError::msg("oops"),
         tags: vec!["t1".into(), "t2".into()],
         context: json!({"info": true}),
     };
@@ -110,7 +110,7 @@ fn error_event_defaults_are_empty_when_missing() {
 
 #[test]
 fn error_event_node_constructor() {
-    let err = ErrorEvent::node("Parser", 42, LadderError::msg("parse failed"));
+    let err = ErrorEvent::node("Parser", 42, WeaveError::msg("parse failed"));
 
     assert!(matches!(err.scope, ErrorScope::Node { .. }));
     if let ErrorScope::Node { kind, step } = err.scope {
@@ -124,7 +124,7 @@ fn error_event_node_constructor() {
 
 #[test]
 fn error_event_scheduler_constructor() {
-    let err = ErrorEvent::scheduler(10, LadderError::msg("scheduling conflict"));
+    let err = ErrorEvent::scheduler(10, WeaveError::msg("scheduling conflict"));
 
     assert!(matches!(err.scope, ErrorScope::Scheduler { .. }));
     if let ErrorScope::Scheduler { step } = err.scope {
@@ -137,7 +137,7 @@ fn error_event_scheduler_constructor() {
 
 #[test]
 fn error_event_runner_constructor() {
-    let err = ErrorEvent::runner("session-abc", 99, LadderError::msg("runtime error"));
+    let err = ErrorEvent::runner("session-abc", 99, WeaveError::msg("runtime error"));
 
     assert!(matches!(err.scope, ErrorScope::Runner { .. }));
     if let ErrorScope::Runner { session, step } = err.scope {
@@ -151,7 +151,7 @@ fn error_event_runner_constructor() {
 
 #[test]
 fn error_event_app_constructor() {
-    let err = ErrorEvent::app(LadderError::msg("startup failed"));
+    let err = ErrorEvent::app(WeaveError::msg("startup failed"));
 
     assert!(matches!(err.scope, ErrorScope::App));
     assert_eq!(err.error.message, "startup failed");
@@ -161,14 +161,14 @@ fn error_event_app_constructor() {
 
 #[test]
 fn error_event_with_tag_builder() {
-    let err = ErrorEvent::node("Validator", 1, LadderError::msg("invalid")).with_tag("validation");
+    let err = ErrorEvent::node("Validator", 1, WeaveError::msg("invalid")).with_tag("validation");
 
     assert_eq!(err.tags, vec!["validation"]);
 }
 
 #[test]
 fn error_event_with_multiple_tags_chained() {
-    let err = ErrorEvent::scheduler(5, LadderError::msg("error"))
+    let err = ErrorEvent::scheduler(5, WeaveError::msg("error"))
         .with_tag("critical")
         .with_tag("retry");
 
@@ -177,7 +177,7 @@ fn error_event_with_multiple_tags_chained() {
 
 #[test]
 fn error_event_with_tags_builder() {
-    let err = ErrorEvent::runner("sess-1", 3, LadderError::msg("failed"))
+    let err = ErrorEvent::runner("sess-1", 3, WeaveError::msg("failed"))
         .with_tags(vec!["urgent".to_string(), "logged".to_string()]);
 
     assert_eq!(err.tags, vec!["urgent", "logged"]);
@@ -185,7 +185,7 @@ fn error_event_with_tags_builder() {
 
 #[test]
 fn error_event_with_context_builder() {
-    let err = ErrorEvent::app(LadderError::msg("config error"))
+    let err = ErrorEvent::app(WeaveError::msg("config error"))
         .with_context(json!({"config_file": "/etc/app.conf", "line": 42}));
 
     assert_eq!(err.context["config_file"], "/etc/app.conf");
@@ -197,8 +197,8 @@ fn error_event_full_builder_chain() {
     let err = ErrorEvent::node(
         "Analyzer",
         7,
-        LadderError::msg("analysis failed")
-            .with_cause(LadderError::msg("missing data"))
+        WeaveError::msg("analysis failed")
+            .with_cause(WeaveError::msg("missing data"))
             .with_details(json!({"field": "input"})),
     )
     .with_tag("retryable")
@@ -236,12 +236,12 @@ fn error_event_constructors_serialize_correctly() {
             kind: "Test".to_string(),
             step: 1,
         },
-        error: LadderError::msg("test"),
+        error: WeaveError::msg("test"),
         tags: vec!["tag1".to_string()],
         context: json!({"key": "value"}),
     };
 
-    let constructed = ErrorEvent::node("Test", 1, LadderError::msg("test"))
+    let constructed = ErrorEvent::node("Test", 1, WeaveError::msg("test"))
         .with_tag("tag1")
         .with_context(json!({"key": "value"}));
 
@@ -259,8 +259,8 @@ fn error_event_constructors_serialize_correctly() {
 #[test]
 fn error_event_string_into_conversions() {
     // Test that Into<String> works for both &str and String
-    let from_str = ErrorEvent::node("literal", 1, LadderError::msg("test"));
-    let from_string = ErrorEvent::node(String::from("owned"), 1, LadderError::msg("test"));
+    let from_str = ErrorEvent::node("literal", 1, WeaveError::msg("test"));
+    let from_string = ErrorEvent::node(String::from("owned"), 1, WeaveError::msg("test"));
 
     if let ErrorScope::Node { kind, .. } = from_str.scope {
         assert_eq!(kind, "literal");
@@ -270,8 +270,8 @@ fn error_event_string_into_conversions() {
         assert_eq!(kind, "owned");
     }
 
-    let runner_str = ErrorEvent::runner("session", 1, LadderError::msg("test"));
-    let runner_string = ErrorEvent::runner(String::from("session_id"), 1, LadderError::msg("test"));
+    let runner_str = ErrorEvent::runner("session", 1, WeaveError::msg("test"));
+    let runner_string = ErrorEvent::runner(String::from("session_id"), 1, WeaveError::msg("test"));
 
     if let ErrorScope::Runner { session, .. } = runner_str.scope {
         assert_eq!(session, "session");
@@ -292,7 +292,7 @@ fn test_error_event_serialization_all_scopes() {
     let when = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
 
     // Node scope
-    let mut node_event = ErrorEvent::node("TestNode", 42, LadderError::msg("node error"))
+    let mut node_event = ErrorEvent::node("TestNode", 42, WeaveError::msg("node error"))
         .with_tag("test")
         .with_context(json!({"node_id": 42}));
     node_event.when = when;
@@ -313,7 +313,7 @@ fn test_error_event_serialization_all_scopes() {
     assert_eq!(node_deserialized.context, node_event.context);
 
     // Scheduler scope
-    let mut scheduler_event = ErrorEvent::scheduler(10, LadderError::msg("scheduler error"));
+    let mut scheduler_event = ErrorEvent::scheduler(10, WeaveError::msg("scheduler error"));
     scheduler_event.when = when;
 
     let scheduler_json = serde_json::to_value(&scheduler_event).unwrap();
@@ -324,7 +324,7 @@ fn test_error_event_serialization_all_scopes() {
     assert_eq!(scheduler_deserialized.scope, scheduler_event.scope);
 
     // Runner scope
-    let mut runner_event = ErrorEvent::runner("session-123", 5, LadderError::msg("runner error"));
+    let mut runner_event = ErrorEvent::runner("session-123", 5, WeaveError::msg("runner error"));
     runner_event.when = when;
 
     let runner_json = serde_json::to_value(&runner_event).unwrap();
@@ -336,7 +336,7 @@ fn test_error_event_serialization_all_scopes() {
     assert_eq!(runner_deserialized.scope, runner_event.scope);
 
     // App scope
-    let mut app_event = ErrorEvent::app(LadderError::msg("app error"));
+    let mut app_event = ErrorEvent::app(WeaveError::msg("app error"));
     app_event.when = when;
 
     let app_json = serde_json::to_value(&app_event).unwrap();
@@ -348,8 +348,8 @@ fn test_error_event_serialization_all_scopes() {
 
 #[test]
 fn test_ladder_error_nested_serialization() {
-    // Test serialization of nested LadderError chains
-    let simple_error = LadderError::msg("simple error");
+    // Test serialization of nested WeaveError chains
+    let simple_error = WeaveError::msg("simple error");
     let simple_json = serde_json::to_value(&simple_error).unwrap();
     assert_eq!(simple_json["message"], "simple error");
     assert!(simple_json["cause"].is_null());
@@ -357,32 +357,32 @@ fn test_ladder_error_nested_serialization() {
 
     // Error with details
     let error_with_details =
-        LadderError::msg("error with details").with_details(json!({"code": 500, "retry": true}));
+        WeaveError::msg("error with details").with_details(json!({"code": 500, "retry": true}));
     let details_json = serde_json::to_value(&error_with_details).unwrap();
     assert_eq!(details_json["message"], "error with details");
     assert_eq!(details_json["details"]["code"], 500);
     assert_eq!(details_json["details"]["retry"], true);
 
     // Round-trip test
-    let details_deserialized: LadderError = serde_json::from_value(details_json).unwrap();
+    let details_deserialized: WeaveError = serde_json::from_value(details_json).unwrap();
     assert_eq!(details_deserialized, error_with_details);
 
     // Error with cause
     let error_with_cause =
-        LadderError::msg("outer error").with_cause(LadderError::msg("inner error"));
+        WeaveError::msg("outer error").with_cause(WeaveError::msg("inner error"));
     let cause_json = serde_json::to_value(&error_with_cause).unwrap();
     assert_eq!(cause_json["message"], "outer error");
     assert_eq!(cause_json["cause"]["message"], "inner error");
     assert!(cause_json["cause"]["cause"].is_null());
 
     // Round-trip test
-    let cause_deserialized: LadderError = serde_json::from_value(cause_json).unwrap();
+    let cause_deserialized: WeaveError = serde_json::from_value(cause_json).unwrap();
     assert_eq!(cause_deserialized, error_with_cause);
 
     // Deeply nested error chain
-    let deep_error = LadderError::msg("level 1").with_cause(
-        LadderError::msg("level 2")
-            .with_cause(LadderError::msg("level 3").with_details(json!({"deep": true}))),
+    let deep_error = WeaveError::msg("level 1").with_cause(
+        WeaveError::msg("level 2")
+            .with_cause(WeaveError::msg("level 3").with_details(json!({"deep": true}))),
     );
     let deep_json = serde_json::to_value(&deep_error).unwrap();
     assert_eq!(deep_json["message"], "level 1");
@@ -391,7 +391,7 @@ fn test_ladder_error_nested_serialization() {
     assert_eq!(deep_json["cause"]["cause"]["details"]["deep"], true);
 
     // Round-trip test for complex error
-    let deep_deserialized: LadderError = serde_json::from_value(deep_json).unwrap();
+    let deep_deserialized: WeaveError = serde_json::from_value(deep_json).unwrap();
     assert_eq!(deep_deserialized, deep_error);
 }
 
@@ -401,8 +401,8 @@ fn test_error_event_full_serialization_roundtrip() {
     let original = ErrorEvent::node(
         "ComplexNode",
         99,
-        LadderError::msg("complex error")
-            .with_cause(LadderError::msg("root cause"))
+        WeaveError::msg("complex error")
+            .with_cause(WeaveError::msg("root cause"))
             .with_details(json!({"severity": "high"})),
     )
     .with_tags(vec!["critical".to_string(), "network".to_string()])
@@ -450,7 +450,7 @@ fn test_error_event_schema_stability() {
     // This test serves as a regression check - if the schema changes unexpectedly,
     // this test will fail and alert us to review the change
 
-    let event = ErrorEvent::node("SchemaTest", 1, LadderError::msg("test"))
+    let event = ErrorEvent::node("SchemaTest", 1, WeaveError::msg("test"))
         .with_tag("regression")
         .with_context(json!({"test": true}));
 
@@ -538,7 +538,7 @@ fn pretty_print_renders_usefully() {
     let mut event = ErrorEvent::runner(
         "sess-1",
         3,
-        LadderError::msg("failed").with_cause(LadderError::msg("io")),
+        WeaveError::msg("failed").with_cause(WeaveError::msg("io")),
     )
     .with_tag("urgent")
     .with_context(json!({"path":"/tmp/x"}));
@@ -572,13 +572,13 @@ fn errors_channel_basics() {
     let when = Utc::now();
 
     // Add first error using scheduler constructor
-    let err1 = ErrorEvent::scheduler(1, LadderError::msg("first"));
+    let err1 = ErrorEvent::scheduler(1, WeaveError::msg("first"));
     let mut err1_with_time = err1;
     err1_with_time.when = when;
     ch.get_mut().push(err1_with_time);
 
     // Add second error using node constructor with builder
-    let err2 = ErrorEvent::node("Start", 2, LadderError::msg("second"))
+    let err2 = ErrorEvent::node("Start", 2, WeaveError::msg("second"))
         .with_tag("retryable")
         .with_context(json!({"try":2}));
     let mut err2_with_time = err2;
@@ -600,7 +600,7 @@ fn errors_channel_basics() {
 #[test]
 fn errors_channel_new_constructor() {
     let when = Utc::now();
-    let mut e = ErrorEvent::app(LadderError::msg("boom"));
+    let mut e = ErrorEvent::app(WeaveError::msg("boom"));
     e.when = when;
 
     let ch = ErrorsChannel::new(vec![e.clone()], 7);
@@ -611,7 +611,7 @@ fn errors_channel_new_constructor() {
 #[test]
 fn optional_cli_pretty_demo() {
     let when = Utc.with_ymd_and_hms(2024, 2, 2, 2, 2, 2).unwrap();
-    let mut event = ErrorEvent::app(LadderError::msg("display"))
+    let mut event = ErrorEvent::app(WeaveError::msg("display"))
         .with_tag("cli")
         .with_context(json!({}));
     event.when = when;
@@ -628,7 +628,7 @@ fn pretty_print_with_mode_colored_includes_ansi_codes() {
     use weavegraph::telemetry::FormatterMode;
 
     let event =
-        ErrorEvent::node("parser", 1, LadderError::msg("Parse failed")).with_tag("validation");
+        ErrorEvent::node("parser", 1, WeaveError::msg("Parse failed")).with_tag("validation");
     let events = vec![event];
 
     let output = pretty_print_with_mode(&events, FormatterMode::Colored);
@@ -650,7 +650,7 @@ fn pretty_print_with_mode_plain_excludes_ansi_codes() {
     use weavegraph::telemetry::FormatterMode;
 
     let nested_error =
-        LadderError::msg("Top level error").with_cause(LadderError::msg("Nested cause"));
+        WeaveError::msg("Top level error").with_cause(WeaveError::msg("Nested cause"));
     let event = ErrorEvent::scheduler(5, nested_error)
         .with_tag("critical")
         .with_context(json!({"attempt": 3}));
@@ -681,7 +681,7 @@ fn pretty_print_with_mode_plain_excludes_ansi_codes() {
 fn pretty_print_uses_auto_mode_by_default() {
     use weavegraph::telemetry::FormatterMode;
 
-    let event = ErrorEvent::app(LadderError::msg("Test error"));
+    let event = ErrorEvent::app(WeaveError::msg("Test error"));
     let events = vec![event.clone()];
 
     let auto_output = pretty_print(&events);

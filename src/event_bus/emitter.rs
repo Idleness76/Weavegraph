@@ -11,10 +11,25 @@ pub trait EventEmitter: Send + Sync + fmt::Debug {
 
 /// Errors that can occur when emitting an event.
 #[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum EmitterError {
     #[error("event hub closed")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::emitter::emitter_fail),
+            help("Check event emitter configuration and downstream handler.")
+        )
+    )]
     Closed,
     #[error("event emission failed: {0}")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::emitter::emitter_fail),
+            help("Check event emitter configuration and downstream handler.")
+        )
+    )]
     Other(String),
 }
 

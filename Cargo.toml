@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
@@ -32,7 +32,7 @@ axum = { version = "0.8", features = ["macros"] }
 
 [dependencies]
 # Error handling & diagnostics
-miette = { version = "7", features = ["fancy"] }
+miette = { version = "7", optional = true }
 thiserror = "2"
 
 # Tracing & logging
@@ -71,7 +71,8 @@ uuid = { version = "1", features = ["v4"] }
 rand = "0.10"
 
 # LLM framework (external dependency)
-# NOTE: rig-core and rmcp are gated behind the "llm" feature (default-off) for AI/MCP users; reduces compile time for non-AI workflows.
+# NOTE: rig-core and rmcp are gated behind the "rig" feature (default-off).
+# The legacy "llm" feature is kept as a compatibility alias in 0.3.x.
 rig-core = { version = "0.30", features = ["rmcp"], optional = true }
 rmcp = { version = "0.15", features = ["client"], optional = true }
 
@@ -116,7 +117,9 @@ sqlite-migrations = ["sqlite"]
 sqlite = ["sqlx"]
 postgres-migrations = ["postgres"]
 postgres = ["sqlx"]
-llm = ["rig-core", "rmcp"]
+rig = ["dep:rig-core", "dep:rmcp"]
+llm = ["rig"]
+diagnostics = ["dep:miette"]
 examples = ["reqwest", "scraper"]
 petgraph-compat = ["petgraph"]
 

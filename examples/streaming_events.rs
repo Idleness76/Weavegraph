@@ -66,7 +66,6 @@
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use miette::{self, IntoDiagnostic, Result};
 use serde_json::json;
 
 use weavegraph::{
@@ -82,6 +81,8 @@ use weavegraph::{
 use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 fn init_tracing() {
     tracing_subscriber::registry()
@@ -99,10 +100,6 @@ fn init_tracing() {
         )
         .with(ErrorLayer::default())
         .init();
-}
-
-fn init_miette() {
-    miette::set_panic_hook();
 }
 
 /// Demo node that emits several events during execution.
@@ -145,9 +142,8 @@ impl Node for ProcessingNode {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> ExampleResult<()> {
     init_tracing();
-    init_miette();
 
     info!("=== Streaming Events Example ===\n");
 
@@ -165,7 +161,7 @@ async fn main() -> Result<()> {
     // 2. Consume streamed events as they arrive
     info!("📡 Streaming events (these could be sent to a web client):\n");
 
-    let events_task: tokio::task::JoinHandle<Result<usize>> = tokio::spawn(async move {
+    let events_task = tokio::spawn(async move {
         let mut count = 0usize;
         let mut events = event_stream.into_async_stream();
         while let Some(event) = events.next().await {
@@ -183,7 +179,7 @@ async fn main() -> Result<()> {
 
             info!(
                 "📨 Stream event: {}",
-                serde_json::to_string_pretty(&json_payload).into_diagnostic()?
+                serde_json::to_string_pretty(&json_payload)?
             );
 
             if event.scope_label() == Some(STREAM_END_SCOPE) {
@@ -191,11 +187,13 @@ async fn main() -> Result<()> {
                 break;
             }
         }
-        Result::Ok(count)
+        Ok::<usize, serde_json::Error>(count)
     });
 
-    let final_state = invocation.join().await.into_diagnostic()?;
-    let _event_count = events_task.await.into_diagnostic()??;
+    let final_state = invocation.join().await?;
+    let _event_count = events_task
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))??;
 
     info!(
         "🧾 Final state contains {} message(s)",
