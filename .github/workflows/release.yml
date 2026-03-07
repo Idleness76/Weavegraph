@@ -21,12 +21,45 @@ jobs:
     name: Release weavegraph
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Ensure release runs from main
+        if: ${{ !inputs.dry_run }}
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Error: Releases must be run from main"
+            echo "Current ref: ${{ github.ref }}"
+            exit 1
+          fi
+
+      - name: Ensure main commit has green CI
+        if: ${{ !inputs.dry_run }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RESPONSE=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1")
+
+          LATEST_GREEN_SHA=$(echo "$RESPONSE" | jq -r '.workflow_runs[0].head_sha // empty')
+          if [ -z "$LATEST_GREEN_SHA" ]; then
+            echo "Error: No successful ci.yml run found on main"
+            exit 1
+          fi
+
+          if [ "$LATEST_GREEN_SHA" != "${{ github.sha }}" ]; then
+            echo "Error: Current commit does not match latest green ci.yml run on main"
+            echo "Current SHA: ${{ github.sha }}"
+            echo "Latest green CI SHA: $LATEST_GREEN_SHA"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -37,11 +70,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly
-
-      - name: Install CI parity tools
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-semver-checks,cargo-deny
 
       - name: Validate version format
         run: |
@@ -67,14 +95,9 @@ jobs:
             exit 1
           fi
 
-      - name: Run full CI checks
+      - name: Run docs check
         run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets --all-features -- -D warnings
-          cargo test --lib --all-features
           RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +nightly doc --workspace --all-features --no-deps
-          cargo semver-checks check-release --workspace
-          cargo deny check
 
       - name: Dry run cargo publish
         run: cargo publish --dry-run
@@ -90,7 +113,7 @@ jobs:
       - name: Publish to crates.io
         if: ${{ !inputs.dry_run }}
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_WEAVEGRAPH }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish
 
       - name: Create GitHub release
