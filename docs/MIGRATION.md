@@ -5,6 +5,297 @@ migration guidance for upgrading your code.
 
 ---
 
+## v0.3.0 (Upcoming)
+
+### Breaking Changes
+
+#### 1. `Message.role` is now `Role` (High Impact)
+
+**What changed:**
+`Message.role` changed from `String` to typed [`Role`](weavegraph::message::Role).
+
+Serialization remains wire-compatible: roles still encode as plain JSON strings
+(`"user"`, `"assistant"`, etc.) and decode from plain strings.
+
+**Before (v0.2.x):**
+```rust
+use weavegraph::message::{Message, Role};
+
+if msg.role == "user" {
+    // ...
+}
+
+let role = msg.role_type();
+if msg.is_role(Role::Assistant) {
+    // ...
+}
+```
+
+**After (v0.3.0):**
+```rust
+use weavegraph::message::{Message, Role};
+
+if msg.role == Role::User {
+    // ...
+}
+
+let role = msg.role.clone();
+let role_str = msg.role.as_str();
+```
+
+**Migration steps:**
+1. Replace string comparisons like `msg.role == "user"` with `msg.role == Role::User`
+2. Replace `msg.is_role(Role::X)` with `msg.role == Role::X`
+3. Replace `msg.role_type()` with `msg.role` (or `msg.role.clone()`)
+4. For string interop, use `msg.role.as_str()`
+
+#### 2. Role helper removals and deprecations (High Impact)
+
+**Removed in v0.3.0:**
+- `Message::role_type()`
+- `Message::is_role(...)`
+- `Message::has_role(...)`
+- `Message::USER`, `Message::ASSISTANT`, `Message::SYSTEM`
+
+**Deprecated in v0.3.0 (removed in v0.4.0):**
+- `Message::new(role: &str, content: &str)`
+
+**Replacement guidance:**
+- Use `Message::with_role(Role::..., ...)` for typed construction
+- Use `Message::user(...)`, `Message::assistant(...)`, `Message::system(...)`, `Message::tool(...)` for common roles
+- Use `Message::with_role(Role::Custom("name".into()), ...)` for custom roles
+
+#### 3. Error System Redesign (`0.3.2-alt`) (High Impact)
+
+**What changed:**
+- `NodeError` remains a structured public enum (library-friendly and matchable)
+- `NodeError::Anyhow(...)` was removed from the public API
+- `NodeError::Other(Box<dyn Error + Send + Sync>)` remains the generic fallback
+- Rich diagnostics are now optional via `diagnostics` feature
+- New ergonomic helper: `NodeResultExt::node_err()` for natural `?` propagation
+- **All public error types now follow a uniform architecture** (see below)
+
+This keeps public APIs typed and introspectable while reducing dependency pressure.
+
+**Uniform Error Architecture (0.3.2-alt):**
+
+All public error enums in Weavegraph now follow this pattern for consistency and feature-gating:
+
+```rust
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+pub enum MyError {
+    #[error("user-facing description")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::module::variant),
+            help("Optional help text for debugging")
+        )
+    )]
+    VariantName(/* fields */),
+}
+```
+
+This pattern applies to:
+- `NodeError` & `NodeContextError` (node execution)
+- `RunnerError` & `SchedulerError` (workflow runtime)
+- `CheckpointerError` (state persistence)
+- `PersistenceError` (serialization/deserialization)
+- `GraphCompileError` (graph validation)
+- `JsonError` & `CollectionError` (data operations)
+- `IdError` (ID generation)
+- `EmitterError` (event bus)
+- `AppEventStreamError` (event stream lifecycle)
+- `ReducerError` (state reduction)
+
+**Before (v0.2.x / early v0.3 drafts):**
+```rust
+return Err(NodeError::Provider {
+    provider: "mcp",
+    message: err.to_string(),
+});
+```
+
+**After (v0.3.0):**
+```rust
+use weavegraph::node::{NodeError, NodeResultExt};
+
+// Keep Provider for real provider identity.
+return Err(NodeError::Provider {
+    provider: "mcp",
+    message: "upstream rejected request".to_string(),
+});
+
+// Generic external errors use Other.
+let parsed = std::fs::read_to_string("config.json").node_err()?;
+```
+
+**Optional diagnostics metadata:**
+```toml
+[features]
+diagnostics = ["dep:miette"]
+```
+
+Enable `diagnostics` when you want `miette::Diagnostic` metadata on error enums.
+
+**Migration steps:**
+1. Keep `NodeError::Provider` only for true provider/service errors
+2. Replace generic wrapping with `NodeError::other(...)` or `.node_err()?`
+3. Remove use of `NodeError::Anyhow` and the `anyhow` crate feature
+4. Enable `diagnostics` only where rich terminal diagnostics are desired
+5. All error types are now matchable enums — use pattern matching instead of `.downcast_ref()`
+
+#### 4. LLM Abstraction + Rig Feature Rename (`0.3.3` + `0.3.5`) (High Impact)
+
+**What changed:**
+- Added framework-agnostic traits under `weavegraph::llm` (`LlmProvider`, `LlmStreamProvider`, `LlmResponse`)
+- Added dedicated Rig adapter module under `weavegraph::llm::rig_adapter` (gated by `rig` feature)
+- Renamed feature flag from `llm` to `rig`
+- Kept `llm` as backward-compatible alias to `rig` for 0.3.x
+- Added both conversion impls:
+    - `From<weavegraph::message::Message> for rig::completion::message::Message`
+    - `From<rig::completion::message::Message> for weavegraph::message::Message`
+
+**Why this matters:**
+Weavegraph no longer treats a specific LLM SDK as part of its core API contract.
+Consumers can keep using Rig via feature-gated adapters while retaining a stable,
+framework-neutral integration surface.
+
+**Feature migration:**
+```toml
+# Before
+weavegraph = { version = "0.2", features = ["llm"] }
+
+# After (preferred)
+weavegraph = { version = "0.3", features = ["rig"] }
+
+# 0.3.x compatibility path (still works)
+weavegraph = { version = "0.3", features = ["llm"] }
+```
+
+**Message conversion migration:**
+```rust
+use weavegraph::message::Message;
+
+// weavegraph -> rig
+let rig_messages: Vec<rig::completion::message::Message> =
+        history.clone().into_iter().map(Into::into).collect();
+
+// rig -> weavegraph
+let wg_messages: Vec<Message> = rig_messages.into_iter().map(Into::into).collect();
+```
+
+**Role-mapping caveats:**
+- Rig completion history is user/assistant-oriented.
+- `Role::System`, `Role::Tool`, and `Role::Custom(_)` map to Rig user messages.
+- Reverse conversion cannot reconstruct original non-native roles from Rig message history.
+
+**Migration steps:**
+1. Prefer `features = ["rig"]` in `Cargo.toml`
+2. Keep `llm` only as a temporary alias while rolling upgrades
+3. Replace bespoke conversion boilerplate with `Into::into` impls
+4. If your workflow depends on preserving system/tool/custom roles across Rig round-trips, carry role metadata out-of-band
+
+#### 5. Checkpointer Custom Escape Hatch + Precedence (`0.3.4`) (Medium Impact)
+
+**What changed:**
+- Added `AppRunner::builder().checkpointer_custom(Arc<dyn Checkpointer>)`
+- Added `RuntimeConfig::checkpointer_custom(Arc<dyn Checkpointer>)`
+- Kept enum convenience route (`CheckpointerType`) for in-memory/SQLite/Postgres
+- Added deterministic precedence when both are present: custom checkpointer wins
+- Marked `RuntimeConfig.checkpointer` field as deprecated for planned removal in `0.4.0`
+
+**Precedence rules:**
+1. If a custom checkpointer is set, it is always used
+2. Otherwise, enum-based `CheckpointerType` is used
+3. If neither is set, runtime falls back to `CheckpointerType::InMemory`
+
+**Before (enum only):**
+```rust
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .build()
+    .await;
+```
+
+**After (custom override):**
+```rust
+use std::sync::Arc;
+use weavegraph::runtimes::{AppRunner, Checkpointer, CheckpointerType};
+
+let custom: Arc<dyn Checkpointer> = Arc::new(MyCheckpointer::new());
+
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory) // convenience default
+    .checkpointer_custom(custom) // takes precedence
+    .build()
+    .await;
+```
+
+**RuntimeConfig migration:**
+```rust
+use std::sync::Arc;
+use weavegraph::runtimes::{CheckpointerType, RuntimeConfig};
+
+let cfg = RuntimeConfig::new(None, Some(CheckpointerType::InMemory), None)
+    .checkpointer_custom(Arc::new(MyCheckpointer::new()));
+```
+
+**Migration steps:**
+1. Keep enum configuration for standard backends
+2. Use `checkpointer_custom(...)` when injecting custom storage backends
+3. Treat `RuntimeConfig.checkpointer` field as deprecated and migrate call sites to `RuntimeConfig::with_checkpointer(...)`/`checkpointer_custom(...)`
+4. If both are configured, **custom always wins** (add tests for your expected resume behavior)
+
+#### 6. Examples and Guide Renames (`0.3.7`) (Low Impact)
+
+**What changed:**
+- `examples/demo1.rs` -> `examples/graph_execution.rs`
+- `examples/demo2.rs` -> `examples/scheduler_fanout.rs`
+- `examples/STREAMING_QUICKSTART.md` moved to `docs/STREAMING.md`
+- `docs/QUICKSTART.md` now replaces the old guide entrypoint
+- `examples/README.md` was reduced to a lean runnable index
+
+**Migration steps:**
+1. Update local scripts and docs that run `cargo run --example demo1` to `cargo run --example graph_execution`
+2. Update local scripts and docs that run `cargo run --example demo2` to `cargo run --example scheduler_fanout`
+3. Update links from old streaming/example docs paths to `docs/STREAMING.md`
+4. Update guide links to `docs/QUICKSTART.md`
+
+#### 7. `LadderError` renamed to `WeaveError` (`0.3.8`) (Medium Impact)
+
+**What changed:**
+- Canonical error type in `channels::errors` is now `WeaveError`
+- A 0.3.x compatibility alias remains:
+    `#[deprecated] pub type LadderError = WeaveError;`
+- Alias removal is planned for `0.4.0`
+
+**Before:**
+```rust
+use weavegraph::channels::errors::{ErrorEvent, LadderError};
+
+let event = ErrorEvent::app(LadderError::msg("startup failed"));
+```
+
+**After (preferred):**
+```rust
+use weavegraph::channels::errors::{ErrorEvent, WeaveError};
+
+let event = ErrorEvent::app(WeaveError::msg("startup failed"));
+```
+
+**Migration steps:**
+1. Replace imports of `LadderError` with `WeaveError`
+2. Replace explicit type annotations (`LadderError`) with `WeaveError`
+3. If you consume JSON schema names directly, update references from `LadderError` to `WeaveError`
+
+---
+
 ## v0.2.0 (Upcoming)
 
 ### Breaking Changes
@@ -224,7 +515,7 @@ for node in builder.topological_sort() {
 
 If you encounter issues during migration:
 
-1. Check the [examples](weavegraph/examples/) for updated usage patterns
+1. Check the [examples](examples/) for updated usage patterns
 2. Review the [ARCHITECTURE.md](docs/ARCHITECTURE.md) for design context
 3. Open an issue on [GitHub](https://github.com/Idleness76/weavegraph/issues)
 
@@ -234,5 +525,6 @@ If you encounter issues during migration:
 
 | Weavegraph | Rust MSRV | rig-core | tokio |
 |------------|-----------|----------|-------|
+| 0.3.x      | 1.90.0    | 0.30.x   | 1.x   |
 | 0.2.x      | 1.89.0    | 0.28+    | 1.x   |
 | 0.1.x      | 1.89.0    | 0.28+    | 1.x   |

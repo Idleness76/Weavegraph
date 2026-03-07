@@ -16,10 +16,7 @@ allow = [
 ]
 
 [advisories]
-ignore = [
-    "RUSTSEC-2025-0052", # async-std transitive dependency used only in test tooling
-    "RUSTSEC-2025-0057", # fxhash via scraper/selectors; upstream is unmaintained but non-optional
-]
+ignore = []
 
 [bans]
 # Multiple versions of these crates are unavoidable transitive dependencies

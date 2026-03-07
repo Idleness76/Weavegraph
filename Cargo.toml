@@ -1,18 +1,132 @@
-[workspace]
-members = ["weavegraph", "wg-ragsmith"]
-resolver = "2"
-
-[patch.crates-io]
-wg-ragsmith = { path = "wg-ragsmith" }
-
-[workspace.package]
+[package]
+name = "weavegraph"
+version = "0.3.0"
 edition = "2024"
+description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
-
 repository = "https://github.com/Idleness76/weavegraph"
-readme = "../README.md"
+readme = "README.md"
 keywords = ["graph", "workflow", "concurrency", "agents", "tracing"]
 categories = ["concurrency", "data-structures", "algorithms"]
-rust-version = "1.89"
+rust-version = "1.90"
 homepage = "https://github.com/Idleness76/weavegraph"
 documentation = "https://docs.rs/weavegraph"
+
+[dev-dependencies]
+async-stream = "0.3"
+bytes = "1"
+criterion = { version = "0.8", default-features = false, features = [
+    "async_tokio",
+] }
+reqwest = { version = "0.13", default-features = false, features = [
+    "json",
+    "rustls",
+    "stream",
+] }
+proptest = "1"
+tempfile = "3"
+tokio-rusqlite = { version = "0.6", features = ["bundled"] }
+url = "2"
+httpmock = "0.8"
+axum = { version = "0.8", features = ["macros"] }
+
+[dependencies]
+# Error handling & diagnostics
+miette = { version = "7", optional = true }
+thiserror = "2"
+
+# Tracing & logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "fmt",
+    "ansi",
+] }
+tracing-error = "0.2"
+
+# Async runtime
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+    "signal",
+    "process",
+    "io-std",
+] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Data structures & utilities
+rustc-hash = "2"
+flume = "0.12"
+
+# Time & IDs
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+rand = "0.10"
+
+# LLM framework (external dependency)
+# NOTE: rig-core and rmcp are gated behind the "rig" feature (default-off).
+# The legacy "llm" feature is kept as a compatibility alias in 0.3.x.
+rig-core = { version = "0.30", features = ["rmcp"], optional = true }
+rmcp = { version = "0.15", features = ["client"], optional = true }
+
+# Database
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "postgres",
+    "macros",
+    "uuid",
+    "chrono",
+    "json",
+], optional = true }
+
+# Configuration
+dotenvy = "0.15"
+
+# Graph algorithms (optional)
+petgraph = { version = "0.8", optional = true }
+
+reqwest = { version = "0.13", default-features = false, features = [
+    "json",
+    "gzip",
+    "brotli",
+    "rustls",
+], optional = true }
+scraper = { version = "0.25", optional = true }
+# wg-ragsmith removed from dependencies to avoid circular dependency.
+# For RAG examples, see the wg-ragsmith crate directly.
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.cargo-machete]
+ignored = ["httpmock", "rig-core", "rmcp", "scraper", "tokio-rusqlite", "url"]
+
+# SQLite is enabled by default for full functionality; use --no-default-features for DB-less builds.
+[features]
+default = ["sqlite-migrations"]
+sqlite-migrations = ["sqlite"]
+sqlite = ["sqlx"]
+postgres-migrations = ["postgres"]
+postgres = ["sqlx"]
+rig = ["dep:rig-core", "dep:rmcp"]
+llm = ["rig"]
+diagnostics = ["dep:miette"]
+examples = ["reqwest", "scraper"]
+petgraph-compat = ["petgraph"]
+
+[[bench]]
+name = "event_bus_throughput"
+harness = false
+
+[[bench]]
+name = "graph_compile"
+harness = false

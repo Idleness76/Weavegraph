@@ -3,7 +3,7 @@
 Comprehensive technical documentation for Weavegraph's internal design and module organization.
 
 **Related Documentation:**
-- [Developer Guide](GUIDE.md) - Core concepts, messages, state, and graphs
+- [Quickstart](QUICKSTART.md) - Core concepts, messages, state, and graphs
 - [Operations Guide](OPERATIONS.md) - Event streaming, persistence, testing, and production
 - [Documentation Index](INDEX.md) - Complete reference with anchor links
 
@@ -11,7 +11,7 @@ Comprehensive technical documentation for Weavegraph's internal design and modul
 
 Weavegraph originated as a capstone project for a Rust online course, developed by contributors with Python/TypeScript backgrounds and experience with LangGraph and LangChain. The goal was to bring similar graph-based workflow capabilities to Rust while leveraging its performance, safety, and concurrency advantages.
 
-While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.1.x), it's still maturing—use with awareness of ongoing API evolution.
+While rooted in educational exploration, Weavegraph continues active development well beyond the classroom setting. The core architecture is solid and the framework is functional, but as an early beta release (v0.2.x), it's still maturing; use with awareness of ongoing API evolution.
 
 
 | Crate | Purpose | Highlights |
@@ -193,10 +193,10 @@ let result = app.invoke(initial).await?;
 
 **Key practices:**
 
-- Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](GUIDE.md#messages)
-- Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](GUIDE.md#state)
+- Prefer typed roles with `Message::with_role(Role::...)` - see [Messages](QUICKSTART.md#messages)
+- Build state with `VersionedState::new_with_user_message` or the builder pattern - see [State Management](QUICKSTART.md#state)
 - Use `NodeContext::emit*` helpers for telemetry instead of writing directly to stdout
-- Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
+- Return structured errors (`NodeError::MissingInput`, `NodeError::Provider`, `NodeError::Other`) or populate `NodePartial::with_errors` for recoverable issues - see [Error Handling](OPERATIONS.md#errors)
 
 ### Custom Reducers {#custom-reducers}
 
@@ -247,7 +247,7 @@ barrier synchronization.
 
 1. **Authoring** – Build a graph with `GraphBuilder`, registering nodes (implementations of `Node`)
    and the edges that connect them. Conditional edges can inspect `StateSnapshot` at runtime.
-   See [Graph Building](GUIDE.md#graphs) for details.
+   See [Graph Building](QUICKSTART.md#graphs) for details.
 2. **Compilation** – `GraphBuilder::compile()` validates topology and produces an `App`.
 3. **Invocation** – `App::invoke()` (or streaming variants like `invoke_streaming`, `invoke_with_channel`)
    constructs an `AppRunner` with the chosen checkpointer (`InMemory` or SQLite), and event bus configuration.
@@ -264,7 +264,8 @@ barrier synchronization.
 
 ### Optional Features
 
-* `llm` – Enables Rig-based LLM support (Ollama/MCP integrations).
+* `rig` – Enables Rig-based LLM support (Ollama/MCP integrations).
+* `llm` – Backward-compatible alias to `rig` for 0.3.x (planned removal in 0.4.0).
 * `sqlite-migrations` – Turns on SQLite-backed persistence (default).
 * `examples` – Pulls in extra dependencies used by a subset of examples (e.g. `reqwest`, `scraper`).
 
@@ -272,9 +273,9 @@ barrier synchronization.
 
 * `weavegraph/tests/` – Covers state channels, reducers, scheduler semantics, checkpointer, and event bus.
   See [Testing](OPERATIONS.md#testing) for running tests and patterns.
-* `weavegraph/examples/` – Progressive walkthroughs:
-  * `basic_nodes.rs`, `demo1.rs`, `demo2.rs` show core messaging and state channels.
-    See [Messages](GUIDE.md#messages) and [State](GUIDE.md#state).
+* `examples/` – Progressive walkthroughs:
+  * `basic_nodes.rs`, `graph_execution.rs`, `scheduler_fanout.rs` show core messaging and state channels.
+    See [Messages](QUICKSTART.md#messages) and [State](QUICKSTART.md#state).
   * `advanced_patterns.rs` covers conditional routing and control-flow helpers.
   * `streaming_events.rs`, `convenience_streaming.rs` demonstrate the
     broadcast event bus and web-friendly streaming patterns.
@@ -299,7 +300,7 @@ an `EventBus` directly with custom capacity via `EventBus::with_capacity`.
 
 For practical guidance and code samples, see:
 - [Event Streaming](OPERATIONS.md#event-streaming) for patterns and sink configuration
-- `weavegraph/examples/STREAMING_QUICKSTART.md` for detailed tuning guidance
+- `docs/STREAMING.md` for detailed tuning guidance
 
 ## `wg-ragsmith` Crate
 
@@ -331,10 +332,12 @@ These examples share environment variables with the weavegraph RAG demo (see `.e
 
 ## Shared Operational Pieces
 
-* **Tooling** – Standard Rust tooling (`cargo fmt`, `cargo clippy`, `cargo test`, `cargo doc`,
-  `cargo deny`, `cargo machete`) plus `sqlx` migrations keep local workflows and CI aligned.
-* **CI/CD** – `.github/workflows/ci.yml` runs the cargo commands across two toolchains
-  (`1.89.0` and current stable) and per workspace member to guard API evolution.
+* **Tooling** – Standard Rust tooling (`cargo fmt`, `cargo clippy`, `cargo test`,
+  `cargo +nightly doc`, `cargo deny`, `cargo machete`) plus `sqlx` migrations keep local
+  workflows and CI aligned.
+* **CI/CD** – `.github/workflows/ci.yml` runs required checks on `1.90.0`, uses current
+  stable as a canary lane, and validates docs on `nightly` with
+  `RUSTDOCFLAGS="--cfg docsrs -D warnings"`.
 * **Migrations** – `weavegraph/migrations` houses the `sqlx` migration set for the SQLite
   checkpointer. Use `sqlx migrate` to apply or rollback changes.
 * **Docs** – `docs/` captures forward-looking design documents (event bus refactor,
@@ -447,9 +450,9 @@ let builder = GraphBuilder::new()
 // Convert to petgraph for analysis (feature-gated)
 #[cfg(feature = "petgraph-compat")]
 {
-  use weavegraph::graphs::PetgraphConversion;
-  let pg = builder.to_petgraph();
-    
+    use weavegraph::graphs::PetgraphConversion;
+    let pg = builder.to_petgraph();
+
     // Use petgraph algorithms
     let topo_order = petgraph::algo::toposort(&pg.graph, None)?;
     let dot = petgraph::dot::Dot::new(&pg.graph);
@@ -457,8 +460,6 @@ let builder = GraphBuilder::new()
 }
 
 // Execute with Weavegraph
-  let app = builder.compile()?;
+let app = builder.compile()?;
 let result = app.invoke(initial_state).await?;
 ```
-
----

@@ -4,10 +4,8 @@ Complete documentation for building workflows with Weavegraph.
 
 ## Core Documentation
 
-- **[GUIDE.md](GUIDE.md)** - Developer guide covering core concepts
-  - [Messages](GUIDE.md#messages): Message construction, roles, and usage patterns
-  - [State Management](GUIDE.md#state): Versioned state, initialization, and snapshots
-  - [Graph Building](GUIDE.md#graphs): Workflow definition, conditional edges, and routing
+- **[QUICKSTART.md](QUICKSTART.md)** - Quickstart guide covering core concepts
+  - Covers first-run setup, typed message roles, conditional routing, and execution modes
 
 - **[OPERATIONS.md](OPERATIONS.md)** - Runtime operations and deployment
   - [Event Streaming](OPERATIONS.md#event-streaming): Sinks, patterns, diagnostics, and observability
@@ -20,5 +18,8 @@ Complete documentation for building workflows with Weavegraph.
 
 ## Additional Resources
 
-- [Examples](../weavegraph/examples/) - Runnable code for all major patterns
-- [STREAMING_QUICKSTART.md](../weavegraph/examples/STREAMING_QUICKSTART.md) - Event streaming quickstart guide
+- [MIGRATION.md](MIGRATION.md) - Upgrade notes and migration guides by release
+- [Schema Definitions](schemas/) - JSON schemas for event and error payloads
+- [CHANGELOG.md](../CHANGELOG.md) - Release history (placeholder until added in §0.P.3)
+- [Examples](../examples/) - Runnable code for all major patterns
+- [STREAMING.md](STREAMING.md) - Event streaming quickstart guide
