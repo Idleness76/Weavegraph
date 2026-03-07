@@ -332,10 +332,12 @@ These examples share environment variables with the weavegraph RAG demo (see `.e
 
 ## Shared Operational Pieces
 
-* **Tooling** – Standard Rust tooling (`cargo fmt`, `cargo clippy`, `cargo test`, `cargo doc`,
-  `cargo deny`, `cargo machete`) plus `sqlx` migrations keep local workflows and CI aligned.
-* **CI/CD** – `.github/workflows/ci.yml` runs the cargo commands across two toolchains
-  (`1.89.0` and current stable) and per workspace member to guard API evolution.
+* **Tooling** – Standard Rust tooling (`cargo fmt`, `cargo clippy`, `cargo test`,
+  `cargo +nightly doc`, `cargo deny`, `cargo machete`) plus `sqlx` migrations keep local
+  workflows and CI aligned.
+* **CI/CD** – `.github/workflows/ci.yml` runs required checks on `1.90.0`, uses current
+  stable as a canary lane, and validates docs on `nightly` with
+  `RUSTDOCFLAGS="--cfg docsrs -D warnings"`.
 * **Migrations** – `weavegraph/migrations` houses the `sqlx` migration set for the SQLite
   checkpointer. Use `sqlx migrate` to apply or rollback changes.
 * **Docs** – `docs/` captures forward-looking design documents (event bus refactor,

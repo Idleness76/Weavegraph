@@ -14,7 +14,7 @@ on:
         default: false
 
 env:
-  RUST_VERSION: 1.89.0
+  RUST_VERSION: 1.90.0
 
 jobs:
   release:
@@ -32,6 +32,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Install nightly toolchain (doc parity)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+
+      - name: Install CI parity tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks,cargo-deny
 
       - name: Validate version format
         run: |
@@ -59,10 +69,12 @@ jobs:
 
       - name: Run full CI checks
         run: |
-          cargo fmt --check
-          cargo clippy --workspace --all-targets -- -D warnings
-          cargo test --workspace
-          cargo doc --workspace --all-features --no-deps
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test --lib --all-features
+          RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +nightly doc --workspace --all-features --no-deps
+          cargo semver-checks check-release --workspace
+          cargo deny check
 
       - name: Dry run cargo publish
         run: cargo publish --dry-run
