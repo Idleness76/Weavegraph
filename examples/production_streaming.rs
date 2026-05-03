@@ -59,11 +59,7 @@
 //! curl -N "http://localhost:3000/run?prompt=hello+world"
 //! ```
 
-use std::{
-    convert::Infallible,
-    sync::Arc,
-    time::Duration,
-};
+use std::{convert::Infallible, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use axum::{
@@ -121,16 +117,26 @@ impl Node for LlmNode {
         // Simulate token streaming — in production, replace with your LLM call.
         // Note: ctx.emit() produces a NodeEvent (SSE kind="node"). Real LLM
         // provider streaming via the `rig` feature produces Event::LLM (kind="llm").
-        let tokens = ["Hello", ", ", "I", " am", " a", " streaming", " assistant", "!"];
+        let tokens = [
+            "Hello",
+            ", ",
+            "I",
+            " am",
+            " a",
+            " streaming",
+            " assistant",
+            "!",
+        ];
         for token in tokens {
             ctx.emit("llm.token", format!("Response to '{}': {}", prompt, token))?;
             // Simulate token generation latency.
             tokio::time::sleep(Duration::from_millis(150)).await;
         }
 
-        Ok(NodePartial::new().with_messages(vec![
-            Message::with_role(Role::Assistant, &format!("Response to '{}'", prompt)),
-        ]))
+        Ok(NodePartial::new().with_messages(vec![Message::with_role(
+            Role::Assistant,
+            &format!("Response to '{}'", prompt),
+        )]))
     }
 }
 
@@ -149,12 +155,14 @@ impl Node for ValidateNode {
         snapshot: StateSnapshot,
         _ctx: NodeContext,
     ) -> Result<NodePartial, NodeError> {
-        let prompt = snapshot.messages.last().map(|m| m.content.as_str()).unwrap_or("");
+        let prompt = snapshot
+            .messages
+            .last()
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
 
         if prompt.trim().is_empty() {
-            return Err(NodeError::Other(
-                "prompt must not be empty".into(),
-            ));
+            return Err(NodeError::Other("prompt must not be empty".into()));
         }
 
         if prompt.len() > 4096 {
@@ -343,7 +351,10 @@ async fn build_app() -> Result<App, BoxError> {
         .add_node(NodeKind::Custom("validate".into()), ValidateNode)
         .add_node(NodeKind::Custom("llm".into()), LlmNode)
         .add_edge(NodeKind::Start, NodeKind::Custom("validate".into()))
-        .add_edge(NodeKind::Custom("validate".into()), NodeKind::Custom("llm".into()))
+        .add_edge(
+            NodeKind::Custom("validate".into()),
+            NodeKind::Custom("llm".into()),
+        )
         .add_edge(NodeKind::Custom("llm".into()), NodeKind::End)
         .with_runtime_config(runtime_config)
         .compile()?;
@@ -364,9 +375,7 @@ async fn main() -> Result<(), BoxError> {
         .init();
 
     let app = build_app().await?;
-    let state = AppState {
-        app: Arc::new(app),
-    };
+    let state = AppState { app: Arc::new(app) };
 
     let router = Router::new()
         .route("/run", get(run_handler))

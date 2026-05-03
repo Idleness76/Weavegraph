@@ -21,7 +21,7 @@ pub enum IdError {
     )]
     InvalidFormat {
         /// The invalid format string that caused the error.
-        format: String
+        format: String,
     },
 
     /// ID generation failed due to system constraints.
@@ -32,7 +32,7 @@ pub enum IdError {
     )]
     GenerationFailed {
         /// Human-readable description of why generation failed.
-        reason: String
+        reason: String,
     },
 }
 

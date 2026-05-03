@@ -367,7 +367,7 @@ pub enum NodeError {
     )]
     MissingInput {
         /// Description of the missing input data.
-        what: &'static str
+        what: &'static str,
     },
 
     /// External provider or service error.

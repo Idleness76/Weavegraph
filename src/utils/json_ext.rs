@@ -19,7 +19,7 @@ pub enum JsonError {
     )]
     InvalidPointer {
         /// The invalid JSON pointer string.
-        pointer: String
+        pointer: String,
     },
 
     /// JSON merge conflict that cannot be resolved.

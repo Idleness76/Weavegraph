@@ -173,7 +173,7 @@ pub enum CheckpointerError {
     )]
     NotFound {
         /// The session ID that was not found.
-        session_id: String
+        session_id: String,
     },
 
     /// Backend storage error (database, filesystem, etc.).
@@ -187,7 +187,7 @@ pub enum CheckpointerError {
     )]
     Backend {
         /// Description of the backend storage error.
-        message: String
+        message: String,
     },
 
     /// Other checkpointer errors.
@@ -198,7 +198,7 @@ pub enum CheckpointerError {
     )]
     Other {
         /// Human-readable description of the error.
-        message: String
+        message: String,
     },
 }
 

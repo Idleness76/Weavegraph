@@ -250,8 +250,8 @@ async fn test_runtime_config_custom_checkpointer_takes_precedence() {
     );
     let probe = Arc::new(ProbeCheckpointer::with_checkpoint(checkpoint));
 
-    let runtime_config = RuntimeConfig::new(Some(session_id.to_string()), None)
-        .checkpointer_custom(probe.clone());
+    let runtime_config =
+        RuntimeConfig::new(Some(session_id.to_string()), None).checkpointer_custom(probe.clone());
 
     let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("test".into()), TestNode { name: "test" })

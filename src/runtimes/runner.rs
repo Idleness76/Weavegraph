@@ -150,7 +150,7 @@ pub enum RunnerError {
     )]
     SessionNotFound {
         /// The session ID that was not found.
-        session_id: String
+        session_id: String,
     },
 
     /// No nodes are reachable from the Start node.

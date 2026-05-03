@@ -228,7 +228,7 @@ pub enum SchedulerError {
         /// The node kind that was expected in the registry.
         kind: NodeKind,
         /// The workflow step at which the lookup failed.
-        step: u64
+        step: u64,
     },
 
     /// A node failed during execution.
