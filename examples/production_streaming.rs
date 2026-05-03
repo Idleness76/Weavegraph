@@ -119,6 +119,8 @@ impl Node for LlmNode {
             .unwrap_or("(no input)");
 
         // Simulate token streaming — in production, replace with your LLM call.
+        // Note: ctx.emit() produces a NodeEvent (SSE kind="node"). Real LLM
+        // provider streaming via the `rig` feature produces Event::LLM (kind="llm").
         let tokens = ["Hello", ", ", "I", " am", " a", " streaming", " assistant", "!"];
         for token in tokens {
             ctx.emit("llm.token", format!("Response to '{}': {}", prompt, token))?;
@@ -237,7 +239,6 @@ fn build_sse_stream(
     event_stream: EventStream,
 ) -> impl Stream<Item = Result<SseEvent, Infallible>> {
     let handle = Arc::new(tokio::sync::Mutex::new(Some(handle)));
-    let handle_for_cleanup = handle.clone();
 
     // Convert EventStream into an async stream of SseEvent.
     let stream = event_stream.into_async_stream().map(move |event| {
