@@ -1,3 +1,7 @@
+//! Application layer providing the high-level [`App`] entry point for workflow invocation.
+//!
+//! `App` manages node registration, graph compilation, and dispatches execution to
+//! an [`AppRunner`].
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
@@ -80,6 +84,7 @@ pub struct AppEventStream {
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum AppEventStreamError {
+    /// The event stream has already been taken from this invocation handle.
     #[error("event stream has already been taken")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -316,13 +321,13 @@ impl App {
     ///     .split()
     ///     .expect("fresh event stream handle should still own the stream");
     ///
-    /// let mut runner = AppRunner::with_options_and_bus(
-    ///     app.clone(),
-    ///     CheckpointerType::InMemory,
-    ///     false,
-    ///     event_bus,
-    ///     true,
-    /// ).await;
+    /// let mut runner = AppRunner::builder()
+    ///     .app(app.clone())
+    ///     .checkpointer(CheckpointerType::InMemory)
+    ///     .autosave(false)
+    ///     .event_bus(event_bus)
+    ///     .build()
+    ///     .await;
     ///
     /// tokio::spawn(async move {
     ///     let mut stream = event_stream.into_async_stream();
@@ -349,11 +354,7 @@ impl App {
         &self,
         override_config: Option<CheckpointerType>,
     ) -> (CheckpointerType, Option<Arc<dyn Checkpointer>>) {
-        let checkpointer_type = override_config
-            .or_else(|| self.runtime_config.checkpointer_type())
-            .unwrap_or(CheckpointerType::InMemory);
-        // Precedence rule: custom checkpointer always wins when provided.
-        // The enum-based factory (checkpointer_type) is only used if custom is None.
+        let checkpointer_type = override_config.unwrap_or(CheckpointerType::InMemory);
         let custom_checkpointer = self.runtime_config.custom_checkpointer();
         (checkpointer_type, custom_checkpointer)
     }
@@ -512,10 +513,10 @@ impl App {
     /// For streaming-first scenarios consider [`invoke_streaming`](Self::invoke_streaming),
     /// [`invoke_with_channel`](Self::invoke_with_channel), or
     /// [`invoke_with_sinks`](Self::invoke_with_sinks). Drop down to
-    /// [`AppRunner::with_options_and_bus`](crate::runtimes::runner::AppRunner::with_options_and_bus)
+    /// [`AppRunner::builder()`](crate::runtimes::runner::AppRunner::builder)
     /// when you need per-request isolation or bespoke runner lifecycle management.
     ///
-    /// See [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus)
+    /// See [`AppRunner::builder()`](crate::runtimes::runner::AppRunner::builder)
     /// for streaming events to custom sinks.
     ///
     /// # Parameters
@@ -561,13 +562,13 @@ impl App {
     /// ]);
     ///
     /// // Use AppRunner with custom EventBus
-    /// let mut runner = AppRunner::with_options_and_bus(
-    ///     app,
-    ///     CheckpointerType::InMemory,
-    ///     false,
-    ///     bus,
-    ///     true,
-    /// ).await;
+    /// let mut runner = AppRunner::builder()
+    ///     .app(app)
+    ///     .checkpointer(CheckpointerType::InMemory)
+    ///     .autosave(false)
+    ///     .event_bus(bus)
+    ///     .build()
+    ///     .await;
     ///
     /// let session_id = "my-session".to_string();
     /// let initial = VersionedState::new_with_user_message("Process this");
@@ -604,7 +605,7 @@ impl App {
 
     /// Execute workflow with event streaming to a channel.
     ///
-    /// This is a convenience method that combines `AppRunner::with_options_and_bus()`
+    /// This is a convenience method that combines `AppRunner::builder()`
     /// with channel creation and management. It's ideal for simple use cases where
     /// you want to stream events without manually managing the EventBus.
     ///
@@ -616,7 +617,7 @@ impl App {
     ///
     /// # When NOT to Use This
     ///
-    /// - Web servers with per-request streaming (use `AppRunner::with_options_and_bus()`)
+    /// - Web servers with per-request streaming (use `AppRunner::builder()`)
     /// - Need multiple EventSinks beyond ChannelSink (use `invoke_with_sinks()`)
     /// - Need fine-grained control over EventBus lifecycle
     ///
@@ -704,14 +705,14 @@ impl App {
     /// This method internally:
     /// 1. Creates a `flume::unbounded()` channel
     /// 2. Builds an EventBus from the runtime configuration and appends a `ChannelSink`
-    /// 3. Uses `AppRunner::with_options_and_bus()` with the custom EventBus
+    /// 3. Uses `AppRunner::builder()` with the custom EventBus
     /// 4. Returns both the execution result and receiver
     ///
     /// # See Also
     ///
     /// - [`invoke_with_sinks()`](Self::invoke_with_sinks) - For multiple EventSinks
     /// - [`invoke_streaming()`](Self::invoke_streaming) - Async `EventStream` helper
-    /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - For web servers
+    /// - [`AppRunner::builder()`](crate::runtimes::runner::AppRunner::builder) - For web servers
     /// - [`invoke()`](Self::invoke) - Simple execution without streaming
     #[instrument(skip(self, initial_state))]
     pub async fn invoke_with_channel(
@@ -745,7 +746,7 @@ impl App {
     ///
     /// # When NOT to Use This
     ///
-    /// - Web servers with per-request streaming (use `AppRunner::with_options_and_bus()`)
+    /// - Web servers with per-request streaming (use `AppRunner::builder()`)
     /// - Need to create EventBus instances per HTTP request
     /// - Require fine-grained control over runner lifecycle
     ///
@@ -821,7 +822,7 @@ impl App {
     ///
     /// - [`invoke_with_channel()`](Self::invoke_with_channel) - Simpler channel-only variant
     /// - [`invoke_streaming()`](Self::invoke_streaming) - Async `EventStream` without channels
-    /// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - Full control
+    /// - [`AppRunner::builder()`](crate::runtimes::runner::AppRunner::builder) - Full control
     #[instrument(skip(self, initial_state, sinks), err)]
     pub async fn invoke_with_sinks(
         &self,

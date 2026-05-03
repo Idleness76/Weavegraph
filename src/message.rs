@@ -1,3 +1,4 @@
+//! Message types representing chat turns and content in a workflow conversation.
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -152,21 +153,6 @@ mod role_serde {
 }
 
 impl Message {
-    /// Creates a new message with the specified role string and content.
-    ///
-    /// For type-safe role handling, prefer [`with_role()`](Self::with_role).
-    #[must_use]
-    #[deprecated(
-        since = "0.3.0",
-        note = "Use Message::with_role(Role::..., ...) or Message::user()/assistant()/system()/tool()"
-    )]
-    pub fn new(role: &str, content: &str) -> Self {
-        Self {
-            role: Role::from(role),
-            content: content.to_string(),
-        }
-    }
-
     /// Creates a new message with a typed [`Role`] and content.
     ///
     /// This is the recommended way to create messages with standard roles.
@@ -243,13 +229,6 @@ mod tests {
         assert_eq!(msg.role, Role::Assistant);
 
         let msg = Message::with_role(Role::Custom("custom".into()), "data");
-        assert_eq!(msg.role, Role::Custom("custom".into()));
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_message_new_deprecated_compat() {
-        let msg = Message::new("custom", "data");
         assert_eq!(msg.role, Role::Custom("custom".into()));
     }
 

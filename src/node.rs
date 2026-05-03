@@ -265,6 +265,7 @@ pub struct NodePartial {
 }
 
 impl NodePartial {
+    /// Create an empty `NodePartial` with all fields set to `None`.
     pub fn new() -> Self {
         Self {
             ..Default::default()
@@ -364,13 +365,18 @@ pub enum NodeError {
             help("Check that the previous node produced the required data: {what}.")
         )
     )]
-    MissingInput { what: &'static str },
+    MissingInput {
+        /// Description of the missing input data.
+        what: &'static str,
+    },
 
     /// External provider or service error.
     #[error("provider error ({provider}): {message}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::node::provider)))]
     Provider {
+        /// Name of the external provider that produced the error.
         provider: &'static str,
+        /// Human-readable description of the error.
         message: String,
     },
 

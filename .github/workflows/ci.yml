@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
+          toolchain: stable
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-semver-checks
@@ -108,7 +108,8 @@ jobs:
         with:
           prefix-key: semver-checks
       - name: Check semver
-        run: cargo semver-checks check-release --workspace
+        # cargo-semver-checks requires rustc >= 1.91.0; run on stable, not pinned MSRV
+        run: cargo +stable semver-checks check-release --workspace
 
   deny:
     name: cargo deny

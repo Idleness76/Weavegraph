@@ -1,3 +1,4 @@
+//! [`EventSink`] trait and built-in sink implementations: stdout, in-memory, channel, and JSON lines.
 use flume;
 use std::any::type_name;
 use std::fs::File;
@@ -41,6 +42,7 @@ impl Default for StdOutSink {
 }
 
 impl<F: TelemetryFormatter> StdOutSink<F> {
+    /// Create a `StdOutSink` that formats events using the given `TelemetryFormatter`.
     pub fn with_formatter(formatter: F) -> Self {
         Self {
             handle: io::stdout(),
@@ -64,6 +66,7 @@ pub struct MemorySink {
 }
 
 impl MemorySink {
+    /// Create a new, empty `MemorySink`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -276,7 +279,7 @@ impl EventSink for JsonLinesSink {
 ///
 /// ✅ CORRECT:
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-/// let runner = AppRunner::with_options_and_bus(app, ..., bus, true).await;
+/// let runner = AppRunner::builder().app(app).event_bus(bus).build().await;
 /// runner.run_until_complete(&session_id).await;
 /// ```
 ///
@@ -298,13 +301,13 @@ impl EventSink for JsonLinesSink {
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 /// // Use AppRunner with custom EventBus
-/// let mut runner = AppRunner::with_options_and_bus(
-///     app,
-///     CheckpointerType::InMemory,
-///     false,
-///     bus,
-///     true,
-/// ).await;
+/// let mut runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .autosave(false)
+///     .event_bus(bus)
+///     .build()
+///     .await;
 ///
 /// let session_id = "my-session".to_string();
 /// runner.create_session(
@@ -339,13 +342,13 @@ impl EventSink for JsonLinesSink {
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 /// // Create isolated runner for this request
-/// let mut runner = AppRunner::with_options_and_bus(
-///     Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()),
-///     CheckpointerType::InMemory,
-///     false,
-///     bus,
-///     true,
-/// ).await;
+/// let mut runner = AppRunner::builder()
+///     .app(Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()))
+///     .checkpointer(CheckpointerType::InMemory)
+///     .autosave(false)
+///     .event_bus(bus)
+///     .build()
+///     .await;
 ///
 /// let session_id = format!("request-{}", request_id);
 /// runner.create_session(
@@ -372,13 +375,13 @@ impl EventSink for JsonLinesSink {
 ///     let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 ///     tokio::spawn(async move {
-///         let mut runner = AppRunner::with_options_and_bus(
-///             Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()),
-///             CheckpointerType::InMemory,
-///             false,
-///             bus,
-///             true,
-///         ).await;
+///         let mut runner = AppRunner::builder()
+///             .app(Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()))
+///             .checkpointer(CheckpointerType::InMemory)
+///             .autosave(false)
+///             .event_bus(bus)
+///             .build()
+///             .await;
 ///
 ///         let session_id = uuid::Uuid::new_v4().to_string();
 ///         runner.create_session(
@@ -404,7 +407,7 @@ impl EventSink for JsonLinesSink {
 ///
 /// # See Also
 ///
-/// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - How to inject custom EventBus
+/// - [`AppRunner::builder()`](crate::runtimes::runner::AppRunner::builder) - How to inject custom EventBus
 /// - [`EventBus::with_sinks()`](crate::event_bus::EventBus::with_sinks) - Create EventBus with sinks
 /// - Example: `examples/streaming_events.rs` - Complete working example
 pub struct ChannelSink {

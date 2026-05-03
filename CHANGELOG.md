@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-01
+
+### Added
+- `DIAGNOSTIC_SCOPE` constant exported from `weavegraph::event_bus` for identifying internal diagnostic events
+- `examples/production_streaming.rs` — golden-path reference for Axum + SSE + Postgres checkpointing
+- `[[example]]` entry with `required-features = ["postgres", "examples"]` for `production_streaming`
+- `#![warn(missing_docs)]` now enforced — all 228 previously undocumented public API items are documented
+
+### Changed
+- `RuntimeConfig::new()` signature changed: removed middle `checkpointer: Option<CheckpointerType>` parameter; now takes `(session_id: Option<String>, sqlite_db_name: Option<String>)`
+- Feature flags table in crate-level docs updated to remove the removed `llm` alias
+- `docs/MIGRATION.md` updated with v0.3.0 → v0.4.0 migration guide
+
+### Removed
+- **BREAKING**: `Message::new(role: &str, content: &str)` removed (deprecated since v0.3.0) — use `Message::with_role(Role::..., ...)` or convenience constructors
+- **BREAKING**: `RuntimeConfig.checkpointer` field removed — configure checkpointer via `AppRunner::builder().checkpointer(...)` 
+- **BREAKING**: `RuntimeConfig::with_checkpointer()` and `RuntimeConfig::checkpointer_type()` removed
+- **BREAKING**: `AppRunner::new()`, `from_arc()`, `with_options()`, `with_options_arc()`, `with_options_and_bus()`, `with_options_arc_and_bus()` removed (deprecated since v0.2.0) — use `AppRunner::builder()`
+- **BREAKING**: `LadderError` type alias removed (deprecated since v0.3.0) — use `WeaveError` directly
+- **BREAKING**: `llm` feature flag alias removed (deprecated since v0.3.0) — use `features = ["rig"]`
+
 ## [0.3.0] - 2026-03-07
 
 ### Added

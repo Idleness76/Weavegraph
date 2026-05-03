@@ -5,6 +5,167 @@ migration guidance for upgrading your code.
 
 ---
 
+## v0.4.0
+
+### Overview
+
+v0.4.0 is the **API freeze** release. All items deprecated in v0.2.0 and v0.3.0
+have been removed. No new public APIs were added. If you are already on v0.3.0
+with no deprecation warnings, upgrading requires only the signature change to
+`RuntimeConfig::new()`.
+
+### Breaking Changes
+
+#### 1. `Message::new(role: &str, content: &str)` removed
+
+**Removed in:** v0.4.0 (deprecated since v0.3.0)
+
+Use the typed constructors instead:
+
+```rust
+// Before
+let m = Message::new("user", "hello");
+
+// After — typed Role enum
+let m = Message::with_role(Role::User, "hello");
+
+// Or use the convenience constructors
+let m = Message::user("hello");
+let m = Message::assistant("reply");
+let m = Message::system("you are a helpful assistant");
+```
+
+---
+
+#### 2. `RuntimeConfig::new()` signature changed
+
+**Removed in:** v0.4.0
+
+The `checkpointer: Option<CheckpointerType>` middle parameter is removed.
+
+```rust
+// Before (v0.3.0)
+let config = RuntimeConfig::new(
+    Some("session-id".into()),
+    Some(CheckpointerType::InMemory),
+    None,
+);
+
+// After (v0.4.0) — two parameters only
+let config = RuntimeConfig::new(
+    Some("session-id".into()),
+    None, // sqlite_db_name
+);
+```
+
+Set the checkpointer type via `AppRunner::builder()`:
+
+```rust
+AppRunner::builder()
+    .app_arc(app)
+    .checkpointer(CheckpointerType::SQLite)
+    .build()
+    .await?;
+```
+
+---
+
+#### 3. `RuntimeConfig.checkpointer` field, `with_checkpointer()`, and `checkpointer_type()` removed
+
+**Removed in:** v0.4.0
+
+Configure the checkpointer exclusively through `AppRunner::builder()`:
+
+```rust
+// Before — field on RuntimeConfig
+let config = RuntimeConfig { checkpointer: Some(CheckpointerType::Postgres), ..Default::default() };
+// or
+let config = RuntimeConfig::default().with_checkpointer(CheckpointerType::Postgres);
+
+// After — builder method on AppRunner
+AppRunner::builder()
+    .app_arc(app)
+    .checkpointer(CheckpointerType::Postgres)
+    .build()
+    .await?;
+
+// For a fully custom checkpointer — still on RuntimeConfig
+let config = RuntimeConfig::new(None, None)
+    .checkpointer_custom(Arc::new(my_checkpointer));
+```
+
+---
+
+#### 4. Legacy `AppRunner` constructors removed
+
+**Removed in:** v0.4.0 (deprecated since v0.2.0)
+
+All free-standing constructors have been removed. Use `AppRunner::builder()` exclusively:
+
+| Removed | Replacement |
+|---------|-------------|
+| `AppRunner::new(app)` | `AppRunner::builder().app(app).build().await` |
+| `AppRunner::from_arc(app)` | `AppRunner::builder().app_arc(app).build().await` |
+| `AppRunner::with_options(app, config)` | `AppRunner::builder().app(app)` + config methods |
+| `AppRunner::with_options_arc(app, config)` | `AppRunner::builder().app_arc(app)` + config methods |
+| `AppRunner::with_options_and_bus(app, config, bus)` | `AppRunner::builder().app(app).event_bus(bus)` |
+| `AppRunner::with_options_arc_and_bus(app, config, bus)` | `AppRunner::builder().app_arc(app).event_bus(bus)` |
+
+```rust
+// Before
+let runner = AppRunner::with_options_and_bus(app, config, bus).await?;
+
+// After
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .event_bus(bus)
+    .build()
+    .await?;
+```
+
+---
+
+#### 5. `LadderError` type alias removed
+
+**Removed in:** v0.4.0 (deprecated since v0.3.0)
+
+```rust
+// Before
+use weavegraph::channels::errors::LadderError;
+fn my_fn() -> Result<(), LadderError> { ... }
+
+// After
+use weavegraph::channels::errors::WeaveError;
+fn my_fn() -> Result<(), WeaveError> { ... }
+```
+
+---
+
+#### 6. `llm` feature flag alias removed
+
+**Removed in:** v0.4.0 (deprecated since v0.3.0)
+
+```toml
+# Before
+weavegraph = { version = "0.3", features = ["llm"] }
+
+# After
+weavegraph = { version = "0.4", features = ["rig"] }
+```
+
+---
+
+### New in v0.4.0
+
+- `DIAGNOSTIC_SCOPE` constant exported from `weavegraph::event_bus` — use to
+  identify internal diagnostic events when filtering the event stream.
+- `#![warn(missing_docs)]` is now enforced — all public API items are documented.
+- `examples/production_streaming.rs` — golden-path reference for Axum + SSE +
+  Postgres checkpointing (requires `--features postgres,examples`).
+
+---
+
 ## v0.3.0 (Upcoming)
 
 ### Breaking Changes

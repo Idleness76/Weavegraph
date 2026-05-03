@@ -17,7 +17,10 @@ pub enum JsonError {
         feature = "diagnostics",
         diagnostic(code(weavegraph::json::invalid_pointer))
     )]
-    InvalidPointer { pointer: String },
+    InvalidPointer {
+        /// The invalid JSON pointer string.
+        pointer: String,
+    },
 
     /// JSON merge conflict that cannot be resolved.
     #[error("Merge conflict at path '{path}': cannot merge {left_type} with {right_type}")]
@@ -26,8 +29,11 @@ pub enum JsonError {
         diagnostic(code(weavegraph::json::merge_conflict))
     )]
     MergeConflict {
+        /// JSON path where the conflict occurred.
         path: String,
+        /// Type of the left operand at the conflict point.
         left_type: String,
+        /// Type of the right operand at the conflict point.
         right_type: String,
     },
 
@@ -35,6 +41,7 @@ pub enum JsonError {
     #[error("JSON serialization error: {source}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::json::serde)))]
     Serde {
+        /// The underlying serde_json error.
         #[from]
         source: serde_json::Error,
     },

@@ -250,13 +250,8 @@ async fn test_runtime_config_custom_checkpointer_takes_precedence() {
     );
     let probe = Arc::new(ProbeCheckpointer::with_checkpoint(checkpoint));
 
-    let runtime_config = RuntimeConfig::new(
-        Some(session_id.to_string()),
-        Some(CheckpointerType::InMemory),
-        None,
-    )
-    .checkpointer_custom(probe.clone())
-    .with_checkpointer(Some(CheckpointerType::InMemory));
+    let runtime_config =
+        RuntimeConfig::new(Some(session_id.to_string()), None).checkpointer_custom(probe.clone());
 
     let app = GraphBuilder::new()
         .add_node(NodeKind::Custom("test".into()), TestNode { name: "test" })
@@ -519,7 +514,6 @@ async fn test_resume_from_checkpoint() {
         .add_edge(NodeKind::Custom("test".into()), NodeKind::End)
         .with_runtime_config(RuntimeConfig::new(
             None,
-            Some(CheckpointerType::SQLite),
             Some(db_path.display().to_string()),
         ))
         .compile()

@@ -1,3 +1,4 @@
+//! Sink health diagnostics: per-sink error tracking and the diagnostics broadcast stream.
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -22,19 +23,26 @@ pub struct SinkDiagnostic {
 /// Public snapshot type representing per-sink health.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SinkHealth {
+    /// Name of the sink this health snapshot belongs to.
     pub sink: String,
+    /// Total number of errors encountered by this sink.
     pub error_count: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Description of the most recent error, if any.
     pub last_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Timestamp of the most recent error, if any.
     pub last_error_at: Option<DateTime<Utc>>,
 }
 
 /// Internal accumulator for health tracking.
 #[derive(Debug, Default, Clone)]
 pub struct HealthState {
+    /// Running count of errors recorded for the sink.
     pub error_count: u64,
+    /// Description of the most recent error, if any.
     pub last_error: Option<String>,
+    /// Timestamp of the most recent error, if any.
     pub last_error_at: Option<DateTime<Utc>>,
 }
 
@@ -45,6 +53,7 @@ pub struct DiagnosticsStream {
 }
 
 impl DiagnosticsStream {
+    /// Create a new `DiagnosticsStream` from a broadcast receiver.
     pub fn new(receiver: Receiver<SinkDiagnostic>) -> Self {
         Self { receiver }
     }

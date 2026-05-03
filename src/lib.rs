@@ -67,7 +67,6 @@
 //! | `postgres-migrations` | no | Enables Postgres migration support for checkpointer setup. |
 //! | `postgres` | no | Enables PostgreSQL checkpointer APIs and runtime backend. |
 //! | `rig` | no | Enables Rig-based LLM interop and adapters. |
-//! | `llm` | no | Compatibility alias to `rig` for 0.3.x (planned removal in 0.4.0). |
 //! | `diagnostics` | no | Adds `miette` diagnostic metadata to error types. |
 //! | `examples` | no | Pulls additional deps used by selected examples. |
 //! | `petgraph-compat` | no | Exposes petgraph conversion helpers for graph analysis and visualization. |
@@ -78,9 +77,71 @@
 //! - `docs/OPERATIONS.md` for runtime operations, persistence, and deployment concerns.
 //! - `docs/STREAMING.md` for event streaming patterns and production guidance.
 //! - `docs/ARCHITECTURE.md` for internal architecture and execution model details.
+//!
+//! # Common Patterns
+//!
+//! ## Graph lifecycle
+//!
+//! ```rust,no_run
+//! # use weavegraph::graphs::GraphBuilder;
+//! # use weavegraph::types::NodeKind;
+//! # use weavegraph::state::VersionedState;
+//! # use weavegraph::runtimes::RuntimeConfig;
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // 1. Build — declare nodes and edges.
+//! // 2. Compile — validate topology, attach runtime config.
+//! // 3. Invoke — run once or stream events to clients.
+//! let app = GraphBuilder::new()
+//!     /* .add_node(...).add_edge(...) */
+//!     .compile()?;
+//!
+//! let state = VersionedState::new_with_user_message("hello");
+//! let final_state = app.invoke(state).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See `examples/graph_execution.rs` for a runnable graph lifecycle example.
+//!
+//! ## Streaming events via SSE
+//!
+//! ```rust,no_run
+//! # use std::sync::Arc;
+//! # use weavegraph::app::App;
+//! # use weavegraph::event_bus::STREAM_END_SCOPE;
+//! # use weavegraph::state::VersionedState;
+//! # async fn example(app: Arc<App>) {
+//! // Each call gets an isolated runner + event bus.
+//! let state = VersionedState::new_with_user_message("hello");
+//! let (handle, event_stream) = app.invoke_streaming(state).await;
+//!
+//! // Convert to an async stream and forward to your SSE layer.
+//! // Terminate when STREAM_END_SCOPE is observed.
+//! let _ = event_stream.into_async_stream(); // futures::Stream<Item = Event>
+//! let _ = handle; // join or abort the background task
+//! # }
+//! ```
+//!
+//! See `examples/production_streaming.rs` for the full Axum + Postgres reference.
+//!
+//! ## Error handling in nodes
+//!
+//! ```rust,no_run
+//! # use weavegraph::node::{NodeError, NodeResultExt};
+//! // Return a domain error from any node:
+//! fn validate(input: &str) -> Result<(), NodeError> {
+//!     if input.is_empty() {
+//!         return Err(NodeError::Other("input must not be empty".into()));
+//!     }
+//!     // Lift arbitrary std::error::Error with ?:
+//!     std::str::from_utf8(input.as_bytes()).node_err()?;
+//!     Ok(())
+//! }
+//! ```
+//!
+//! See `examples/errors_pretty.rs` for error display patterns.
 
-// TODO(pre-v0.3.0): Re-enable once public API is documented (~232 items)
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod app;
 pub mod channels;

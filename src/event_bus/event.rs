@@ -1,3 +1,4 @@
+//! Core event types emitted by workflow nodes and the framework itself.
 use std::fmt;
 
 use chrono::{DateTime, Utc};
@@ -5,20 +6,38 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Scope constant marking the end of a streaming invocation.
+///
+/// An event with this scope is emitted by the framework when the event stream closes
+/// so that consumers can detect clean stream termination.
 pub const STREAM_END_SCOPE: &str = "__weavegraph_stream_end__";
 
+/// Scope constant for diagnostic events emitted by the framework.
+///
+/// Use this scope when emitting internal diagnostic information
+/// to distinguish framework diagnostics from user node events.
+/// Consumers can filter on this scope to capture framework-level
+/// telemetry without polluting the main event stream.
+pub const DIAGNOSTIC_SCOPE: &str = "__weavegraph_diagnostic__";
+
+/// A workflow event that can be emitted by nodes or the framework itself.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Event {
+    /// A structured event emitted by a workflow node.
     Node(NodeEvent),
+    /// A framework-internal diagnostic event.
     Diagnostic(DiagnosticEvent),
+    /// An LLM streaming chunk or final/error marker.
     LLM(LLMStreamingEvent),
 }
 
 impl Event {
+    /// Create a node event with only a scope and message (no node ID or step).
     pub fn node_message(scope: impl Into<String>, message: impl Into<String>) -> Self {
         Event::Node(NodeEvent::new(None, None, scope.into(), message.into()))
     }
 
+    /// Create a node event with full metadata (node ID, step, scope, message).
     pub fn node_message_with_meta(
         node_id: impl Into<String>,
         step: u64,
@@ -33,6 +52,7 @@ impl Event {
         ))
     }
 
+    /// Create a diagnostic event with the given scope and message.
     pub fn diagnostic(scope: impl Into<String>, message: impl Into<String>) -> Self {
         Event::Diagnostic(DiagnosticEvent {
             scope: scope.into(),
@@ -40,6 +60,7 @@ impl Event {
         })
     }
 
+    /// Return the scope label string if the event carries one.
     pub fn scope_label(&self) -> Option<&str> {
         match self {
             Event::Node(node) => Some(node.scope()),
@@ -48,6 +69,7 @@ impl Event {
         }
     }
 
+    /// Return the primary message text for this event.
     pub fn message(&self) -> &str {
         match self {
             Event::Node(node) => node.message(),
@@ -193,6 +215,7 @@ impl fmt::Display for Event {
     }
 }
 
+/// A structured event emitted by a workflow node during execution.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NodeEvent {
     node_id: Option<String>,
@@ -202,6 +225,7 @@ pub struct NodeEvent {
 }
 
 impl NodeEvent {
+    /// Create a new `NodeEvent` with optional node ID and step number.
     pub fn new(node_id: Option<String>, step: Option<u64>, scope: String, message: String) -> Self {
         Self {
             node_id,
@@ -211,23 +235,28 @@ impl NodeEvent {
         }
     }
 
+    /// Returns the node identifier, if set.
     pub fn node_id(&self) -> Option<&str> {
         self.node_id.as_deref()
     }
 
+    /// Returns the step number at which this event was emitted, if set.
     pub fn step(&self) -> Option<u64> {
         self.step
     }
 
+    /// Returns the scope label for this event.
     pub fn scope(&self) -> &str {
         &self.scope
     }
 
+    /// Returns the event message text.
     pub fn message(&self) -> &str {
         &self.message
     }
 }
 
+/// A framework-internal diagnostic event emitted outside normal node execution.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiagnosticEvent {
     scope: String,
@@ -235,20 +264,27 @@ pub struct DiagnosticEvent {
 }
 
 impl DiagnosticEvent {
+    /// Returns the scope label for this diagnostic event.
     pub fn scope(&self) -> &str {
         &self.scope
     }
 
+    /// Returns the diagnostic message text.
     pub fn message(&self) -> &str {
         &self.message
     }
 }
 
+/// Scope discriminant for LLM streaming events.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum LLMStreamingEventScope {
+    /// An in-progress streaming session (default scope).
     Streaming,
+    /// A single text chunk within a streaming response.
     Chunk,
+    /// The final chunk marking the end of the stream.
     Final,
+    /// An error event terminating the stream.
     Error,
 }
 
@@ -263,6 +299,7 @@ impl AsRef<str> for LLMStreamingEventScope {
     }
 }
 
+/// An event carrying an LLM response chunk, final marker, or error from a streaming session.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LLMStreamingEvent {
     session_id: Option<String>,
@@ -277,6 +314,7 @@ pub struct LLMStreamingEvent {
 
 impl LLMStreamingEvent {
     #[allow(clippy::too_many_arguments)]
+    /// Create a new `LLMStreamingEvent` with full field control.
     pub fn new(
         session_id: Option<String>,
         node_id: Option<String>,
@@ -299,6 +337,7 @@ impl LLMStreamingEvent {
         }
     }
 
+    /// Create a chunk event representing a partial LLM response.
     pub fn chunk_event(
         session_id: Option<String>,
         node_id: Option<String>,
@@ -318,6 +357,7 @@ impl LLMStreamingEvent {
         )
     }
 
+    /// Create a final event marking the end of an LLM streaming session.
     pub fn final_event(
         session_id: Option<String>,
         node_id: Option<String>,
@@ -337,6 +377,7 @@ impl LLMStreamingEvent {
         )
     }
 
+    /// Create an error event marking a failed LLM streaming session.
     pub fn error_event(
         session_id: Option<String>,
         node_id: Option<String>,
@@ -357,43 +398,53 @@ impl LLMStreamingEvent {
         )
     }
 
+    /// Returns the session identifier, if set.
     pub fn session_id(&self) -> Option<&str> {
         self.session_id.as_deref()
     }
 
+    /// Returns the node identifier, if set.
     pub fn node_id(&self) -> Option<&str> {
         self.node_id.as_deref()
     }
 
+    /// Returns the stream identifier, if set.
     pub fn stream_id(&self) -> Option<&str> {
         self.stream_id.as_deref()
     }
 
+    /// Returns the text chunk carried by this event.
     pub fn chunk(&self) -> &str {
         &self.chunk
     }
 
+    /// Returns `true` if this event marks the final chunk of the stream.
     pub fn is_final(&self) -> bool {
         self.is_final
     }
 
+    /// Returns the scope of this streaming event.
     pub fn scope(&self) -> &LLMStreamingEventScope {
         &self.scope
     }
 
+    /// Returns the metadata map attached to this event.
     pub fn metadata(&self) -> &FxHashMap<String, Value> {
         &self.metadata
     }
 
+    /// Returns the timestamp at which this event was created.
     pub fn timestamp(&self) -> DateTime<Utc> {
         self.timestamp
     }
 
+    /// Return a new event with the given metadata map replacing the existing one.
     pub fn with_metadata(mut self, metadata: FxHashMap<String, Value>) -> Self {
         self.metadata = metadata;
         self
     }
 
+    /// Return a new event with the given timestamp replacing the existing one.
     pub fn with_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
         self.timestamp = timestamp;
         self
