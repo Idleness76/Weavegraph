@@ -1,7 +1,7 @@
 //! Application layer providing the high-level [`App`] entry point for workflow invocation.
 //!
 //! `App` manages node registration, graph compilation, and dispatches execution to
-//! an [`AppRunner`](crate::runtimes::runner::AppRunner).
+//! an [`AppRunner`].
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 

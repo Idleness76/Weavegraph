@@ -248,7 +248,7 @@ impl EventBus {
         sinks_guard.push(entry);
     }
 
-    /// Return an [`EventEmitter`](crate::event_bus::EventEmitter) handle for publishing events to this bus.
+    /// Return an [`EventEmitter`] handle for publishing events to this bus.
     pub fn get_emitter(&self) -> Arc<dyn EventEmitter> {
         Arc::new(self.hub.emitter())
     }

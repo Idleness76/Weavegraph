@@ -10,7 +10,7 @@ use super::Checkpointer;
 pub struct RuntimeConfig {
     /// Optional session ID to use; a new UUID is generated if `None`.
     pub session_id: Option<String>,
-    /// Custom [`Checkpointer`](crate::runtimes::Checkpointer) to use instead of the built-in types.
+    /// Custom [`Checkpointer`] to use instead of the built-in types.
     pub checkpointer_custom: Option<Arc<dyn Checkpointer>>,
     /// SQLite database file name; defaults to `SQLITE_DB_NAME` env var or `weavegraph.db`.
     pub sqlite_db_name: Option<String>,
@@ -60,7 +60,7 @@ impl RuntimeConfig {
     }
 
     #[must_use]
-    /// Set a custom [`Checkpointer`](crate::runtimes::Checkpointer) for this configuration.
+    /// Set a custom [`Checkpointer`] for this configuration.
     pub fn checkpointer_custom(mut self, checkpointer: Arc<dyn Checkpointer>) -> Self {
         self.checkpointer_custom = Some(checkpointer);
         self

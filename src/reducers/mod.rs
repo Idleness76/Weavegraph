@@ -1,4 +1,4 @@
-//! State reducers that apply [`NodePartial`](crate::node::NodePartial) updates to [`VersionedState`](crate::state::VersionedState).
+//! State reducers that apply [`NodePartial`] updates to [`VersionedState`].
 mod add_errors;
 mod add_messages;
 mod map_merge;
