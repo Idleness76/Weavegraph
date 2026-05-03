@@ -4,6 +4,7 @@ use super::Channel;
 use crate::types::ChannelType;
 
 type ChannelValue = FxHashMap<String, serde_json::Value>;
+/// Channel that stores arbitrary key-value extra data for the workflow state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtrasChannel {
     value: ChannelValue,
@@ -11,6 +12,7 @@ pub struct ExtrasChannel {
 }
 
 impl ExtrasChannel {
+    /// Create a new `ExtrasChannel` with the given map and version counter.
     pub fn new(extras: ChannelValue, version: u32) -> Self {
         Self {
             value: extras,

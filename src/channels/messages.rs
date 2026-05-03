@@ -2,6 +2,7 @@ use super::Channel;
 use crate::{message::Message, types::ChannelType};
 
 type ChannelValue = Vec<Message>;
+/// Channel that stores the ordered list of conversation messages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MessagesChannel {
     value: ChannelValue,
@@ -9,6 +10,7 @@ pub struct MessagesChannel {
 }
 
 impl MessagesChannel {
+    /// Create a new `MessagesChannel` with the given messages and version counter.
     pub fn new(messages: ChannelValue, version: u32) -> Self {
         Self {
             value: messages,

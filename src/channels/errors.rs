@@ -1,3 +1,4 @@
+//! Error event types used to capture and propagate structured errors through the workflow.
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -62,14 +63,19 @@ use crate::telemetry::{FormatterMode, PlainFormatter, TelemetryFormatter};
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ErrorEvent {
+    /// Timestamp at which the error occurred.
     #[serde(default = "chrono::Utc::now")]
     pub when: DateTime<Utc>,
+    /// Scope identifying where in the workflow the error originated.
     #[serde(default)]
     pub scope: ErrorScope,
+    /// Structured error payload describing the failure.
     #[serde(default)]
     pub error: WeaveError,
+    /// Arbitrary string tags for filtering and categorization.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Optional additional context data as a JSON value.
     #[serde(default)]
     pub context: serde_json::Value,
 }
@@ -201,17 +207,26 @@ impl ErrorEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(tag = "scope", rename_all = "snake_case")]
 pub enum ErrorScope {
+    /// Error originated in a node execution.
     Node {
+        /// Node kind identifier.
         kind: String,
+        /// Workflow step at which the error occurred.
         step: u64,
     },
+    /// Error originated in the scheduler.
     Scheduler {
+        /// Workflow step at which the error occurred.
         step: u64,
     },
+    /// Error originated in the runner.
     Runner {
+        /// Session identifier associated with the error.
         session: String,
+        /// Workflow step at which the error occurred.
         step: u64,
     },
+    /// Error originated at the application level (default).
     #[default]
     App,
 }
@@ -275,13 +290,6 @@ impl WeaveError {
         self
     }
 }
-
-/// Deprecated compatibility alias retained in 0.3.x.
-#[deprecated(
-    since = "0.3.0",
-    note = "Use WeaveError instead; this alias is removed in 0.4.0"
-)]
-pub type LadderError = WeaveError;
 
 /// Format error events with explicit color mode control.
 ///

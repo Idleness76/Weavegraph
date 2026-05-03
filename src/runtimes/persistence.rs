@@ -46,7 +46,9 @@ where
 /// Channel that stores a vector collection (e.g., messages) with version metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PersistedVecChannel<T> {
+    /// Version counter for change-detection.
     pub version: u32,
+    /// The stored items.
     #[serde(default)]
     pub items: Vec<T>,
 }
@@ -63,7 +65,9 @@ impl<T> Default for PersistedVecChannel<T> {
 /// Channel that stores a map collection (e.g., extra) with version metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PersistedMapChannel<V> {
+    /// Version counter for change-detection.
     pub version: u32,
+    /// The stored key-value map.
     #[serde(default)]
     pub map: FxHashMap<String, V>,
 }
@@ -80,8 +84,11 @@ impl<V> Default for PersistedMapChannel<V> {
 /// Complete persisted shape of the in‑memory VersionedState.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PersistedState {
+    /// Persisted messages channel.
     pub messages: PersistedVecChannel<Message>,
+    /// Persisted extra key-value channel.
     pub extra: PersistedMapChannel<Value>,
+    /// Persisted errors channel.
     #[serde(default)]
     pub errors: PersistedVecChannel<crate::channels::errors::ErrorEvent>,
 }
@@ -94,12 +101,17 @@ pub struct PersistedVersionsSeen(pub FxHashMap<String, FxHashMap<String, u64>>);
 /// (Step history tables may store multiple instances of this shape.)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PersistedCheckpoint {
+    /// Unique session identifier.
     pub session_id: String,
+    /// Workflow step number for this checkpoint.
     pub step: u64,
+    /// Full state snapshot at this step.
     pub state: PersistedState,
     /// Frontier encoded as string vector using NodeKind::encode().
     pub frontier: Vec<String>,
+    /// Scheduler version-gating state.
     pub versions_seen: PersistedVersionsSeen,
+    /// Maximum concurrent nodes for this session.
     pub concurrency_limit: usize,
     /// RFC3339 string form of creation time (keeps chrono::DateTime out of serialized shape).
     pub created_at: String,
@@ -120,6 +132,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum PersistenceError {
+    /// A required field was absent from the persisted data.
     #[error("missing field: {0}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -130,6 +143,7 @@ pub enum PersistenceError {
     )]
     MissingField(&'static str),
 
+    /// A JSON serialization or deserialization error.
     #[error("JSON serialization/deserialization failed: {source}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -139,10 +153,12 @@ pub enum PersistenceError {
         )
     )]
     Serde {
+        /// The underlying serde_json error.
         #[source]
         source: serde_json::Error,
     },
 
+    /// Any other persistence error.
     #[error("persistence error: {0}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -151,6 +167,7 @@ pub enum PersistenceError {
     Other(String),
 }
 
+/// Convenience alias for persistence operation results.
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
 /* ---------- VersionedState <-> PersistedState Conversions ---------- */

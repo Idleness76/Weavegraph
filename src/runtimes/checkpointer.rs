@@ -41,12 +41,19 @@ use crate::{
 /// to enable full session resumption and audit trails.
 #[derive(Debug, Clone)]
 pub struct Checkpoint {
+    /// Unique identifier of the workflow session this checkpoint belongs to.
     pub session_id: String,
+    /// Execution step number at the time of this checkpoint.
     pub step: u64,
+    /// Full versioned state snapshot captured at this step.
     pub state: VersionedState,
+    /// Node frontier to resume from when restoring this checkpoint.
     pub frontier: Vec<NodeKind>,
+    /// Scheduler version-gating state for change detection.
     pub versions_seen: FxHashMap<String, FxHashMap<String, u64>>, // scheduler gating
+    /// Maximum concurrent nodes configured for this session.
     pub concurrency_limit: usize,
+    /// Timestamp at which this checkpoint was created.
     pub created_at: DateTime<Utc>,
     /// Nodes that executed in this step (empty for step 0)
     pub ran_nodes: Vec<NodeKind>,
@@ -164,7 +171,10 @@ pub enum CheckpointerError {
             )
         )
     )]
-    NotFound { session_id: String },
+    NotFound {
+        /// The session ID that was not found.
+        session_id: String
+    },
 
     /// Backend storage error (database, filesystem, etc.).
     #[error("backend error: {message}")]
@@ -175,7 +185,10 @@ pub enum CheckpointerError {
             help("Check backend connectivity and permissions; backend message: {message}.")
         )
     )]
-    Backend { message: String },
+    Backend {
+        /// Description of the backend storage error.
+        message: String
+    },
 
     /// Other checkpointer errors.
     #[error("checkpointer error: {message}")]
@@ -183,7 +196,10 @@ pub enum CheckpointerError {
         feature = "diagnostics",
         diagnostic(code(weavegraph::checkpointer::other))
     )]
-    Other { message: String },
+    Other {
+        /// Human-readable description of the error.
+        message: String
+    },
 }
 
 /// Selects the backing implementation of the `Checkpointer` trait.
@@ -213,6 +229,7 @@ pub enum CheckpointerType {
     Postgres,
 }
 
+/// Convenience alias for checkpointer operation results.
 pub type Result<T> = std::result::Result<T, CheckpointerError>;
 
 /// Trait for persistent storage and retrieval of workflow execution state.

@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
@@ -118,10 +118,13 @@ sqlite = ["sqlx"]
 postgres-migrations = ["postgres"]
 postgres = ["sqlx"]
 rig = ["dep:rig-core", "dep:rmcp"]
-llm = ["rig"]
 diagnostics = ["dep:miette"]
 examples = ["reqwest", "scraper"]
 petgraph-compat = ["petgraph"]
+
+[[example]]
+name = "production_streaming"
+required-features = ["postgres", "examples"]
 
 [[bench]]
 name = "event_bus_throughput"

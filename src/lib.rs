@@ -67,7 +67,6 @@
 //! | `postgres-migrations` | no | Enables Postgres migration support for checkpointer setup. |
 //! | `postgres` | no | Enables PostgreSQL checkpointer APIs and runtime backend. |
 //! | `rig` | no | Enables Rig-based LLM interop and adapters. |
-//! | `llm` | no | Compatibility alias to `rig` for 0.3.x (planned removal in 0.4.0). |
 //! | `diagnostics` | no | Adds `miette` diagnostic metadata to error types. |
 //! | `examples` | no | Pulls additional deps used by selected examples. |
 //! | `petgraph-compat` | no | Exposes petgraph conversion helpers for graph analysis and visualization. |
@@ -79,8 +78,7 @@
 //! - `docs/STREAMING.md` for event streaming patterns and production guidance.
 //! - `docs/ARCHITECTURE.md` for internal architecture and execution model details.
 
-// TODO(pre-v0.3.0): Re-enable once public API is documented (~232 items)
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 pub mod app;
 pub mod channels;

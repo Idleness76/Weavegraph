@@ -4,7 +4,7 @@
 //! - `App::invoke_with_channel()` - Simple streaming with a channel
 //! - `App::invoke_with_sinks()` - Multiple custom sinks
 //!
-//! These methods simplify the common case while the full `AppRunner::with_options_and_bus()`
+//! These methods simplify the common case while the `AppRunner::builder()`
 //! pattern remains available for advanced use cases like web servers.
 //!
 //! ## When to Use Each Pattern
@@ -19,7 +19,7 @@
 //! - Single execution with custom event routing
 //! - More control than `invoke_with_channel()`
 //!
-//! ### `AppRunner::with_options_and_bus()` - Web Servers
+//! ### `AppRunner::builder()` - Web Servers
 //! - Per-request event isolation required
 //! - SSE or WebSocket streaming
 //! - Multiple concurrent clients
@@ -215,7 +215,7 @@ async fn main() -> ExampleResult<()> {
     info!("   • More flexible than channel-only\n");
 
     info!("💡 For web servers with per-request isolation:");
-    info!("   Use AppRunner::with_options_and_bus() instead");
+    info!("   Use AppRunner::builder() with .event_bus() instead");
     info!("   (See examples/streaming_events.rs)\n");
 
     Ok(())

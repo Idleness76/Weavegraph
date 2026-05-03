@@ -1,3 +1,4 @@
+//! [`EventHub`] broadcast channel, [`EventStream`] receiver, and blocking iterator.
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -22,6 +23,7 @@ pub struct EventHubMetrics {
     pub dropped: usize,
 }
 
+/// Broadcast hub that owns the Tokio broadcast channel used by [`EventBus`](crate::event_bus::EventBus).
 #[derive(Debug)]
 pub struct EventHub {
     sender: RwLock<Option<Sender<Event>>>,
@@ -79,14 +81,17 @@ impl EventHub {
         }
     }
 
+    /// Returns the configured buffer capacity of the underlying broadcast channel.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
+    /// Returns the total count of events dropped due to slow subscribers.
     pub fn dropped(&self) -> usize {
         self.dropped_events.load(Ordering::Relaxed)
     }
 
+    /// Returns a snapshot of current hub health metrics.
     pub fn metrics(&self) -> EventHubMetrics {
         EventHubMetrics {
             capacity: self.capacity(),
@@ -94,6 +99,7 @@ impl EventHub {
         }
     }
 
+    /// Create a [`HubEmitter`] that publishes events to this hub.
     pub fn emitter(self: &Arc<Self>) -> HubEmitter {
         HubEmitter {
             hub: Arc::clone(self),
@@ -134,6 +140,7 @@ impl EventHub {
     }
 }
 
+/// [`EventEmitter`] implementation backed by an [`EventHub`] broadcast channel.
 #[derive(Clone, Debug)]
 pub struct HubEmitter {
     hub: Arc<EventHub>,
@@ -145,6 +152,7 @@ impl EventEmitter for HubEmitter {
     }
 }
 
+/// Async receive handle for a subscription to an [`EventHub`].
 #[derive(Debug)]
 pub struct EventStream {
     receiver: Receiver<Event>,
@@ -153,6 +161,7 @@ pub struct EventStream {
 }
 
 impl EventStream {
+    /// Receive the next event, awaiting if the channel is empty.
     pub async fn recv(&mut self) -> Result<Event, broadcast::error::RecvError> {
         match self.receiver.recv().await {
             Ok(event) => Ok(event),
@@ -164,6 +173,7 @@ impl EventStream {
         }
     }
 
+    /// Try to receive an event without blocking; returns immediately if none is available.
     pub fn try_recv(&mut self) -> Result<Event, broadcast::error::TryRecvError> {
         match self.receiver.try_recv() {
             Ok(event) => Ok(event),
@@ -175,10 +185,12 @@ impl EventStream {
         }
     }
 
+    /// Consume the stream and return the raw broadcast receiver.
     pub fn into_inner(self) -> Receiver<Event> {
         self.receiver
     }
 
+    /// Convert this stream into a synchronous blocking iterator.
     pub fn into_blocking_iter(self) -> BlockingEventIter {
         BlockingEventIter {
             receiver: self.receiver,
@@ -186,6 +198,7 @@ impl EventStream {
         }
     }
 
+    /// Attach a shutdown watch channel; the stream ends when the watch value becomes `true`.
     pub fn with_shutdown(mut self, shutdown: watch::Receiver<bool>) -> Self {
         // Consumers can share a `watch` channel to terminate the stream early when
         // the producer side shuts down (e.g. HTTP connection dropped).
@@ -193,6 +206,7 @@ impl EventStream {
         self
     }
 
+    /// Convert this stream into a pinned `BoxStream` for use with async combinators.
     pub fn into_async_stream(self) -> BoxStream<'static, Event> {
         // Convert the broadcast receiver into a boxed stream so callers can plug it into
         // combinators without worrying about pinning or generics at the call site.
@@ -238,6 +252,7 @@ impl EventStream {
         .boxed()
     }
 
+    /// Receive the next event, waiting at most `duration`; returns `None` on timeout or close.
     pub async fn next_timeout(&mut self, duration: Duration) -> Option<Event> {
         // Keep polling until we either obtain an event, the channel closes, or the
         // deadline elapses. Lagged notifications simply increment drop metrics and retry.
@@ -252,6 +267,7 @@ impl EventStream {
     }
 }
 
+/// Synchronous blocking iterator over events from an [`EventHub`].
 pub struct BlockingEventIter {
     receiver: Receiver<Event>,
     hub: Arc<EventHub>,

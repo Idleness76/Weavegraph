@@ -167,6 +167,7 @@ pub struct SchedulerState {
 /// ```
 #[derive(Debug, Default, Clone)]
 pub struct Scheduler {
+    /// Maximum number of nodes that may execute concurrently in a single superstep.
     pub concurrency_limit: usize,
 }
 
@@ -223,7 +224,12 @@ pub enum SchedulerError {
             help("Ensure all nodes in the graph are registered before execution.")
         )
     )]
-    NodeNotFound { kind: NodeKind, step: u64 },
+    NodeNotFound {
+        /// The node kind that was expected in the registry.
+        kind: NodeKind,
+        /// The workflow step at which the lookup failed.
+        step: u64
+    },
 
     /// A node failed during execution.
     ///
@@ -238,9 +244,12 @@ pub enum SchedulerError {
     #[error("node run error at step {step} for {kind:?}: {source}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::scheduler::node)))]
     NodeRun {
+        /// The node kind that encountered an error.
         kind: NodeKind,
+        /// The workflow step at which the node failed.
         step: u64,
         #[source]
+        /// The underlying node error.
         source: NodeError,
     },
 

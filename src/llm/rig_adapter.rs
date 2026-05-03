@@ -1,3 +1,4 @@
+//! Adapter implementing the weavegraph LLM traits for the [Rig](https://github.com/0xPlaygrounds/rig) framework.
 use crate::message::{Message, Role};
 use rig::completion::message::{
     AssistantContent, Message as RigMessage, ToolResultContent, UserContent,

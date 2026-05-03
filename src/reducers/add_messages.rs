@@ -1,6 +1,8 @@
+//! Reducer that appends incoming messages to the messages channel.
 use super::Reducer;
 use crate::{channels::Channel, node::NodePartial, state::VersionedState};
 
+/// Reducer that appends messages from a [`NodePartial`](crate::node::NodePartial) to the state messages channel.
 #[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub struct AddMessages;
 

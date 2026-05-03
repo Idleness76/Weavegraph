@@ -59,7 +59,7 @@ use tracing::instrument;
 ///
 /// ```text
 /// ❌ WRONG: App.invoke() → Uses default EventBus (stdout only)
-/// ✅ RIGHT: AppRunner::with_options_and_bus() → Custom EventBus with your sinks
+/// ✅ RIGHT: AppRunner::builder() with .event_bus(bus) → Custom EventBus with your sinks
 /// ```
 ///
 /// # Usage Patterns
@@ -98,13 +98,13 @@ use tracing::instrument;
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 /// // Create runner with custom EventBus
-/// let mut runner = AppRunner::with_options_and_bus(
-///     app,
-///     CheckpointerType::InMemory,
-///     false,
-///     bus,
-///     true,
-/// ).await;
+/// let mut runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .autosave(false)
+///     .event_bus(bus)
+///     .build()
+///     .await;
 ///
 /// let session_id = "my-session".to_string();
 /// runner.create_session(
@@ -126,7 +126,7 @@ use tracing::instrument;
 ///
 /// # See Also
 ///
-/// - [`with_options_and_bus()`](Self::with_options_and_bus) - Recommended for custom event handling
+/// - [`builder()`](Self::builder) - Recommended for custom event handling
 /// - [`App::invoke()`](crate::app::App::invoke) - Simple execution with defaults
 /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
 pub struct AppRunner {
@@ -148,7 +148,10 @@ pub enum RunnerError {
         feature = "diagnostics",
         diagnostic(code(weavegraph::runner::session_not_found))
     )]
-    SessionNotFound { session_id: String },
+    SessionNotFound {
+        /// The session ID that was not found.
+        session_id: String
+    },
 
     /// No nodes are reachable from the Start node.
     #[error("no nodes to run from START (empty frontier)")]
@@ -213,8 +216,8 @@ pub enum RunnerError {
 
 /// Builder for constructing [`AppRunner`] instances with a fluent API.
 ///
-/// This builder consolidates all the various constructors (`new`, `with_options`,
-/// `with_options_and_bus`, etc.) into a single, discoverable interface.
+/// This builder is the canonical way to construct `AppRunner` instances.
+/// It provides a single, discoverable interface for all configuration options.
 ///
 /// # Examples
 ///
@@ -445,70 +448,6 @@ impl AppRunner {
         AppRunnerBuilder::new()
     }
 
-    /// Create a new AppRunner with default EventBus (stdout only).
-    ///
-    /// This is the simplest constructor, used internally by [`App::invoke()`](crate::app::App::invoke).
-    /// For custom event handling (streaming to web clients, etc.), use
-    /// [`with_options_and_bus()`](Self::with_options_and_bus) instead.
-    ///
-    /// # Parameters
-    ///
-    /// * `app` - The compiled workflow graph
-    /// * `checkpointer_type` - Persistence strategy (InMemory or SQLite)
-    ///
-    /// # Returns
-    ///
-    /// An AppRunner with:
-    /// - Default EventBus (stdout sink only)
-    /// - Autosave enabled
-    /// - Event listener started
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// # use weavegraph::app::App;
-    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
-    /// use weavegraph::state::VersionedState;
-    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
-    ///
-    /// let mut runner = AppRunner::new(app, CheckpointerType::InMemory).await;
-    ///
-    /// let session_id = "my-session".to_string();
-    /// runner.create_session(
-    ///     session_id.clone(),
-    ///     VersionedState::new_with_user_message("Hello")
-    /// ).await?;
-    ///
-    /// runner.run_until_complete(&session_id).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// - [`builder()`](Self::builder) - **Preferred**: Fluent builder API
-    /// - [`with_options_and_bus()`](Self::with_options_and_bus) - For custom EventBus
-    /// - [`App::invoke()`](crate::app::App::invoke) - Higher-level API using this internally
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AppRunner::builder().app(app).checkpointer(type).build().await instead"
-    )]
-    #[must_use]
-    #[allow(deprecated)]
-    pub async fn new(app: App, checkpointer_type: CheckpointerType) -> Self {
-        Self::with_options(app, checkpointer_type, true).await
-    }
-
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).build().await instead"
-    )]
-    #[must_use]
-    #[allow(deprecated)]
-    pub async fn from_arc(app: Arc<App>, checkpointer_type: CheckpointerType) -> Self {
-        Self::with_options_arc(app, checkpointer_type, true).await
-    }
-
     async fn create_checkpointer(
         checkpointer_type: CheckpointerType,
         sqlite_db_name: Option<String>,
@@ -579,217 +518,6 @@ impl AppRunner {
                 }
             }
         }
-    }
-
-    /// Create with explicit checkpointer + autosave toggle
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).build().await instead"
-    )]
-    pub async fn with_options(
-        app: App,
-        checkpointer_type: CheckpointerType,
-        autosave: bool,
-    ) -> Self {
-        let bus = app.runtime_config().event_bus.build_event_bus();
-        let app = Arc::new(app);
-        Self::with_arc_and_bus(app, checkpointer_type, None, autosave, bus, true).await
-    }
-
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).build().await instead"
-    )]
-    pub async fn with_options_arc(
-        app: Arc<App>,
-        checkpointer_type: CheckpointerType,
-        autosave: bool,
-    ) -> Self {
-        let bus = app.runtime_config().event_bus.build_event_bus();
-        Self::with_arc_and_bus(app, checkpointer_type, None, autosave, bus, true).await
-    }
-
-    /// Create an AppRunner with a custom EventBus for advanced event handling.
-    ///
-    /// Use this method when you need to stream events to custom sinks (e.g., web clients,
-    /// logging systems, monitoring dashboards). This is the **preferred method** for
-    /// production applications that need real-time event streaming.
-    ///
-    /// # Why Use This Instead of `App.invoke()`?
-    ///
-    /// - `App.invoke()` uses a **default EventBus** (stdout only)
-    /// - This method lets you **inject a custom EventBus** with multiple sinks
-    /// - Essential for streaming events to web clients via SSE, WebSocket, etc.
-    /// - Allows per-request event isolation in web servers
-    ///
-    /// # Architecture
-    ///
-    /// The EventBus is a **runtime concern** managed by `AppRunner`, not `App`:
-    ///
-    /// ```text
-    /// GraphBuilder → App (graph structure)
-    ///                 ↓
-    ///      AppRunner::with_options_and_bus(app, ..., custom_bus)
-    ///                 ↓
-    ///      AppRunner { app, event_bus: custom_bus }
-    ///                 ↓
-    ///      NodeContext gets event_emitter
-    ///                 ↓
-    ///      Events → EventBus → Your custom sinks
-    /// ```
-    ///
-    /// This design allows multiple AppRunners to share the same App with different
-    /// EventBus configurations (e.g., one EventBus per HTTP client connection).
-    ///
-    /// # Parameters
-    ///
-    /// * `app` - The compiled workflow graph
-    /// * `checkpointer_type` - Persistence strategy (InMemory or SQLite)
-    /// * `autosave` - Whether to automatically save checkpoints after each step
-    /// * `event_bus` - Your custom EventBus with desired sinks
-    /// * `start_listener` - Whether to start the EventBus listener immediately
-    ///
-    /// # Returns
-    ///
-    /// A configured `AppRunner` ready to execute workflows with custom event handling.
-    ///
-    /// # Examples
-    ///
-    /// ## Streaming Events to Web Clients (SSE)
-    ///
-    /// ```rust,no_run
-    /// use weavegraph::event_bus::{EventBus, ChannelSink, StdOutSink};
-    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
-    /// use weavegraph::state::VersionedState;
-    /// # use weavegraph::app::App;
-    /// # async fn example(app: App) -> Result<(), Box<dyn std::error::Error>> {
-    ///
-    /// // Create a streaming channel (one per client in production)
-    /// let (tx, rx) = flume::unbounded();
-    ///
-    /// // Create EventBus with both stdout and channel sinks
-    /// let bus = EventBus::with_sinks(vec![
-    ///     Box::new(StdOutSink::default()),    // For server logs
-    ///     Box::new(ChannelSink::new(tx)),     // For client streaming
-    /// ]);
-    ///
-    /// // Create runner with custom EventBus
-    /// let mut runner = AppRunner::with_options_and_bus(
-    ///     app,
-    ///     CheckpointerType::InMemory,
-    ///     false,  // Don't autosave
-    ///     bus,    // Our custom EventBus
-    ///     true,   // Start listener
-    /// ).await;
-    ///
-    /// // Run workflow - events stream to the channel
-    /// let session_id = "client-123".to_string();
-    /// let initial_state = VersionedState::new_with_user_message("Process this");
-    /// runner.create_session(session_id.clone(), initial_state).await?;
-    ///
-    /// // Consume events in parallel
-    /// tokio::spawn(async move {
-    ///     while let Ok(event) = rx.recv_async().await {
-    ///         // Send to web client via SSE, WebSocket, etc.
-    ///         println!("Stream to client: {:?}", event);
-    ///     }
-    /// });
-    ///
-    /// runner.run_until_complete(&session_id).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// ## Per-Request Event Isolation (Web Server Pattern)
-    ///
-    /// ```rust,no_run
-    /// use std::sync::Arc;
-    /// use weavegraph::event_bus::{EventBus, ChannelSink};
-    /// use weavegraph::runtimes::{AppRunner, CheckpointerType};
-    /// use weavegraph::state::VersionedState;
-    /// # use weavegraph::app::App;
-    /// # async fn handle_request(app: Arc<App>, request_id: String) -> Result<(), Box<dyn std::error::Error>> {
-    ///
-    /// // Each request gets its own EventBus and channel
-    /// let (tx, rx) = flume::unbounded();
-    /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
-    ///
-    /// // Clone the app (cheap Arc clone), create isolated runner
-    /// let mut runner = AppRunner::with_options_and_bus(
-    ///     Arc::try_unwrap(app.clone()).unwrap_or_else(|arc| (*arc).clone()),
-    ///     CheckpointerType::InMemory,
-    ///     false,
-    ///     bus,
-    ///     true,
-    /// ).await;
-    ///
-    /// let session_id = format!("request-{}", request_id);
-    /// let initial = VersionedState::new_with_user_message("User request");
-    /// runner.create_session(session_id.clone(), initial).await?;
-    ///
-    /// // Events are isolated to this request's channel
-    /// runner.run_until_complete(&session_id).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// # See Also
-    ///
-    /// - [`App::invoke()`](crate::app::App::invoke) - Simple execution with default EventBus
-    /// - [`EventBus::with_sinks()`](crate::event_bus::EventBus::with_sinks) - Create EventBus with custom sinks
-    /// - [`ChannelSink`](crate::event_bus::ChannelSink) - Stream events to async channels
-    /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AppRunner::builder().app(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead"
-    )]
-    pub async fn with_options_and_bus(
-        app: App,
-        checkpointer_type: CheckpointerType,
-        autosave: bool,
-        event_bus: EventBus,
-        start_listener: bool,
-    ) -> Self {
-        let app = Arc::new(app);
-        Self::with_arc_and_bus(
-            app,
-            checkpointer_type,
-            None,
-            autosave,
-            event_bus,
-            start_listener,
-        )
-        .await
-    }
-
-    /// Variant that accepts a preconfigured EventBus for an existing `Arc<App>`.
-    ///
-    /// Same as [`with_options_and_bus()`](Self::with_options_and_bus) but accepts
-    /// an `Arc<App>` to avoid unnecessary cloning when you already have the app
-    /// wrapped in an Arc.
-    ///
-    /// See [`with_options_and_bus()`](Self::with_options_and_bus) for detailed
-    /// documentation and examples.
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AppRunner::builder().app_arc(app).checkpointer(type).autosave(bool).event_bus(bus).start_listener(bool).build().await instead"
-    )]
-    pub async fn with_options_arc_and_bus(
-        app: Arc<App>,
-        checkpointer_type: CheckpointerType,
-        autosave: bool,
-        event_bus: EventBus,
-        start_listener: bool,
-    ) -> Self {
-        Self::with_arc_and_bus(
-            app,
-            checkpointer_type,
-            None,
-            autosave,
-            event_bus,
-            start_listener,
-        )
-        .await
     }
 
     async fn with_arc_and_bus(

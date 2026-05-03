@@ -1,6 +1,8 @@
+//! Reducer that appends incoming [`ErrorEvent`](crate::channels::errors::ErrorEvent) entries to the errors channel.
 use super::Reducer;
 use crate::{channels::Channel, node::NodePartial, state::VersionedState};
 
+/// Reducer that appends error events from a [`NodePartial`](crate::node::NodePartial) to the state errors channel.
 #[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub struct AddErrors;
 
