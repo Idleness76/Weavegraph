@@ -85,7 +85,8 @@ fi
 run_check "cargo doc (nightly)" "RUSTDOCFLAGS='--cfg docsrs -D warnings' cargo +nightly doc --workspace --all-features --no-deps"
 
 # 5. Cargo semver-checks (blocking)
-run_check "cargo semver-checks" "cargo semver-checks check-release --workspace"
+# Note: cargo-semver-checks requires rustc >= 1.91.0; run on stable, not pinned MSRV
+run_check "cargo semver-checks" "cargo +stable semver-checks check-release --workspace"
 
 # 6. Cargo deny (blocking)
 run_check "cargo deny" "cargo deny check"

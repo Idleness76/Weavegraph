@@ -1,3 +1,4 @@
+//! [`EventEmitter`] trait and [`EmitterError`] for publishing events to the bus.
 use std::fmt;
 use thiserror::Error;
 
@@ -13,6 +14,7 @@ pub trait EventEmitter: Send + Sync + fmt::Debug {
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum EmitterError {
+    /// The event hub has been shut down and no longer accepts events.
     #[error("event hub closed")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -22,6 +24,7 @@ pub enum EmitterError {
         )
     )]
     Closed,
+    /// Event emission failed for a reason other than hub closure.
     #[error("event emission failed: {0}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -34,6 +37,7 @@ pub enum EmitterError {
 }
 
 impl EmitterError {
+    /// Construct an [`EmitterError::Other`] from any string-convertible error message.
     pub fn other(error: impl Into<String>) -> Self {
         Self::Other(error.into())
     }

@@ -19,7 +19,10 @@ pub enum IdError {
         feature = "diagnostics",
         diagnostic(code(weavegraph::id::invalid_format))
     )]
-    InvalidFormat { format: String },
+    InvalidFormat {
+        /// The invalid format string that caused the error.
+        format: String,
+    },
 
     /// ID generation failed due to system constraints.
     #[error("ID generation failed: {reason}")]
@@ -27,7 +30,10 @@ pub enum IdError {
         feature = "diagnostics",
         diagnostic(code(weavegraph::id::generation_failed))
     )]
-    GenerationFailed { reason: String },
+    GenerationFailed {
+        /// Human-readable description of why generation failed.
+        reason: String,
+    },
 }
 
 /// Configuration for ID generation behavior.

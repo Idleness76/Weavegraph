@@ -107,9 +107,11 @@ pub struct StepQueryResult {
     pub page_info: PageInfo,
 }
 
+/// Errors that can occur within the SQLite-backed checkpointer.
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
 pub enum SQLiteCheckpointerError {
+    /// An underlying SQLx database error.
     #[error("SQLx error: {0}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -120,6 +122,7 @@ pub enum SQLiteCheckpointerError {
     )]
     Sqlx(#[from] sqlx::Error),
 
+    /// A JSON serialization or deserialization error.
     #[error("JSON serialization error: {0}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -130,6 +133,7 @@ pub enum SQLiteCheckpointerError {
     )]
     Serde(#[from] serde_json::Error),
 
+    /// A required field was missing from a persisted row.
     #[error("Missing persisted field: {0}")]
     #[cfg_attr(
         feature = "diagnostics",
@@ -140,10 +144,12 @@ pub enum SQLiteCheckpointerError {
     )]
     Missing(&'static str),
 
+    /// A generic backend error.
     #[error("Backend error: {0}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::sqlite::backend)))]
     Backend(String),
 
+    /// Any other error not covered by the above variants.
     #[error("Other error: {0}")]
     #[cfg_attr(feature = "diagnostics", diagnostic(code(weavegraph::sqlite::other)))]
     Other(String),

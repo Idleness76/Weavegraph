@@ -1,3 +1,4 @@
+//! Framework-agnostic traits for LLM providers (non-streaming and streaming).
 use crate::message::Message;
 use async_trait::async_trait;
 use futures_util::stream::BoxStream;
@@ -8,7 +9,9 @@ pub type LlmError = Box<dyn std::error::Error + Send + Sync + 'static>;
 /// Completed response from an LLM provider.
 #[derive(Clone, Debug, Default)]
 pub struct LlmResponse {
+    /// The generated text content returned by the LLM.
     pub content: String,
+    /// Optional provider-specific metadata (token counts, finish reason, etc.).
     pub metadata: serde_json::Value,
 }
 

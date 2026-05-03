@@ -125,7 +125,7 @@ fn test_builder_fluent_api() {
 fn test_runtime_config_integration() {
     use weavegraph::runtimes::RuntimeConfig;
 
-    let config = RuntimeConfig::new(Some("test_session".into()), None, None);
+    let config = RuntimeConfig::new(Some("test_session".into()), None);
 
     let builder = GraphBuilder::new()
         .add_edge(NodeKind::Start, NodeKind::End)

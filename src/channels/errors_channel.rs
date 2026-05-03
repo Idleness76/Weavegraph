@@ -2,6 +2,7 @@ use super::Channel;
 use super::errors::ErrorEvent;
 use serde::{Deserialize, Serialize};
 
+/// Channel that accumulates [`ErrorEvent`] entries for the current workflow execution.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorsChannel {
     value: Vec<ErrorEvent>,
@@ -9,6 +10,7 @@ pub struct ErrorsChannel {
 }
 
 impl ErrorsChannel {
+    /// Create a new `ErrorsChannel` with the given events and version counter.
     pub fn new(events: Vec<ErrorEvent>, version: u32) -> Self {
         Self {
             value: events,

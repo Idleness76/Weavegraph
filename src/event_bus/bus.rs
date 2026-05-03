@@ -1,3 +1,4 @@
+//! [`EventBus`] implementation: fan-out broadcast to registered [`EventSink`] workers.
 use std::io;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -76,13 +77,13 @@ use chrono::Utc;
 /// ]);
 ///
 /// // Pass EventBus to AppRunner
-/// let mut runner = AppRunner::with_options_and_bus(
-///     app,
-///     CheckpointerType::InMemory,
-///     false,
-///     bus,  // Custom EventBus
-///     true,
-/// ).await;
+/// let mut runner = AppRunner::builder()
+///     .app(app)
+///     .checkpointer(CheckpointerType::InMemory)
+///     .autosave(false)
+///     .event_bus(bus)
+///     .build()
+///     .await;
 ///
 /// let session_id = "client-123".to_string();
 /// runner.create_session(
@@ -120,13 +121,13 @@ use chrono::Utc;
 /// let bus = EventBus::with_sinks(vec![Box::new(ChannelSink::new(tx))]);
 ///
 /// // Reuse the App, create new runner with isolated EventBus
-/// let mut runner = AppRunner::with_options_and_bus(
-///     Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()),
-///     CheckpointerType::InMemory,
-///     false,
-///     bus,  // Isolated EventBus for this request
-///     true,
-/// ).await;
+/// let mut runner = AppRunner::builder()
+///     .app(Arc::try_unwrap(app).unwrap_or_else(|arc| (*arc).clone()))
+///     .checkpointer(CheckpointerType::InMemory)
+///     .autosave(false)
+///     .event_bus(bus)
+///     .build()
+///     .await;
 ///
 /// // Run workflow - events are isolated to this request
 /// let session_id = uuid::Uuid::new_v4().to_string();
@@ -148,11 +149,15 @@ use chrono::Utc;
 ///
 /// # See Also
 ///
-/// - [`AppRunner::with_options_and_bus()`](crate::runtimes::runner::AppRunner::with_options_and_bus) - How to use custom EventBus
+/// - [`AppRunner::builder()`](crate::runtimes::runner::AppRunner::builder) - How to use custom EventBus
 /// - [`ChannelSink`](crate::event_bus::ChannelSink) - For streaming events
 /// - Example: `examples/streaming_events.rs` - Complete streaming demonstration
 const DEFAULT_BUFFER_CAPACITY: usize = 1024;
 
+/// Central event broadcasting system that fans out workflow events to registered sinks.
+///
+/// Create with [`EventBus::with_sink`] or [`EventBus::with_sinks`] and pass to
+/// [`AppRunner`](crate::runtimes::runner::AppRunner) for per-request event isolation.
 pub struct EventBus {
     sinks: Arc<Mutex<Vec<SinkEntry>>>,
     hub: Arc<EventHub>,
@@ -174,6 +179,7 @@ impl Default for EventBus {
 }
 
 impl EventBus {
+    /// Create an `EventBus` with a single sink.
     pub fn with_sink<T>(sink: T) -> Self
     where
         T: EventSink + 'static,
@@ -181,6 +187,7 @@ impl EventBus {
         Self::with_sinks(vec![Box::new(sink)])
     }
 
+    /// Create an `EventBus` backed by the provided collection of sinks.
     pub fn with_sinks(sinks: Vec<Box<dyn EventSink>>) -> Self {
         Self::with_capacity(sinks, DEFAULT_BUFFER_CAPACITY)
     }
@@ -217,6 +224,7 @@ impl EventBus {
         }
     }
 
+    /// Add a typed sink to this bus, starting a worker if the bus is already live.
     pub fn add_sink<T: EventSink + 'static>(&self, sink: T) {
         self.add_boxed_sink(Box::new(sink));
     }
@@ -240,6 +248,7 @@ impl EventBus {
         sinks_guard.push(entry);
     }
 
+    /// Return an [`EventEmitter`] handle for publishing events to this bus.
     pub fn get_emitter(&self) -> Arc<dyn EventEmitter> {
         Arc::new(self.hub.emitter())
     }
@@ -249,6 +258,7 @@ impl EventBus {
         self.hub.metrics()
     }
 
+    /// Subscribe to the event stream, starting workers if not yet started.
     pub fn subscribe(&self) -> EventStream {
         self.listen_for_events();
         self.hub.subscribe()
@@ -320,6 +330,7 @@ impl EventBus {
         }
     }
 
+    /// Close the underlying hub channel, signalling all subscribers that the stream has ended.
     pub fn close_channel(&self) {
         self.hub.close();
     }

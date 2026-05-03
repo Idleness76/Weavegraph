@@ -9,6 +9,7 @@ use crate::{
 };
 use tracing::instrument;
 
+/// Registry mapping channel types to ordered lists of reducers.
 #[derive(Clone)]
 pub struct ReducerRegistry {
     reducer_map: FxHashMap<ChannelType, Vec<Arc<dyn Reducer>>>,
@@ -100,6 +101,7 @@ impl ReducerRegistry {
     }
 
     #[instrument(skip(self, state, to_update), err)]
+    /// Apply all reducers for `channel_type` to `state` using `to_update` as the delta.
     pub fn try_update(
         &self,
         channel_type: ChannelType,
@@ -122,6 +124,7 @@ impl ReducerRegistry {
     }
 
     #[instrument(skip(self, state, merged_updates), err)]
+    /// Apply all registered reducers across all channels to `state`.
     pub fn apply_all(
         &self,
         state: &mut VersionedState,

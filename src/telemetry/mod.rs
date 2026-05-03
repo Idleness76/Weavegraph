@@ -1,10 +1,14 @@
+//! Telemetry formatting utilities for rendering workflow events as human-readable or machine-readable output.
 use crate::channels::errors::ErrorEvent;
 use crate::event_bus::Event;
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 
+/// ANSI escape code for green context text in telemetry output.
 pub const CONTEXT_COLOR: &str = "\x1b[32m"; // green
+/// ANSI escape code for magenta line text in telemetry output.
 pub const LINE_COLOR: &str = "\x1b[35m"; // magenta / dark pink
+/// ANSI escape code to reset terminal color after colored output.
 pub const RESET_COLOR: &str = "\x1b[0m";
 
 static IS_STDERR_TERMINAL: OnceLock<bool> = OnceLock::new();
@@ -73,18 +77,24 @@ impl FormatterMode {
 /// Rendered output for a telemetry item that can be consumed by sinks.
 #[derive(Clone, Debug, Default)]
 pub struct EventRender {
+    /// Optional context prefix shown before the event lines.
     pub context: Option<String>,
+    /// One or more formatted lines for this event.
     pub lines: Vec<String>,
 }
 
 impl EventRender {
+    /// Concatenate all lines into a single string.
     pub fn join_lines(&self) -> String {
         self.lines.join("")
     }
 }
 
+/// Trait for formatting workflow events and errors into rendered output.
 pub trait TelemetryFormatter: Send + Sync {
+    /// Render a single [`Event`] into an [`EventRender`].
     fn render_event(&self, event: &Event) -> EventRender;
+    /// Render a slice of [`ErrorEvent`]s, one [`EventRender`] per error.
     fn render_errors(&self, errors: &[ErrorEvent]) -> Vec<EventRender>;
 }
 
