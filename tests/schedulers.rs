@@ -1,10 +1,36 @@
+use async_trait::async_trait;
 use rustc_hash::FxHashMap;
+use serde_json::json;
 use std::sync::Arc;
 use weavegraph::event_bus::EventBus;
-use weavegraph::schedulers::scheduler::{Scheduler, SchedulerState, StepRunResult};
+use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
+use weavegraph::schedulers::scheduler::{
+    Scheduler, SchedulerRunContext, SchedulerState, StepRunResult,
+};
+use weavegraph::state::StateSnapshot;
 use weavegraph::types::NodeKind;
+use weavegraph::utils::clock::MockClock;
 mod common;
 use common::{FailingNode, create_test_snapshot, make_delayed_registry, make_test_registry};
+
+#[derive(Debug, Clone)]
+struct SchedulerContextProbe;
+
+#[async_trait]
+impl Node for SchedulerContextProbe {
+    async fn run(
+        &self,
+        _snapshot: StateSnapshot,
+        ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        let mut extra = weavegraph::utils::collections::new_extra_map();
+        extra.insert("node_id".to_string(), json!(ctx.node_id));
+        extra.insert("step".to_string(), json!(ctx.step));
+        extra.insert("now_unix_ms".to_string(), json!(ctx.now_unix_ms()));
+        extra.insert("invocation_id".to_string(), json!(ctx.invocation_id()));
+        Ok(NodePartial::new().with_extra(extra))
+    }
+}
 
 #[tokio::test]
 async fn test_superstep_propagates_node_error() {
@@ -26,7 +52,7 @@ async fn test_superstep_propagates_node_error() {
             frontier,
             snap,
             1,
-            event_bus.get_emitter(),
+            SchedulerRunContext::new(event_bus.get_emitter()),
         )
         .await;
     match res {
@@ -88,7 +114,7 @@ async fn test_superstep_skips_end_and_nochange() {
             frontier.clone(),
             snap.clone(),
             1,
-            event_bus.get_emitter(),
+            SchedulerRunContext::new(event_bus.get_emitter()),
         )
         .await
         .unwrap();
@@ -109,7 +135,7 @@ async fn test_superstep_skips_end_and_nochange() {
             frontier.clone(),
             snap.clone(),
             2,
-            event_bus.get_emitter(),
+            SchedulerRunContext::new(event_bus.get_emitter()),
         )
         .await
         .unwrap();
@@ -131,7 +157,7 @@ async fn test_superstep_skips_end_and_nochange() {
             frontier.clone(),
             snap_bump,
             3,
-            event_bus.get_emitter(),
+            SchedulerRunContext::new(event_bus.get_emitter()),
         )
         .await
         .unwrap();
@@ -156,7 +182,7 @@ async fn test_superstep_outputs_order_agnostic() {
             frontier.clone(),
             snap,
             1,
-            event_bus.get_emitter(),
+            SchedulerRunContext::new(event_bus.get_emitter()),
         )
         .await
         .unwrap();
@@ -191,7 +217,7 @@ async fn test_superstep_serialized_with_limit_1() {
             frontier.clone(),
             snap,
             1,
-            event_bus.get_emitter(),
+            SchedulerRunContext::new(event_bus.get_emitter()),
         )
         .await
         .unwrap();
@@ -203,4 +229,50 @@ async fn test_superstep_serialized_with_limit_1() {
 
     let output_ids: Vec<_> = res.outputs.iter().map(|(id, _)| id.clone()).collect();
     assert_eq!(output_ids, res.ran_nodes);
+}
+
+#[tokio::test]
+async fn test_scheduler_run_context_injects_clock_and_invocation_id() {
+    let sched = Scheduler::new(1);
+    let mut state = SchedulerState::default();
+    let mut nodes: FxHashMap<NodeKind, Arc<dyn Node>> = FxHashMap::default();
+    nodes.insert(
+        NodeKind::Custom("probe".into()),
+        Arc::new(SchedulerContextProbe),
+    );
+    let event_bus = EventBus::default();
+
+    let result = sched
+        .superstep(
+            &mut state,
+            &nodes,
+            vec![NodeKind::Custom("probe".into())],
+            create_test_snapshot(1, 1),
+            9,
+            SchedulerRunContext::new(event_bus.get_emitter())
+                .with_clock(Arc::new(MockClock::new(1234)))
+                .with_invocation_id("scheduler-session"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result.outputs.len(), 1);
+    let extra = result.outputs[0]
+        .1
+        .extra
+        .as_ref()
+        .expect("probe should emit extra");
+    assert_eq!(
+        extra.get("node_id"),
+        Some(&json!(format!(
+            "{:?}",
+            NodeKind::Custom("probe".to_string())
+        )))
+    );
+    assert_eq!(extra.get("step"), Some(&json!(9)));
+    assert_eq!(extra.get("now_unix_ms"), Some(&json!(1_234_000)));
+    assert_eq!(
+        extra.get("invocation_id"),
+        Some(&json!("scheduler-session"))
+    );
 }

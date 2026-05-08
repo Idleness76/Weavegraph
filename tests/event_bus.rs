@@ -9,8 +9,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 use weavegraph::channels::Channel;
 use weavegraph::event_bus::{
-    ChannelSink, Event, EventBus, EventEmitter, EventSink, JsonLinesSink, LLMStreamingEvent,
-    MemorySink, NodeEvent, STREAM_END_SCOPE,
+    ChannelSink, Event, EventBus, EventEmitter, EventSink, INVOCATION_END_SCOPE, JsonLinesSink,
+    LLMStreamingEvent, MemorySink, NodeEvent, STREAM_END_SCOPE,
 };
 use weavegraph::node::NodeContext;
 
@@ -541,11 +541,7 @@ impl EventEmitter for RecordingEmitter {
 fn node_context_emits_all_event_variants() {
     let emitter = Arc::new(RecordingEmitter::new());
     let event_emitter: Arc<dyn EventEmitter> = emitter.clone();
-    let ctx = NodeContext {
-        node_id: "node-a".to_string(),
-        step: 7,
-        event_emitter,
-    };
+    let ctx = NodeContext::new("node-a", 7, event_emitter);
 
     ctx.emit("progress", "started").unwrap();
     ctx.emit_diagnostic("diagnostic", "all good").unwrap();
@@ -627,6 +623,40 @@ fn node_context_emits_all_event_variants() {
     }
 }
 
+#[test]
+fn node_event_metadata_defaults_when_deserializing_legacy_payloads() {
+    let legacy = r#"{"node_id":"legacy-node","step":3,"scope":"legacy","message":"old"}"#;
+    let event: NodeEvent = serde_json::from_str(legacy).expect("legacy node event should decode");
+
+    assert_eq!(event.node_id(), Some("legacy-node"));
+    assert_eq!(event.step(), Some(3));
+    assert_eq!(event.scope(), "legacy");
+    assert_eq!(event.message(), "old");
+    assert!(event.metadata().is_empty());
+}
+
+#[test]
+fn node_event_runtime_metadata_is_preserved_and_structured_fields_win_collisions() {
+    let mut metadata = FxHashMap::default();
+    metadata.insert("custom".to_string(), json!({ "nested": true }));
+    metadata.insert("node_id".to_string(), json!("spoofed-node"));
+    metadata.insert("step".to_string(), json!(0));
+
+    let event = Event::node_message_with_metadata("real-node", 42, "scope", "message", metadata);
+    let value = event.to_json_value();
+
+    assert_eq!(value["metadata"]["custom"], json!({ "nested": true }));
+    assert_eq!(value["metadata"]["node_id"], "real-node");
+    assert_eq!(value["metadata"]["step"], 42);
+}
+
+#[test]
+fn stream_scope_constants_are_distinct_and_stable() {
+    assert_eq!(STREAM_END_SCOPE, "__weavegraph_stream_end__");
+    assert_eq!(INVOCATION_END_SCOPE, "__weavegraph_invocation_end__");
+    assert_ne!(STREAM_END_SCOPE, INVOCATION_END_SCOPE);
+}
+
 fn text_strategy() -> impl Strategy<Value = String> {
     proptest::string::string_regex("[A-Za-z0-9 _-]{0,32}").unwrap()
 }
@@ -647,7 +677,7 @@ fn event_strategy() -> impl Strategy<Value = Event> {
     let diagnostic = (text_strategy(), text_strategy())
         .prop_map(|(scope, message)| Event::diagnostic(scope, message));
 
-    let node = (
+    let plain_node = (
         prop::option::of(text_strategy()),
         prop::option::of(any::<u64>()),
         text_strategy(),
@@ -655,6 +685,18 @@ fn event_strategy() -> impl Strategy<Value = Event> {
     )
         .prop_map(|(node_id, step, scope, message)| {
             Event::Node(NodeEvent::new(node_id, step, scope, message))
+        });
+
+    let node_with_metadata = (
+        text_strategy(),
+        any::<u64>(),
+        text_strategy(),
+        text_strategy(),
+        prop::collection::hash_map(text_strategy(), json_value_strategy(), 0..4),
+    )
+        .prop_map(|(node_id, step, scope, message, metadata)| {
+            let meta: FxHashMap<String, Value> = metadata.into_iter().collect();
+            Event::node_message_with_metadata(node_id, step, scope, message, meta)
         });
 
     let llm = (
@@ -682,7 +724,7 @@ fn event_strategy() -> impl Strategy<Value = Event> {
             },
         );
 
-    prop_oneof![diagnostic, node, llm]
+    prop_oneof![diagnostic, plain_node, node_with_metadata, llm]
 }
 
 proptest! {

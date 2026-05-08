@@ -399,11 +399,7 @@ async fn main() -> ExampleResult<()> {
 
     let emitter = event_bus.get_emitter();
 
-    let ctx1 = NodeContext {
-        node_id: "api_call".to_string(),
-        step: 1,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx1 = NodeContext::new("api_call", 1, Arc::clone(&emitter));
 
     // Demonstrate both success and failure scenarios
     match api_node.run(state.snapshot(), ctx1).await {
@@ -449,11 +445,7 @@ async fn main() -> ExampleResult<()> {
         max_retries: 2,
     };
 
-    let ctx1_1 = NodeContext {
-        node_id: "metrics_api".to_string(),
-        step: 1,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx1_1 = NodeContext::new("metrics_api", 1, Arc::clone(&emitter));
 
     match failing_api_node.run(state.snapshot(), ctx1_1).await {
         Ok(result) => {
@@ -487,11 +479,7 @@ async fn main() -> ExampleResult<()> {
         },
     };
 
-    let ctx2 = NodeContext {
-        node_id: "router".to_string(),
-        step: 2,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx2 = NodeContext::new("router", 2, Arc::clone(&emitter));
 
     let result2 = router_node.run(state.snapshot(), ctx2).await?;
     if let Some(messages) = result2.messages {
@@ -529,11 +517,7 @@ async fn main() -> ExampleResult<()> {
         ],
     };
 
-    let ctx3 = NodeContext {
-        node_id: "transformer".to_string(),
-        step: 3,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx3 = NodeContext::new("transformer", 3, Arc::clone(&emitter));
 
     let result3 = transformer_node.run(state.snapshot(), ctx3).await?;
     if let Some(messages) = result3.messages {

@@ -17,6 +17,14 @@ use thiserror::Error;
 /// Unified reducer trait: every reducer mutates VersionedState using a NodePartial delta.
 /// Channels currently implemented: messages (append) and extra (shallow JSON map merge).
 pub trait Reducer: Send + Sync {
+    /// Stable-ish reducer identity included in graph definition metadata.
+    ///
+    /// The default is the concrete Rust type path. Custom reducers can override this
+    /// with a durable label when the type path is too noisy for audit manifests.
+    fn definition_label(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     /// Apply the partial update `update` to `state`, mutating it in place.
     fn apply(&self, state: &mut VersionedState, update: &NodePartial);
 }

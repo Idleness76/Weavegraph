@@ -100,6 +100,30 @@ impl ReducerRegistry {
         self
     }
 
+    /// Return a deterministic summary of registered reducers for metadata hashing.
+    ///
+    /// Reducer labels are recorded in registration order for each channel. It
+    /// changes when reducers are added, removed, reordered, or replaced with a
+    /// reducer that reports a different [`Reducer::definition_label`].
+    #[must_use]
+    pub fn definition_signature(&self) -> Vec<String> {
+        let mut signature: Vec<String> = self
+            .reducer_map
+            .iter()
+            .map(|(channel, reducers)| {
+                let labels = reducers
+                    .iter()
+                    .enumerate()
+                    .map(|(index, reducer)| format!("{index}:{}", reducer.definition_label()))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!("{}:[{}]", channel, labels)
+            })
+            .collect();
+        signature.sort();
+        signature
+    }
+
     #[instrument(skip(self, state, to_update), err)]
     /// Apply all reducers for `channel_type` to `state` using `to_update` as the delta.
     pub fn try_update(

@@ -2,6 +2,7 @@
 use std::sync::Arc;
 
 use crate::event_bus::{EventBus, EventSink, MemorySink, StdOutSink};
+use crate::utils::clock::Clock;
 
 use super::Checkpointer;
 
@@ -16,6 +17,8 @@ pub struct RuntimeConfig {
     pub sqlite_db_name: Option<String>,
     /// Event bus configuration used to build the [`EventBus`].
     pub event_bus: EventBusConfig,
+    /// Optional runtime clock injected into node execution contexts.
+    pub clock: Option<Arc<dyn Clock>>,
 }
 
 impl std::fmt::Debug for RuntimeConfig {
@@ -25,6 +28,7 @@ impl std::fmt::Debug for RuntimeConfig {
             .field("checkpointer_custom", &self.checkpointer_custom.is_some())
             .field("sqlite_db_name", &self.sqlite_db_name)
             .field("event_bus", &self.event_bus)
+            .field("clock", &self.clock.is_some())
             .finish()
     }
 }
@@ -36,6 +40,7 @@ impl Default for RuntimeConfig {
             checkpointer_custom: None,
             sqlite_db_name: Self::resolve_sqlite_db_name(None),
             event_bus: EventBusConfig::default(),
+            clock: None,
         }
     }
 }
@@ -56,6 +61,7 @@ impl RuntimeConfig {
             checkpointer_custom: None,
             sqlite_db_name: Self::resolve_sqlite_db_name(sqlite_db_name),
             event_bus: EventBusConfig::default(),
+            clock: None,
         }
     }
 
@@ -70,6 +76,50 @@ impl RuntimeConfig {
     /// Return the custom checkpointer if one has been set.
     pub fn custom_checkpointer(&self) -> Option<Arc<dyn Checkpointer>> {
         self.checkpointer_custom.clone()
+    }
+
+    #[must_use]
+    /// Set the runtime clock injected into [`NodeContext`](crate::node::NodeContext).
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = Some(clock);
+        self
+    }
+
+    #[must_use]
+    /// Return the configured runtime clock, if any.
+    pub fn clock(&self) -> Option<Arc<dyn Clock>> {
+        self.clock.clone()
+    }
+
+    #[must_use]
+    /// Return a descriptor for the configured clock mode.
+    pub fn clock_mode(&self) -> &'static str {
+        if self.clock.is_some() {
+            "configured"
+        } else {
+            "unset"
+        }
+    }
+
+    /// Return a deterministic hash of runtime configuration metadata.
+    #[must_use]
+    pub fn config_hash(&self) -> String {
+        let mut parts = vec!["weavegraph-runtime-config-v1".to_string()];
+        parts.push(format!(
+            "session_id:{}",
+            self.session_id.as_deref().unwrap_or("")
+        ));
+        parts.push(format!(
+            "sqlite_db_name:{}",
+            self.sqlite_db_name.as_deref().unwrap_or("")
+        ));
+        parts.push(format!(
+            "custom_checkpointer:{}",
+            self.checkpointer_custom.is_some()
+        ));
+        parts.push(format!("clock:{}", self.clock_mode()));
+        parts.extend(self.event_bus.metadata_signature());
+        hash_parts(&parts)
     }
 
     #[must_use]
@@ -90,6 +140,20 @@ impl RuntimeConfig {
     pub fn with_memory_event_bus(self) -> Self {
         self.with_event_bus(EventBusConfig::with_memory_sink())
     }
+}
+
+fn hash_parts(parts: &[String]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for part in parts {
+        for byte in part.as_bytes().iter().copied().chain([0xff]) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    format!("{hash:016x}")
 }
 
 /// Selects the output target for an [`EventBusConfig`] sink entry.
@@ -159,6 +223,20 @@ impl EventBusConfig {
     /// Returns the configured sink list.
     pub fn sinks(&self) -> &[SinkConfig] {
         &self.sinks
+    }
+
+    /// Return deterministic metadata entries for this event bus configuration.
+    #[must_use]
+    pub fn metadata_signature(&self) -> Vec<String> {
+        let mut parts = vec![format!("event_buffer:{}", self.buffer_capacity)];
+        parts.extend(
+            self.sinks
+                .iter()
+                .enumerate()
+                .map(|(index, sink)| format!("event_sink:{index}:{sink:?}")),
+        );
+        parts.extend(self.diagnostics.metadata_signature());
+        parts
     }
 
     #[must_use]
@@ -238,6 +316,19 @@ impl DiagnosticsConfig {
     pub fn effective_capacity(&self, event_bus_capacity: usize) -> usize {
         self.buffer_capacity
             .unwrap_or_else(|| Self::normalize_capacity(event_bus_capacity))
+    }
+
+    fn metadata_signature(&self) -> Vec<String> {
+        vec![
+            format!("diagnostics_enabled:{}", self.enabled),
+            format!(
+                "diagnostics_capacity:{}",
+                self.buffer_capacity
+                    .map(|capacity| capacity.to_string())
+                    .unwrap_or_default()
+            ),
+            format!("diagnostics_emit_to_events:{}", self.emit_to_events),
+        ]
     }
 }
 

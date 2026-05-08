@@ -42,6 +42,7 @@ use crate::event_bus::EventEmitter;
 use crate::node::{Node, NodeContext, NodeError, NodePartial};
 use crate::state::StateSnapshot;
 use crate::types::NodeKind;
+use crate::utils::clock::Clock;
 use futures_util::stream::{self, StreamExt};
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -87,6 +88,44 @@ pub struct StepRunResult {
     pub skipped_nodes: Vec<NodeKind>,
     /// Outputs from nodes that ran: (node_kind, NodePartial)
     pub outputs: Vec<(NodeKind, NodePartial)>,
+}
+
+/// Runtime context passed to a scheduler superstep.
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct SchedulerRunContext {
+    /// Event emitter injected into node contexts.
+    pub event_emitter: Arc<dyn EventEmitter>,
+    /// Optional runtime clock injected into node contexts.
+    pub clock: Option<Arc<dyn Clock>>,
+    /// Optional invocation identifier injected into node contexts.
+    pub invocation_id: Option<String>,
+}
+
+impl SchedulerRunContext {
+    /// Create scheduler runtime context with only an event emitter.
+    #[must_use]
+    pub fn new(event_emitter: Arc<dyn EventEmitter>) -> Self {
+        Self {
+            event_emitter,
+            clock: None,
+            invocation_id: None,
+        }
+    }
+
+    /// Attach a runtime clock.
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = Some(clock);
+        self
+    }
+
+    /// Attach an invocation identifier.
+    #[must_use]
+    pub fn with_invocation_id(mut self, invocation_id: impl Into<String>) -> Self {
+        self.invocation_id = Some(invocation_id.into());
+        self
+    }
 }
 
 /// Tracks version information for nodes to enable intelligent scheduling.
@@ -467,7 +506,7 @@ impl Scheduler {
     /// * `frontier` - Vector of nodes eligible for execution this step
     /// * `snap` - Pre-barrier state snapshot for version gating
     /// * `step` - Current workflow step number (for context and logging)
-    /// * `event_emitter` - Cloneable handle for sending execution events
+    /// * `run_context` - Runtime context injected into node execution
     ///
     /// # Returns
     /// * `Ok(StepRunResult)` - Execution results with ran/skipped nodes and outputs
@@ -478,7 +517,7 @@ impl Scheduler {
     /// ```rust
     /// use weavegraph::channels::Channel;
     /// use weavegraph::event_bus::EventBus;
-    /// use weavegraph::schedulers::{Scheduler, SchedulerState};
+    /// use weavegraph::schedulers::{Scheduler, SchedulerRunContext, SchedulerState};
     /// use weavegraph::state::VersionedState;
     /// use weavegraph::types::NodeKind;
     /// use rustc_hash::FxHashMap;
@@ -499,7 +538,7 @@ impl Scheduler {
     ///     frontier,
     ///     snapshot,
     ///     1,
-    ///     event_bus.get_emitter(),
+    ///     SchedulerRunContext::new(event_bus.get_emitter()),
     /// ).await?;
     ///
     /// println!("Executed {} nodes, skipped {}",
@@ -514,7 +553,7 @@ impl Scheduler {
     /// - **Node Failures**: If any node returns an error, the entire superstep fails
     /// - **Task Panics**: Panicking nodes result in `SchedulerError::Join`
     /// - **Missing Nodes**: Panics if frontier contains nodes not in registry
-    #[instrument(skip(self, state, nodes, frontier, snap))]
+    #[instrument(skip(self, state, nodes, frontier, snap, run_context))]
     pub async fn superstep(
         &self,
         state: &mut SchedulerState,
@@ -522,7 +561,7 @@ impl Scheduler {
         frontier: Vec<NodeKind>,                    // frontier for this step
         snap: StateSnapshot,                        // pre-barrier snapshot
         step: u64,
-        event_emitter: Arc<dyn EventEmitter>,
+        run_context: SchedulerRunContext,
     ) -> Result<StepRunResult, SchedulerError> {
         // Partition frontier into to_run vs skipped using a skip predicate and version gating.
         let channels = Self::channel_versions(&snap);
@@ -565,11 +604,15 @@ impl Scheduler {
             .map(|(id_str, kind)| {
                 // SAFETY: We validated all nodes exist above, so this unwrap is safe.
                 let node = nodes.get(&kind).unwrap().clone();
-                let event_emitter = Arc::clone(&event_emitter);
+                let event_emitter = Arc::clone(&run_context.event_emitter);
+                let clock = run_context.clock.clone();
+                let invocation_id = run_context.invocation_id.clone();
                 let ctx = NodeContext {
                     node_id: id_str.clone(),
                     step,
                     event_emitter,
+                    clock,
+                    invocation_id,
                 };
                 let s = snap.clone();
                 async move {
