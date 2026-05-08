@@ -11,11 +11,7 @@ use weavegraph::utils::collections::new_extra_map;
 fn make_ctx(step: u64) -> (NodeContext, EventBus) {
     let event_bus = EventBus::default();
     event_bus.listen_for_events();
-    let ctx = NodeContext {
-        node_id: "test-node".to_string(),
-        step,
-        event_emitter: event_bus.get_emitter(),
-    };
+    let ctx = NodeContext::new("test-node", step, event_bus.get_emitter());
     (ctx, event_bus)
 }
 

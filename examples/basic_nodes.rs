@@ -261,11 +261,7 @@ async fn main() -> ExampleResult<()> {
 
     let emitter = event_bus.get_emitter();
 
-    let ctx1 = NodeContext {
-        node_id: "counter-1".to_string(),
-        step: 2,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx1 = NodeContext::new("counter-1", 2, Arc::clone(&emitter));
 
     let result1 = counter_node.run(state.snapshot(), ctx1).await?;
 
@@ -290,11 +286,7 @@ async fn main() -> ExampleResult<()> {
         min_message_count: 1,
     };
 
-    let ctx2 = NodeContext {
-        node_id: "validator-1".to_string(),
-        step: 3,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx2 = NodeContext::new("validator-1", 3, Arc::clone(&emitter));
 
     let result2 = validation_node.run(state.snapshot(), ctx2).await?;
 
@@ -308,11 +300,7 @@ async fn main() -> ExampleResult<()> {
     info!("\n📈 Running AggregatorNode...");
     let aggregator_node = AggregatorNode;
 
-    let ctx3 = NodeContext {
-        node_id: "aggregator-1".to_string(),
-        step: 4,
-        event_emitter: Arc::clone(&emitter),
-    };
+    let ctx3 = NodeContext::new("aggregator-1", 4, Arc::clone(&emitter));
 
     let result3 = aggregator_node.run(state.snapshot(), ctx3).await?;
 

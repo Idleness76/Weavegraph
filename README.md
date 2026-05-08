@@ -21,10 +21,13 @@ Weavegraph lets you build robust, concurrent, stateful workflows using a graph-b
 - Concurrent graph execution with dependency resolution
 - Type-safe, role-based message system
 - Versioned state with snapshot isolation
+- Typed state slots for schema-versioned JSON payloads
 - Structured error handling and diagnostics
 - Built-in event streaming and observability
-- Flexible persistence: SQLite or in-memory
+- Flexible persistence: SQLite, PostgreSQL, or in-memory
 - Conditional routing and dynamic edges
+- Iterative checkpointed sessions for repeated invocations
+- Replay conformance helpers and deterministic graph/run metadata
 - Ergonomic APIs and comprehensive examples
 
 ## Install
@@ -33,10 +36,10 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-weavegraph = "0.3"
+weavegraph = "0.5"
 ```
 
-> **Note:** Examples and instructions in this README are current as of 0.3.x. For upgrading from 0.2.x, see [MIGRATION.md](docs/MIGRATION.md).
+> **Note:** Examples and instructions in this README are current as of 0.5.x. For upgrade notes across pre-1.0 releases, see [MIGRATION.md](docs/MIGRATION.md).
 
 ## Dependency Compatibility
 
@@ -64,10 +67,10 @@ See [Cargo.toml](Cargo.toml) for complete dependency versions and feature config
 
 ```rust
 use weavegraph::{
-        graphs::GraphBuilder,
-        message::Message,
-        node::{Node, NodeContext, NodePartial},
-        state::VersionedState,
+    graphs::GraphBuilder,
+    message::Message,
+    node::{Node, NodeContext, NodePartial},
+    state::VersionedState,
 };
 use async_trait::async_trait;
 
@@ -75,29 +78,29 @@ struct HelloNode;
 
 #[async_trait]
 impl Node for HelloNode {
-        async fn run(
-                &self,
-                _snapshot: weavegraph::state::StateSnapshot,
-                _ctx: NodeContext,
-        ) -> Result<NodePartial, weavegraph::node::NodeError> {
-                Ok(NodePartial::new().with_messages(vec![Message::assistant("Hello, world!")]))
-        }
+    async fn run(
+        &self,
+        _snapshot: weavegraph::state::StateSnapshot,
+        _ctx: NodeContext,
+    ) -> Result<NodePartial, weavegraph::node::NodeError> {
+        Ok(NodePartial::new().with_messages(vec![Message::assistant("Hello, world!")]))
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-        use weavegraph::types::NodeKind;
-        let app = GraphBuilder::new()
-                .add_node(NodeKind::Custom("hello".into()), HelloNode)
-                .add_edge(NodeKind::Start, NodeKind::Custom("hello".into()))
-                .add_edge(NodeKind::Custom("hello".into()), NodeKind::End)
-                .compile()?;
-        let state = VersionedState::new_with_user_message("Hi!");
-        let result = app.invoke(state).await?;
-        for message in result.messages.snapshot() {
-                println!("{}: {}", message.role, message.content);
-        }
-        Ok(())
+    use weavegraph::types::NodeKind;
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("hello".into()), HelloNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("hello".into()))
+        .add_edge(NodeKind::Custom("hello".into()), NodeKind::End)
+        .compile()?;
+    let state = VersionedState::new_with_user_message("Hi!");
+    let result = app.invoke(state).await?;
+    for message in result.messages.snapshot() {
+        println!("{}: {}", message.role, message.content);
+    }
+    Ok(())
 }
 ```
 > NOTE: `NodeKind::Start` and `NodeKind::End` are virtual structural endpoints.  
@@ -109,27 +112,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 For testing and ephemeral workflows use the InMemory checkpointer:
 
 ```rust
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+
 // After compiling the graph into an `App`:
 let runner = AppRunner::builder()
-        .app(app)
-        .checkpointer(CheckpointerType::InMemory)
-        .build()
-        .await;
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .build()
+    .await;
 ```
 
 Run the comprehensive test suite:
 
 ```bash
-# All tests with output
-cargo test --all -- --nocapture
+# Full integration test suite
+cargo nextest run
+
+# Documentation examples
+cargo test --doc
+
+# Lints used by CI
+cargo clippy --all-features --all-targets -- -D warnings
+cargo clippy --no-default-features --lib -- -D warnings
 
 # Specific test categories
-cargo test schedulers:: -- --nocapture
-cargo test channels:: -- --nocapture
-cargo test integration:: -- --nocapture
+cargo test --test schedulers
+cargo test --test event_bus
+cargo test --test runtimes_runner
 ```
 
-Property-based testing with `proptest` ensures correctness across edge cases.
+Property-based testing with `proptest` and fuzz harnesses under [fuzz/](fuzz/) exercise edge cases across graph routing, event serialization, replay comparison, and typed state slots.
 
 ## CI Parity
 
@@ -151,7 +163,7 @@ Before merging or cutting a release, run full local parity checks:
 
 ## Resources
 
-- **[Migration Guide](docs/MIGRATION.md)** - Upgrade paths between releases (0.2.x → 0.3.x and beyond)
+- **[Migration Guide](docs/MIGRATION.md)** - Upgrade paths between pre-1.0 releases
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - Deep dive into core design and internals
 - **[Examples Directory](examples/)** - Runnable patterns: graph execution, scheduling, streaming, persistence, and more
 

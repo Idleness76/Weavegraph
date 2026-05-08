@@ -2,7 +2,6 @@
 //!
 //! This module provides the core abstractions for executable workflow nodes,
 //! including the [`Node`] trait, execution context, state updates, and error handling.
-
 // Standard library and external crates
 use async_trait::async_trait;
 use rustc_hash::FxHashMap;
@@ -14,8 +13,9 @@ use crate::channels::errors::ErrorEvent;
 use crate::control::{FrontierCommand, NodeRoute};
 use crate::event_bus::{Event, EventEmitter, LLMStreamingEvent};
 use crate::message::Message;
-use crate::state::StateSnapshot;
+use crate::state::{StateKey, StateSlotError, StateSnapshot};
 use crate::types::NodeKind;
+use crate::utils::clock::Clock;
 use std::sync::Arc;
 
 // ============================================================================
@@ -99,6 +99,7 @@ pub trait Node: Send + Sync {
 /// Provides nodes with access to their execution environment, including step
 /// information, node identity, and communication channels for observability.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct NodeContext {
     /// Unique identifier for this node instance.
     pub node_id: String,
@@ -106,9 +107,40 @@ pub struct NodeContext {
     pub step: u64,
     /// Channel for emitting events to the workflow's event system.
     pub event_emitter: Arc<dyn EventEmitter>,
+    /// Optional runtime clock for deterministic tests and replay.
+    pub clock: Option<Arc<dyn Clock>>,
+    /// Optional invocation or run identifier attached to node events.
+    pub invocation_id: Option<String>,
 }
 
 impl NodeContext {
+    /// Construct a node context with no runtime clock or invocation metadata.
+    pub fn new(
+        node_id: impl Into<String>,
+        step: u64,
+        event_emitter: Arc<dyn EventEmitter>,
+    ) -> Self {
+        Self {
+            node_id: node_id.into(),
+            step,
+            event_emitter,
+            clock: None,
+            invocation_id: None,
+        }
+    }
+
+    /// Return the current runtime clock timestamp in Unix milliseconds, if configured.
+    #[must_use]
+    pub fn now_unix_ms(&self) -> Option<i64> {
+        self.clock.as_ref().map(|clock| clock.now_unix_ms())
+    }
+
+    /// Return the invocation identifier, if configured.
+    #[must_use]
+    pub fn invocation_id(&self) -> Option<&str> {
+        self.invocation_id.as_deref()
+    }
+
     /// Emit a node-scoped event enriched with this context's metadata.
     ///
     /// Creates structured events that include the node's ID and step information,
@@ -127,12 +159,33 @@ impl NodeContext {
         scope: impl Into<String>,
         message: impl Into<String>,
     ) -> Result<(), NodeContextError> {
-        self.emit_event(Event::node_message_with_meta(
-            self.node_id.clone(),
-            self.step,
-            scope,
-            message,
-        ))
+        let mut metadata = FxHashMap::default();
+        if let Some(invocation_id) = &self.invocation_id {
+            metadata.insert(
+                "invocation_id".to_string(),
+                serde_json::Value::String(invocation_id.clone()),
+            );
+        }
+        if let Some(now_unix_ms) = self.now_unix_ms() {
+            metadata.insert("now_unix_ms".to_string(), serde_json::json!(now_unix_ms));
+        }
+
+        if metadata.is_empty() {
+            self.emit_event(Event::node_message_with_meta(
+                self.node_id.clone(),
+                self.step,
+                scope,
+                message,
+            ))
+        } else {
+            self.emit_event(Event::node_message_with_metadata(
+                self.node_id.clone(),
+                self.step,
+                scope,
+                message,
+                metadata,
+            ))
+        }
     }
 
     /// Emit a diagnostic event for general workflow telemetry.
@@ -283,6 +336,29 @@ impl NodePartial {
     pub fn with_extra(mut self, extra: FxHashMap<String, serde_json::Value>) -> Self {
         self.extra = Some(extra);
         self
+    }
+
+    /// Insert a typed value into this partial's extra updates.
+    ///
+    /// The value is serialized to JSON and stored under the key returned by
+    /// [`StateKey::storage_key`]. If this partial already contains extra data,
+    /// the typed slot is merged into it and any existing value at the same
+    /// storage key is replaced.
+    pub fn with_typed_extra<T: serde::Serialize>(
+        mut self,
+        key: StateKey<T>,
+        value: T,
+    ) -> Result<Self, StateSlotError> {
+        let storage_key = key.storage_key();
+        let json_value =
+            serde_json::to_value(value).map_err(|source| StateSlotError::Serialize {
+                key: storage_key.clone(),
+                source,
+            })?;
+        self.extra
+            .get_or_insert_with(FxHashMap::default)
+            .insert(storage_key, json_value);
+        Ok(self)
     }
 
     /// Create a `NodePartial` with one or more errors.

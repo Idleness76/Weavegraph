@@ -24,11 +24,7 @@ mod tests {
     async fn test_testnode_construction() {
         let node = TestNode { name: "example" };
         let bus = weavegraph::event_bus::EventBus::default();
-        let ctx = NodeContext {
-            node_id: "test_node".to_string(),
-            step: 1,
-            event_emitter: bus.get_emitter(),
-        };
+        let ctx = NodeContext::new("test_node", 1, bus.get_emitter());
         let snapshot = VersionedState::builder().build().snapshot();
         let result = node.run(snapshot, ctx).await;
         assert!(result.is_ok());

@@ -37,6 +37,7 @@ use weavegraph::{
     graphs::GraphBuilder,
     message::{Message, Role},
     node::{Node, NodeContext, NodeError, NodePartial},
+    runtimes::RuntimeConfig,
     state::{StateSnapshot, VersionedState},
     types::NodeKind,
 };
@@ -101,6 +102,7 @@ async fn main() -> ExampleResult<()> {
         .add_node(NodeKind::Custom("progress".into()), ProgressNode::new(3))
         .add_edge(NodeKind::Start, NodeKind::Custom("progress".into()))
         .add_edge(NodeKind::Custom("progress".into()), NodeKind::End)
+        .with_runtime_config(RuntimeConfig::new(None, None).with_memory_event_bus())
         .compile()?;
 
     // ============================================================================
@@ -159,7 +161,7 @@ async fn main() -> ExampleResult<()> {
     // Example 2: invoke_with_sinks() - Multiple destinations
     // ============================================================================
     info!("## Example 2: invoke_with_sinks()");
-    info!("   Use case: Events to multiple destinations (stdout + channel + file)\n");
+    info!("   Use case: Events to multiple destinations (stdout + channel)\n");
 
     let (tx, rx) = flume::unbounded();
 
@@ -170,8 +172,7 @@ async fn main() -> ExampleResult<()> {
     // Spawn background collector for channel
     let channel_collector = tokio::spawn(async move {
         let mut events = Vec::new();
-        let timeout = tokio::time::Duration::from_millis(100);
-        while let Ok(Ok(event)) = tokio::time::timeout(timeout, rx.recv_async()).await {
+        while let Ok(event) = rx.recv_async().await {
             events.push(event);
         }
         events

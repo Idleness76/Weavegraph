@@ -2,10 +2,14 @@ use std::sync::{
     Arc, RwLock,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::Duration;
 
 use async_trait::async_trait;
-#[cfg(feature = "sqlite")]
+use serde_json::json;
 use weavegraph::channels::Channel;
+use weavegraph::event_bus::{
+    EventBus, EventStream, INVOCATION_END_SCOPE, MemorySink, STREAM_END_SCOPE,
+};
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
 use weavegraph::message::{Message, Role};
 use weavegraph::node::{Node, NodeContext, NodeError, NodePartial};
@@ -16,6 +20,7 @@ use weavegraph::runtimes::{
 use weavegraph::schedulers::{Scheduler, SchedulerState};
 use weavegraph::state::{StateSnapshot, VersionedState};
 use weavegraph::types::NodeKind;
+use weavegraph::utils::clock::MockClock;
 use weavegraph::{FrontierCommand, NodeRoute};
 
 mod common;
@@ -102,6 +107,93 @@ fn checkpoint_from_state(session_id: &str, step: u64, state: VersionedState) -> 
         scheduler_state: SchedulerState::default(),
     };
     Checkpoint::from_session(session_id, &session_state)
+}
+
+#[derive(Debug, Clone)]
+struct TickAccumulatorNode;
+
+#[async_trait]
+impl Node for TickAccumulatorNode {
+    async fn run(
+        &self,
+        snapshot: StateSnapshot,
+        ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        let tick = snapshot
+            .extra
+            .get("tick")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default();
+        ctx.emit("tick", format!("processed:{tick}"))?;
+        let sum = snapshot
+            .extra
+            .get("sum")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or_default();
+
+        let mut extra = weavegraph::utils::collections::new_extra_map();
+        extra.insert("sum".to_string(), serde_json::json!(sum + tick));
+        extra.insert("last_tick".to_string(), serde_json::json!(tick));
+        extra.insert("last_step".to_string(), serde_json::json!(ctx.step));
+
+        Ok(NodePartial::new().with_extra(extra))
+    }
+}
+
+fn make_iterative_app() -> weavegraph::app::App {
+    GraphBuilder::new()
+        .add_node(NodeKind::Custom("accumulate".into()), TickAccumulatorNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("accumulate".into()))
+        .add_edge(NodeKind::Custom("accumulate".into()), NodeKind::End)
+        .compile()
+        .unwrap()
+}
+
+fn tick_input(tick: i64) -> NodePartial {
+    let mut extra = weavegraph::utils::collections::new_extra_map();
+    extra.insert("tick".to_string(), serde_json::json!(tick));
+    NodePartial::new().with_extra(extra)
+}
+
+async fn recv_matching_event(
+    stream: &mut EventStream,
+    predicate: impl Fn(&weavegraph::event_bus::Event) -> bool,
+) -> weavegraph::event_bus::Event {
+    for _ in 0..10 {
+        let event = tokio::time::timeout(Duration::from_secs(1), stream.recv())
+            .await
+            .expect("event stream should receive an event")
+            .expect("event stream should stay open");
+        if predicate(&event) {
+            return event;
+        }
+    }
+    panic!("matching event was not received");
+}
+
+#[derive(Debug, Clone)]
+struct ClockProbeNode;
+
+#[async_trait]
+impl Node for ClockProbeNode {
+    async fn run(
+        &self,
+        _snapshot: StateSnapshot,
+        ctx: NodeContext,
+    ) -> Result<NodePartial, NodeError> {
+        ctx.emit("clock", "observed")?;
+
+        let mut extra = weavegraph::utils::collections::new_extra_map();
+        extra.insert(
+            "now_unix_ms".to_string(),
+            serde_json::json!(ctx.now_unix_ms()),
+        );
+        extra.insert(
+            "invocation_id".to_string(),
+            serde_json::json!(ctx.invocation_id()),
+        );
+        Ok(NodePartial::new().with_extra(extra))
+    }
 }
 
 #[tokio::test]
@@ -337,6 +429,464 @@ async fn test_run_until_complete() {
     // user + test node message
     assert_eq!(final_state.messages.len(), 2);
     assert_message_contains(&final_state, "ran:test:step:1");
+}
+
+#[tokio::test]
+async fn test_iterative_invocation_processes_identical_inputs() {
+    let app = make_iterative_app();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+
+    let init = runner
+        .create_iterative_session(
+            "iterative-identical".to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+    assert_eq!(init, SessionInit::Fresh);
+
+    let first = runner
+        .invoke_next("iterative-identical", tick_input(1), NodeKind::Start)
+        .await
+        .unwrap();
+    assert_eq!(
+        first.extra.snapshot().get("sum"),
+        Some(&serde_json::json!(1))
+    );
+
+    let second = runner
+        .invoke_next("iterative-identical", tick_input(1), NodeKind::Start)
+        .await
+        .unwrap();
+    let extra = second.extra.snapshot();
+    assert_eq!(extra.get("sum"), Some(&serde_json::json!(2)));
+    assert_eq!(extra.get("last_step"), Some(&serde_json::json!(2)));
+
+    let session = runner.get_session("iterative-identical").unwrap();
+    assert_eq!(session.step, 2);
+    assert_eq!(session.frontier, vec![NodeKind::End]);
+}
+
+#[tokio::test]
+async fn test_iterative_session_rejects_invalid_entry_without_creating_session() {
+    let app = make_iterative_app();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+
+    let error = runner
+        .create_iterative_session(
+            "invalid-entry".to_string(),
+            state_with_user("start"),
+            NodeKind::End,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        weavegraph::runtimes::runner::RunnerError::InvalidIterativeEntry {
+            node: NodeKind::End
+        }
+    ));
+    assert!(runner.get_session("invalid-entry").is_none());
+}
+
+#[tokio::test]
+async fn test_iterative_invocation_rejects_invalid_entry_without_applying_input() {
+    let app = make_iterative_app();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    runner
+        .create_iterative_session(
+            "invalid-next".to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+
+    let error = runner
+        .invoke_next("invalid-next", tick_input(99), NodeKind::End)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        weavegraph::runtimes::runner::RunnerError::InvalidIterativeEntry {
+            node: NodeKind::End
+        }
+    ));
+    let session = runner.get_session("invalid-next").unwrap();
+    assert_eq!(session.step, 0);
+    assert!(!session.state.snapshot().extra.contains_key("tick"));
+}
+
+#[tokio::test]
+async fn test_iterative_invocation_rejects_unregistered_custom_entry() {
+    let app = make_iterative_app();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    runner
+        .create_iterative_session(
+            "unknown-custom".to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+
+    let unknown = NodeKind::Custom("missing".to_string());
+    let error = runner
+        .invoke_next("unknown-custom", tick_input(1), unknown.clone())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        weavegraph::runtimes::runner::RunnerError::InvalidIterativeEntry { node } if node == unknown
+    ));
+}
+
+#[tokio::test]
+async fn test_iterative_custom_entry_runs_from_registered_node() {
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("first".into()), TickAccumulatorNode)
+        .add_node(NodeKind::Custom("second".into()), TickAccumulatorNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("first".into()))
+        .add_edge(
+            NodeKind::Custom("first".into()),
+            NodeKind::Custom("second".into()),
+        )
+        .add_edge(NodeKind::Custom("second".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    runner
+        .create_iterative_session(
+            "custom-entry".to_string(),
+            state_with_user("start"),
+            NodeKind::Custom("second".into()),
+        )
+        .await
+        .unwrap();
+
+    let final_state = runner
+        .invoke_next(
+            "custom-entry",
+            tick_input(5),
+            NodeKind::Custom("second".into()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(final_state.extra.snapshot().get("sum"), Some(&json!(5)));
+    assert_eq!(runner.get_session("custom-entry").unwrap().step, 1);
+}
+
+#[tokio::test]
+async fn test_iterative_event_stream_stays_open_until_finished() {
+    let app = make_iterative_app();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    let mut stream = runner
+        .event_stream()
+        .expect("iterative subscription should be available");
+
+    runner
+        .create_iterative_session(
+            "iterative-stream".to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+
+    runner
+        .invoke_next("iterative-stream", tick_input(1), NodeKind::Start)
+        .await
+        .unwrap();
+    let first_tick = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some("tick") && event.message() == "processed:1"
+    })
+    .await;
+    assert_eq!(first_tick.scope_label(), Some("tick"));
+    let first_end = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some(INVOCATION_END_SCOPE)
+    })
+    .await;
+    assert!(first_end.message().contains("status=completed"));
+
+    runner
+        .invoke_next("iterative-stream", tick_input(2), NodeKind::Start)
+        .await
+        .unwrap();
+    let second_tick = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some("tick") && event.message() == "processed:2"
+    })
+    .await;
+    assert_eq!(second_tick.scope_label(), Some("tick"));
+    let second_end = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some(INVOCATION_END_SCOPE)
+    })
+    .await;
+    assert!(second_end.message().contains("status=completed"));
+
+    runner.finish_iterative_session("iterative-stream").unwrap();
+    let terminal = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some(STREAM_END_SCOPE)
+    })
+    .await;
+    assert!(terminal.message().contains("status=completed"));
+
+    let closed = tokio::time::timeout(Duration::from_secs(1), stream.recv())
+        .await
+        .expect("closed stream should resolve promptly");
+    assert!(matches!(
+        closed,
+        Err(tokio::sync::broadcast::error::RecvError::Closed)
+    ));
+}
+
+#[tokio::test]
+async fn test_iterative_event_stream_reports_errors_without_closing_until_finished() {
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("fail".into()), FailingNode::default())
+        .add_edge(NodeKind::Start, NodeKind::Custom("fail".into()))
+        .add_edge(NodeKind::Custom("fail".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    let mut stream = runner
+        .event_stream()
+        .expect("event stream should be available");
+    runner
+        .create_iterative_session(
+            "iterative-error-stream".to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+
+    let result = runner
+        .invoke_next(
+            "iterative-error-stream",
+            NodePartial::new(),
+            NodeKind::Start,
+        )
+        .await;
+
+    assert!(result.is_err());
+    let invocation_end = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some(INVOCATION_END_SCOPE)
+    })
+    .await;
+    assert!(invocation_end.message().contains("status=error"));
+
+    runner
+        .finish_iterative_session("iterative-error-stream")
+        .unwrap();
+    let terminal = recv_matching_event(&mut stream, |event| {
+        event.scope_label() == Some(STREAM_END_SCOPE)
+    })
+    .await;
+    assert!(terminal.message().contains("status=completed"));
+}
+
+#[tokio::test]
+async fn test_finish_iterative_session_reports_missing_session() {
+    let app = make_iterative_app();
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+
+    let error = runner
+        .finish_iterative_session("missing-session")
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        weavegraph::runtimes::runner::RunnerError::SessionNotFound { session_id }
+            if session_id == "missing-session"
+    ));
+}
+
+#[tokio::test]
+async fn test_iterative_invocation_resumes_latest_checkpoint() {
+    const SESSION_ID: &str = "iterative-resume";
+
+    let mut uninterrupted = AppRunner::builder()
+        .app(make_iterative_app())
+        .checkpointer(CheckpointerType::InMemory)
+        .build()
+        .await;
+    uninterrupted
+        .create_iterative_session(
+            SESSION_ID.to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+
+    let mut uninterrupted_state = state_with_user("unused");
+    for tick in 1..=5 {
+        uninterrupted_state = uninterrupted
+            .invoke_next(SESSION_ID, tick_input(tick), NodeKind::Start)
+            .await
+            .unwrap();
+    }
+    let uninterrupted_extra = uninterrupted_state.extra.snapshot();
+    let uninterrupted_step = uninterrupted.get_session(SESSION_ID).unwrap().step;
+
+    let probe = Arc::new(ProbeCheckpointer::default());
+    let mut before_restart = AppRunner::builder()
+        .app(make_iterative_app())
+        .checkpointer_custom(probe.clone())
+        .build()
+        .await;
+    before_restart
+        .create_iterative_session(
+            SESSION_ID.to_string(),
+            state_with_user("start"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+    for tick in 1..=3 {
+        before_restart
+            .invoke_next(SESSION_ID, tick_input(tick), NodeKind::Start)
+            .await
+            .unwrap();
+    }
+    drop(before_restart);
+
+    let mut after_restart = AppRunner::builder()
+        .app(make_iterative_app())
+        .checkpointer_custom(probe.clone())
+        .build()
+        .await;
+    let resumed = after_restart
+        .create_iterative_session(
+            SESSION_ID.to_string(),
+            state_with_user("ignored after checkpoint restore"),
+            NodeKind::Start,
+        )
+        .await
+        .unwrap();
+    assert_eq!(resumed, SessionInit::Resumed { checkpoint_step: 3 });
+
+    let mut resumed_state = state_with_user("unused");
+    for tick in 4..=5 {
+        resumed_state = after_restart
+            .invoke_next(SESSION_ID, tick_input(tick), NodeKind::Start)
+            .await
+            .unwrap();
+    }
+
+    let resumed_extra = resumed_state.extra.snapshot();
+    assert_eq!(resumed_extra.get("sum"), uninterrupted_extra.get("sum"));
+    assert_eq!(resumed_extra.get("last_tick"), Some(&serde_json::json!(5)));
+    assert_eq!(
+        after_restart.get_session(SESSION_ID).unwrap().step,
+        uninterrupted_step
+    );
+    assert!(probe.load_calls() > 0);
+    assert!(probe.save_calls() > 0);
+}
+
+#[tokio::test]
+async fn test_runtime_clock_reaches_node_context_and_events() {
+    let app = GraphBuilder::new()
+        .add_node(NodeKind::Custom("clock".into()), ClockProbeNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("clock".into()))
+        .add_edge(NodeKind::Custom("clock".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let event_bus = EventBus::with_sink(MemorySink::new());
+    let mut event_stream = event_bus.subscribe();
+
+    let mut runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .event_bus(event_bus)
+        .clock(Arc::new(MockClock::new(123)))
+        .build()
+        .await;
+
+    runner
+        .create_session("clock-session".to_string(), state_with_user("clock"))
+        .await
+        .unwrap();
+    let final_state = runner.run_until_complete("clock-session").await.unwrap();
+    let extra = final_state.extra.snapshot();
+
+    assert_eq!(extra.get("now_unix_ms"), Some(&serde_json::json!(123_000)));
+    assert_eq!(
+        extra.get("invocation_id"),
+        Some(&serde_json::json!("clock-session"))
+    );
+
+    let mut node_event = None;
+    for _ in 0..5 {
+        let event = tokio::time::timeout(Duration::from_secs(1), event_stream.recv())
+            .await
+            .expect("event stream should receive an event")
+            .expect("event stream should stay open");
+        if event.scope_label() == Some("clock") {
+            node_event = Some(event);
+            break;
+        }
+    }
+    let node_event = node_event.expect("clock event should be captured");
+    let event_json = node_event.to_json_value();
+    assert_eq!(event_json["metadata"]["invocation_id"], "clock-session");
+    assert_eq!(event_json["metadata"]["now_unix_ms"], 123_000);
+}
+
+#[tokio::test]
+async fn test_runner_metadata_reports_graph_runtime_and_backends() {
+    let app = make_iterative_app();
+    let graph_hash = app.graph_definition_hash();
+    let runner = AppRunner::builder()
+        .app(app)
+        .checkpointer(CheckpointerType::InMemory)
+        .clock(Arc::new(MockClock::new(1)))
+        .build()
+        .await;
+
+    let metadata = runner.run_metadata();
+    assert_eq!(metadata.graph_hash, graph_hash);
+    assert!(!metadata.runtime_config_hash.is_empty());
+    assert_eq!(metadata.checkpointer_backend, "in-memory");
+    assert_eq!(metadata.clock_mode, "configured");
 }
 
 #[derive(Debug, Clone)]

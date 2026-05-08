@@ -1,8 +1,44 @@
 mod common;
 
 use common::*;
+use std::sync::Arc;
 use weavegraph::graphs::{EdgePredicate, GraphBuilder};
-use weavegraph::types::NodeKind;
+use weavegraph::node::NodePartial;
+use weavegraph::reducers::Reducer;
+use weavegraph::state::VersionedState;
+use weavegraph::types::{ChannelType, NodeKind};
+
+struct FirstExtraReducer;
+
+impl Reducer for FirstExtraReducer {
+    fn apply(&self, _state: &mut VersionedState, _update: &NodePartial) {}
+}
+
+struct SecondExtraReducer;
+
+impl Reducer for SecondExtraReducer {
+    fn apply(&self, _state: &mut VersionedState, _update: &NodePartial) {}
+}
+
+struct StableLabelReducerA;
+
+impl Reducer for StableLabelReducerA {
+    fn definition_label(&self) -> &'static str {
+        "stable-extra-label"
+    }
+
+    fn apply(&self, _state: &mut VersionedState, _update: &NodePartial) {}
+}
+
+struct StableLabelReducerB;
+
+impl Reducer for StableLabelReducerB {
+    fn definition_label(&self) -> &'static str {
+        "stable-extra-label"
+    }
+
+    fn apply(&self, _state: &mut VersionedState, _update: &NodePartial) {}
+}
 
 #[test]
 fn test_add_conditional_edge() {
@@ -75,6 +111,127 @@ fn test_compile() {
             .unwrap()
             .contains(&NodeKind::End)
     );
+}
+
+#[test]
+fn test_graph_metadata_and_hash_change_with_definition() {
+    let app_a = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let app_b = GraphBuilder::new()
+        .add_node(NodeKind::Custom("B".into()), NoopNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("B".into()))
+        .add_edge(NodeKind::Custom("B".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+
+    let metadata = app_a.graph_metadata();
+    assert_eq!(metadata.graph_hash, app_a.graph_definition_hash());
+    assert_eq!(metadata.node_count, 1);
+    assert_eq!(metadata.edge_count, 2);
+    assert_eq!(metadata.conditional_edge_count, 0);
+    assert_ne!(app_a.graph_definition_hash(), app_b.graph_definition_hash());
+}
+
+#[test]
+fn test_graph_hash_changes_with_reducer_identity() {
+    let app_a = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .with_reducer(ChannelType::Extra, Arc::new(FirstExtraReducer))
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let app_b = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .with_reducer(ChannelType::Extra, Arc::new(SecondExtraReducer))
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+
+    assert_ne!(app_a.graph_definition_hash(), app_b.graph_definition_hash());
+}
+
+#[test]
+fn test_graph_hash_is_stable_for_equivalent_definition_ordering() {
+    let app_a = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .add_node(NodeKind::Custom("B".into()), NoopNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Start, NodeKind::Custom("B".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("B".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let app_b = GraphBuilder::new()
+        .add_node(NodeKind::Custom("B".into()), NoopNode)
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .add_edge(NodeKind::Custom("B".into()), NodeKind::End)
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .add_edge(NodeKind::Start, NodeKind::Custom("B".into()))
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .compile()
+        .unwrap();
+
+    assert_eq!(app_a.graph_definition_hash(), app_b.graph_definition_hash());
+}
+
+#[test]
+fn test_graph_hash_changes_with_conditional_edge_registration_count() {
+    let route_to_end: EdgePredicate = Arc::new(|_snapshot| vec!["End".to_string()]);
+    let app_without_conditional = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let app_with_conditional = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .add_conditional_edge(NodeKind::Custom("A".into()), route_to_end)
+        .compile()
+        .unwrap();
+
+    assert_eq!(
+        app_with_conditional.graph_metadata().conditional_edge_count,
+        1
+    );
+    assert_ne!(
+        app_without_conditional.graph_definition_hash(),
+        app_with_conditional.graph_definition_hash()
+    );
+}
+
+#[test]
+fn test_graph_hash_uses_custom_reducer_definition_label() {
+    let app_a = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .with_reducer(ChannelType::Extra, Arc::new(StableLabelReducerA))
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+    let app_b = GraphBuilder::new()
+        .add_node(NodeKind::Custom("A".into()), NoopNode)
+        .with_reducer(ChannelType::Extra, Arc::new(StableLabelReducerB))
+        .add_edge(NodeKind::Start, NodeKind::Custom("A".into()))
+        .add_edge(NodeKind::Custom("A".into()), NodeKind::End)
+        .compile()
+        .unwrap();
+
+    assert!(
+        app_a
+            .graph_metadata()
+            .reducer_signature
+            .iter()
+            .any(|entry| entry.contains("stable-extra-label"))
+    );
+    assert_eq!(app_a.graph_definition_hash(), app_b.graph_definition_hash());
 }
 
 #[test]

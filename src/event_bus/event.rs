@@ -12,6 +12,12 @@ use serde_json::Value;
 /// so that consumers can detect clean stream termination.
 pub const STREAM_END_SCOPE: &str = "__weavegraph_stream_end__";
 
+/// Scope constant marking the end of one logical invocation while a stream stays open.
+///
+/// Iterative runners emit this after each [`AppRunner::invoke_next`](crate::runtimes::AppRunner::invoke_next)
+/// call so subscribers can separate logical inputs without treating the event bus as closed.
+pub const INVOCATION_END_SCOPE: &str = "__weavegraph_invocation_end__";
+
 /// Scope constant for diagnostic events emitted by the framework.
 ///
 /// Use this scope when emitting internal diagnostic information
@@ -50,6 +56,25 @@ impl Event {
             scope.into(),
             message.into(),
         ))
+    }
+
+    /// Create a node event with full metadata and additional runtime labels.
+    pub fn node_message_with_metadata(
+        node_id: impl Into<String>,
+        step: u64,
+        scope: impl Into<String>,
+        message: impl Into<String>,
+        metadata: FxHashMap<String, Value>,
+    ) -> Self {
+        Event::Node(
+            NodeEvent::new(
+                Some(node_id.into()),
+                Some(step),
+                scope.into(),
+                message.into(),
+            )
+            .with_metadata(metadata),
+        )
     }
 
     /// Create a diagnostic event with the given scope and message.
@@ -111,6 +136,9 @@ impl Event {
         let (event_type, metadata) = match self {
             Event::Node(node) => {
                 let mut meta = serde_json::Map::new();
+                for (key, value) in node.metadata() {
+                    meta.insert(key.clone(), value.clone());
+                }
                 if let Some(node_id) = node.node_id() {
                     meta.insert("node_id".to_string(), json!(node_id));
                 }
@@ -222,6 +250,8 @@ pub struct NodeEvent {
     step: Option<u64>,
     scope: String,
     message: String,
+    #[serde(default)]
+    metadata: FxHashMap<String, Value>,
 }
 
 impl NodeEvent {
@@ -232,6 +262,7 @@ impl NodeEvent {
             step,
             scope,
             message,
+            metadata: FxHashMap::default(),
         }
     }
 
@@ -253,6 +284,17 @@ impl NodeEvent {
     /// Returns the event message text.
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Returns the metadata map attached to this node event.
+    pub fn metadata(&self) -> &FxHashMap<String, Value> {
+        &self.metadata
+    }
+
+    /// Return a new node event with the given metadata map.
+    pub fn with_metadata(mut self, metadata: FxHashMap<String, Value>) -> Self {
+        self.metadata = metadata;
+        self
     }
 }
 
