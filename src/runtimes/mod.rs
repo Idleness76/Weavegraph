@@ -54,6 +54,7 @@ pub mod checkpointer_sqlite;
 mod checkpointer_sqlite_helpers;
 pub mod execution;
 pub mod persistence;
+pub mod replay;
 pub mod runner;
 pub mod runtime_config;
 pub mod session;
@@ -81,7 +82,12 @@ pub use execution::{PausedReason, PausedReport, StepOptions, StepReport, StepRes
 pub use session::{SessionInit, SessionState, StateVersions};
 
 // Re-export runner
-pub use runner::{AppRunner, AppRunnerBuilder};
+pub use runner::{AppRunner, AppRunnerBuilder, RunMetadata};
 
+pub use replay::{
+    ReplayComparison, ReplayConformanceError, ReplayRun, compare_event_sequences,
+    compare_event_sequences_with, compare_final_state, compare_replay_runs,
+    compare_replay_runs_with, normalize_event, normalize_state,
+};
 pub use runtime_config::{EventBusConfig, RuntimeConfig, SinkConfig};
 pub use types::{SessionId, StepNumber};

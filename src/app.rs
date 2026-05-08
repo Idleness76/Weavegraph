@@ -122,6 +122,38 @@ pub struct BarrierOutcome {
     pub frontier_commands: Vec<(NodeKind, FrontierCommand)>,
 }
 
+/// Stable metadata describing a compiled graph definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct GraphMetadata {
+    /// Weavegraph crate version used to build the graph.
+    pub weavegraph_version: String,
+    /// Deterministic hash of the graph definition surface.
+    pub graph_hash: String,
+    /// Number of registered executable nodes.
+    pub node_count: usize,
+    /// Number of unconditional edges.
+    pub edge_count: usize,
+    /// Number of conditional edge registrations.
+    pub conditional_edge_count: usize,
+    /// Reducer registration signature included in the hash.
+    pub reducer_signature: Vec<String>,
+}
+
+fn hash_parts(parts: &[String]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for part in parts {
+        for byte in part.as_bytes().iter().copied().chain([0xff]) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    format!("{hash:016x}")
+}
+
 impl AppEventStream {
     fn new(event_bus: EventBus, event_stream: EventStream) -> Self {
         Self {
@@ -301,6 +333,74 @@ impl App {
     #[must_use]
     pub fn runtime_config(&self) -> &RuntimeConfig {
         &self.runtime_config
+    }
+
+    /// Return the Weavegraph crate version compiled into this binary.
+    #[must_use]
+    pub fn weavegraph_version(&self) -> &'static str {
+        env!("CARGO_PKG_VERSION")
+    }
+
+    /// Return metadata describing this graph definition.
+    ///
+    /// The hash covers registered node IDs, unconditional edges, conditional
+    /// edge sources/counts, and reducer definition labels. Conditional edge
+    /// predicate closure bodies are opaque to Rust, so changing a predicate
+    /// implementation without changing its registration shape is not detectable.
+    #[must_use]
+    pub fn graph_metadata(&self) -> GraphMetadata {
+        let mut parts = vec!["weavegraph-graph-v1".to_string()];
+
+        let mut nodes: Vec<String> = self.nodes.keys().map(NodeKind::encode).collect();
+        nodes.sort();
+        parts.extend(nodes.iter().map(|node| format!("node:{node}")));
+
+        let mut edges: Vec<String> = self
+            .edges
+            .iter()
+            .flat_map(|(from, targets)| {
+                targets
+                    .iter()
+                    .map(move |target| format!("edge:{}->{}", from.encode(), target.encode()))
+            })
+            .collect();
+        edges.sort();
+        parts.extend(edges);
+
+        let mut conditional_sources: Vec<String> = self
+            .conditional_edges
+            .iter()
+            .map(|edge| edge.from().encode())
+            .collect();
+        conditional_sources.sort();
+        parts.extend(
+            conditional_sources
+                .iter()
+                .enumerate()
+                .map(|(index, from)| format!("conditional:{index}:{from}")),
+        );
+
+        let reducer_signature = self.reducer_registry.definition_signature();
+        parts.extend(
+            reducer_signature
+                .iter()
+                .map(|entry| format!("reducer:{entry}")),
+        );
+
+        GraphMetadata {
+            weavegraph_version: self.weavegraph_version().to_string(),
+            graph_hash: hash_parts(&parts),
+            node_count: self.nodes.len(),
+            edge_count: self.edges.values().map(Vec::len).sum(),
+            conditional_edge_count: self.conditional_edges.len(),
+            reducer_signature,
+        }
+    }
+
+    /// Return only the graph definition hash.
+    #[must_use]
+    pub fn graph_definition_hash(&self) -> String {
+        self.graph_metadata().graph_hash
     }
 
     /// Create a subscription to the configured event bus without starting execution.

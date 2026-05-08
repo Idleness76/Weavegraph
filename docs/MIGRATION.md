@@ -5,6 +5,116 @@ migration guidance for upgrading your code.
 
 ---
 
+## v0.5.0
+
+### Overview
+
+v0.5.0 is the recommended target for the WeaveQuant production feedback work. The changes add new public runtime APIs and a public `RunnerError` variant, so they should not ship as a `0.4.1` patch.
+
+### New Runtime APIs
+
+Use `AppRunner::create_iterative_session(...)` and `AppRunner::invoke_next(...)` when one durable session should process many logical inputs:
+
+```rust
+runner
+    .create_iterative_session(run_id.clone(), initial_state, NodeKind::Start)
+    .await?;
+
+runner
+    .invoke_next(&run_id, input_patch, NodeKind::Start)
+    .await?;
+```
+
+`NodeKind::Start` resolves to the graph's normal Start outgoing frontier. A registered custom node can be supplied for narrower re-entry. `NodeKind::End` now returns `RunnerError::InvalidIterativeEntry` when used as an iterative entry.
+
+When an `AppRunner` event stream is subscribed before iterative execution, each `invoke_next(...)` emits `INVOCATION_END_SCOPE` and keeps the stream open for the next logical input. Call `finish_iterative_session(...)` after the final input to emit the normal `STREAM_END_SCOPE` sentinel and close the stream.
+
+### Typed State Slots
+
+Typed state slots are a thin, JSON-compatible layer over `VersionedState.extra`. Define a reusable key in the domain crate, then read and write typed payloads without hand-rolled `serde_json` calls at every node boundary:
+
+```rust
+use serde::{Deserialize, Serialize};
+use weavegraph::node::NodePartial;
+use weavegraph::state::{StateKey, StateSnapshot};
+
+#[derive(Serialize, Deserialize)]
+struct PortfolioState {
+    cash_cents: i64,
+}
+
+const PORTFOLIO: StateKey<PortfolioState> = StateKey::new("wq", "portfolio", 1);
+
+fn read(snapshot: &StateSnapshot) -> Result<Option<PortfolioState>, weavegraph::state::StateSlotError> {
+    snapshot.get_typed(PORTFOLIO)
+}
+
+fn write(value: PortfolioState) -> Result<NodePartial, weavegraph::state::StateSlotError> {
+    NodePartial::new().with_typed_extra(PORTFOLIO, value)
+}
+```
+
+The storage key is namespaced and versioned as `namespace:name:v{schema_version}`. Untyped `extra` remains available.
+
+### Deterministic Runtime Clock
+
+Use the existing `Clock` abstraction to inject deterministic time into nodes and emitted node-event metadata:
+
+```rust
+use std::sync::Arc;
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+use weavegraph::utils::clock::MockClock;
+
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .clock(Arc::new(MockClock::new(1_700_000_000)))
+    .build()
+    .await;
+```
+
+Inside a node, call `ctx.now_unix_ms()` and `ctx.invocation_id()`. `NodeContext::new(...)` is now the easiest way to construct contexts in tests.
+
+### Metadata Helpers
+
+Compiled graphs and runners expose deterministic metadata helpers for audit labels and replay manifests:
+
+```rust
+let graph = app.graph_metadata();
+let graph_hash = app.graph_definition_hash();
+let run = runner.run_metadata();
+```
+
+The graph hash includes node kinds, edges, conditional edge registrations, and reducer definition labels. It does not inspect closure bodies for conditional predicates. Custom reducers can override `Reducer::definition_label(...)` when a durable audit label is preferable to the default Rust type path.
+
+### Replay Conformance Helpers
+
+Replay helpers live under `weavegraph::runtimes::replay` and are re-exported from `weavegraph::runtimes`:
+
+```rust
+use weavegraph::runtimes::{ReplayRun, compare_replay_runs};
+
+let expected = ReplayRun::new(expected_state, expected_events);
+let actual = ReplayRun::new(actual_state, actual_events);
+
+compare_replay_runs(&expected, &actual).assert_matches()?;
+```
+
+`normalize_event(...)` strips runtime timestamps. Use `compare_event_sequences_with(...)` or `compare_replay_runs_with(...)` when domain events need semantic normalization.
+
+### Compatibility Notes
+
+- `App::invoke(...)`, `AppRunner::create_session(...)`, and `AppRunner::run_until_complete(...)` keep their existing behavior.
+- `RunnerError` is an exhaustive public enum. Code that matches every variant must handle `InvalidIterativeEntry` after upgrading.
+- `GraphMetadata`, `RunMetadata`, `ReplayRun`, `NodeContext`, and `SchedulerRunContext` are `#[non_exhaustive]`; use provided constructors/builders instead of external struct literals.
+- `Reducer` gains a default `definition_label(...)` method for graph metadata. Existing reducer implementations do not need to change unless they want a custom stable label.
+- `RuntimeConfig` gains a public `clock` field. Code using struct literals should add `clock: None` or switch to `RuntimeConfig::default()` / builder-style methods.
+- `NodeContext` gains `clock` and `invocation_id` fields. Tests should prefer `NodeContext::new(...)` over struct literals.
+- Direct calls to `Scheduler::superstep(...)` must pass the optional clock and invocation ID arguments.
+- Iterative sessions keep step numbers monotonic across invocations and reload checkpoints through the existing checkpointer path.
+
+---
+
 ## v0.4.0
 
 ### Overview

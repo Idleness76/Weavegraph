@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-08
+
+### Added
+- `AppRunner::create_iterative_session(...)` and `AppRunner::invoke_next(...)` for repeated graph invocations under one durable session lineage.
+- `RunnerError::InvalidIterativeEntry` for invalid iterative entry nodes.
+- Typed state-slot helpers: `StateKey<T>`, `StateSnapshot::get_typed(...)`, `StateSnapshot::require_typed(...)`, `VersionedState::add_typed_extra(...)`, `VersionedStateBuilder::with_typed_extra(...)`, and `NodePartial::with_typed_extra(...)`.
+- Runtime clock injection through `RuntimeConfig::with_clock(...)`, `AppRunnerBuilder::clock(...)`, and `NodeContext::now_unix_ms()`.
+- Optional node event metadata for `invocation_id` and `now_unix_ms` when runtime metadata is configured.
+- `INVOCATION_END_SCOPE` and `AppRunner::finish_iterative_session(...)` for long-lived iterative event streams.
+- Graph and run metadata helpers: `App::graph_metadata()`, `App::graph_definition_hash()`, `RuntimeConfig::config_hash()`, and `AppRunner::run_metadata()`.
+- `Reducer::definition_label(...)` so graph metadata can distinguish reducer implementations, not only reducer counts.
+- Replay conformance helpers in `weavegraph::runtimes::replay` for normalized event comparison, final-state comparison, and reusable replay assertions.
+
+### Notes
+- This feedback package ships as `0.5.0` rather than `0.4.1` because it changes the public runtime surface, adds public error enum variants/types, and extends public structs.
+- New public metadata/context structs are marked `#[non_exhaustive]` where they are expected to grow before v1.
+
 ## [0.4.0] - 2026-04-01
 
 ### Added

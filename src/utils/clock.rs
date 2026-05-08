@@ -8,9 +8,14 @@ use chrono::{DateTime, Utc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Trait for time sources providing both Unix timestamps and DateTime objects.
-pub trait Clock: Send + Sync {
+pub trait Clock: Send + Sync + std::fmt::Debug {
     /// Get the current time as a Unix timestamp (seconds since epoch).
     fn now(&self) -> u64;
+
+    /// Get the current time as a Unix timestamp in milliseconds.
+    fn now_unix_ms(&self) -> i64 {
+        self.now_datetime().timestamp_millis()
+    }
 
     /// Get the current time as a `DateTime<Utc>` for more complex time operations.
     fn now_datetime(&self) -> DateTime<Utc>;

@@ -3,7 +3,7 @@
 //! This module handles the lifecycle of event streams during workflow
 //! execution, including finalization and cleanup.
 
-use crate::event_bus::{Event, EventBus, STREAM_END_SCOPE};
+use crate::event_bus::{Event, EventBus, INVOCATION_END_SCOPE, STREAM_END_SCOPE};
 
 /// Internal reason for ending an event stream.
 pub(crate) enum StreamEndReason {
@@ -63,5 +63,23 @@ pub(crate) fn finalize_event_stream(
     if *event_stream_taken {
         event_bus.close_channel();
         *event_stream_taken = false;
+    }
+}
+
+/// Emit a logical invocation completion marker without closing the event channel.
+pub(crate) fn emit_invocation_end(event_bus: &EventBus, session_id: &str, reason: StreamEndReason) {
+    let message = reason.format_message(session_id);
+
+    if let Err(err) = event_bus
+        .get_emitter()
+        .emit(Event::diagnostic(INVOCATION_END_SCOPE, message.clone()))
+    {
+        tracing::debug!(
+            session = %session_id,
+            scope = INVOCATION_END_SCOPE,
+            completion_message = %message,
+            error = ?err,
+            "failed to emit invocation completion event"
+        );
     }
 }

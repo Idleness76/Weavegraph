@@ -23,6 +23,8 @@ pub mod sink;
 pub use bus::EventBus;
 pub use diagnostics::{DiagnosticsStream, SinkDiagnostic};
 pub use emitter::{EmitterError, EventEmitter};
-pub use event::{DIAGNOSTIC_SCOPE, Event, LLMStreamingEvent, NodeEvent, STREAM_END_SCOPE};
+pub use event::{
+    DIAGNOSTIC_SCOPE, Event, INVOCATION_END_SCOPE, LLMStreamingEvent, NodeEvent, STREAM_END_SCOPE,
+};
 pub use hub::{BlockingEventIter, EventHub, EventHubMetrics, EventStream, HubEmitter};
 pub use sink::{ChannelSink, EventSink, JsonLinesSink, MemorySink, StdOutSink};

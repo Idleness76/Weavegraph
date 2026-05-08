@@ -20,13 +20,14 @@ use crate::runtimes::execution::{
     PausedReason, PausedReport, SchedulerOutcome, StepOptions, StepReport, StepResult,
 };
 use crate::runtimes::session::{SessionInit, SessionState, StateVersions};
-use crate::runtimes::streaming::{StreamEndReason, finalize_event_stream};
+use crate::runtimes::streaming::{StreamEndReason, emit_invocation_end, finalize_event_stream};
 use crate::runtimes::{
     Checkpoint, Checkpointer, CheckpointerError, InMemoryCheckpointer, restore_session_state,
 };
-use crate::schedulers::{Scheduler, SchedulerError, SchedulerState};
+use crate::schedulers::{Scheduler, SchedulerError, SchedulerRunContext, SchedulerState};
 use crate::state::VersionedState;
 use crate::types::NodeKind;
+use crate::utils::clock::Clock;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -136,6 +137,8 @@ pub struct AppRunner {
     autosave: bool,
     event_bus: EventBus,
     event_stream_taken: bool,
+    clock: Option<Arc<dyn Clock>>,
+    checkpointer_descriptor: String,
 }
 
 /// Errors that can occur during workflow execution.
@@ -163,6 +166,22 @@ pub enum RunnerError {
         )
     )]
     NoStartNodes,
+
+    /// The requested entry node cannot be used to start an iterative invocation.
+    #[error("invalid iterative entry node: {node}")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(
+            code(weavegraph::runner::invalid_iterative_entry),
+            help(
+                "Use NodeKind::Start or a registered custom node. NodeKind::End is terminal and cannot be used as an entry."
+            )
+        )
+    )]
+    InvalidIterativeEntry {
+        /// The invalid entry node.
+        node: NodeKind,
+    },
 
     /// Execution paused unexpectedly during run_until_complete.
     #[error("unexpected pause during run_until_complete")]
@@ -208,6 +227,33 @@ pub enum RunnerError {
         diagnostic(code(weavegraph::runner::scheduler))
     )]
     Scheduler(#[from] SchedulerError),
+}
+
+/// Runtime metadata useful for audit, replay, and checkpoint labels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RunMetadata {
+    /// Weavegraph crate version compiled into this binary.
+    pub weavegraph_version: String,
+    /// Deterministic graph definition hash.
+    pub graph_hash: String,
+    /// Deterministic runtime configuration hash.
+    pub runtime_config_hash: String,
+    /// Descriptor for the configured checkpointer backend.
+    pub checkpointer_backend: String,
+    /// Descriptor for runtime clock injection mode.
+    pub clock_mode: String,
+}
+
+struct RunnerRuntimeMetadata {
+    clock: Option<Arc<dyn Clock>>,
+    checkpointer_descriptor: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletionEventPolicy {
+    CloseStream,
+    KeepStreamOpen,
 }
 
 // ============================================================================
@@ -295,6 +341,7 @@ pub struct AppRunnerBuilder {
     autosave: bool,
     event_bus: Option<EventBus>,
     start_listener: bool,
+    clock: Option<Arc<dyn Clock>>,
 }
 
 impl Default for AppRunnerBuilder {
@@ -320,6 +367,7 @@ impl AppRunnerBuilder {
             autosave: true,
             event_bus: None,
             start_listener: true,
+            clock: None,
         }
     }
 
@@ -389,6 +437,13 @@ impl AppRunnerBuilder {
         self
     }
 
+    /// Set a runtime clock that will be injected into node contexts.
+    #[must_use]
+    pub fn clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = Some(clock);
+        self
+    }
+
     /// Build the [`AppRunner`].
     ///
     /// # Panics
@@ -407,6 +462,16 @@ impl AppRunnerBuilder {
         let event_bus = self
             .event_bus
             .unwrap_or_else(|| app.runtime_config().event_bus.build_event_bus());
+        let clock = self.clock.or_else(|| app.runtime_config().clock());
+        let checkpointer_descriptor = if self.checkpointer_custom.is_some() {
+            "custom".to_string()
+        } else {
+            AppRunner::checkpointer_type_label(&self.checkpointer_type).to_string()
+        };
+        let runtime_metadata = RunnerRuntimeMetadata {
+            clock,
+            checkpointer_descriptor,
+        };
 
         Some(
             AppRunner::with_arc_and_bus(
@@ -416,6 +481,7 @@ impl AppRunnerBuilder {
                 self.autosave,
                 event_bus,
                 self.start_listener,
+                runtime_metadata,
             )
             .await,
         )
@@ -450,7 +516,7 @@ impl AppRunner {
 
     async fn create_checkpointer(
         checkpointer_type: CheckpointerType,
-        sqlite_db_name: Option<String>,
+        _sqlite_db_name: Option<String>,
     ) -> Option<Arc<dyn Checkpointer>> {
         match checkpointer_type {
             CheckpointerType::InMemory => {
@@ -461,7 +527,7 @@ impl AppRunner {
                 let db_url = std::env::var("WEAVEGRAPH_SQLITE_URL")
                     .ok()
                     .or_else(|| {
-                        sqlite_db_name
+                        _sqlite_db_name
                             .as_ref()
                             .map(|name| format!("sqlite://{name}"))
                     })
@@ -520,6 +586,16 @@ impl AppRunner {
         }
     }
 
+    fn checkpointer_type_label(checkpointer_type: &CheckpointerType) -> &'static str {
+        match checkpointer_type {
+            CheckpointerType::InMemory => "in-memory",
+            #[cfg(feature = "sqlite")]
+            CheckpointerType::SQLite => "sqlite",
+            #[cfg(feature = "postgres")]
+            CheckpointerType::Postgres => "postgres",
+        }
+    }
+
     async fn with_arc_and_bus(
         app: Arc<App>,
         checkpointer_type: CheckpointerType,
@@ -527,6 +603,7 @@ impl AppRunner {
         autosave: bool,
         event_bus: EventBus,
         start_listener: bool,
+        runtime_metadata: RunnerRuntimeMetadata,
     ) -> Self {
         // Precedence rule: custom checkpointer always wins when provided.
         // If custom is None, fall back to enum-based factory instantiation.
@@ -546,6 +623,8 @@ impl AppRunner {
             autosave,
             event_bus,
             event_stream_taken: false,
+            clock: runtime_metadata.clock,
+            checkpointer_descriptor: runtime_metadata.checkpointer_descriptor,
         }
     }
 
@@ -616,6 +695,150 @@ impl AppRunner {
         Ok(SessionInit::Fresh)
     }
 
+    /// Initialize or resume a session for repeated invocations under one durable lineage.
+    ///
+    /// This method behaves like [`create_session`](Self::create_session), then prepares
+    /// the session to run from `entry_node`. Passing [`NodeKind::Start`] uses the
+    /// graph's outgoing edges from the virtual Start node, matching normal session
+    /// initialization. Passing a custom node runs directly from that registered node.
+    ///
+    /// The session step counter is not reset when a checkpoint is resumed, so steps
+    /// remain monotonic across repeated invocations.
+    #[instrument(skip(self, session_id, initial_state), err)]
+    pub async fn create_iterative_session(
+        &mut self,
+        session_id: String,
+        initial_state: VersionedState,
+        entry_node: NodeKind,
+    ) -> Result<SessionInit, RunnerError> {
+        let frontier = self.frontier_for_iterative_entry(&entry_node)?;
+        let init = self
+            .create_session(session_id.clone(), initial_state)
+            .await?;
+        self.set_iterative_frontier(&session_id, frontier)?;
+        Ok(init)
+    }
+
+    /// Apply an input patch, restart the session frontier, and run to completion.
+    ///
+    /// The existing session state is updated through the same deterministic barrier
+    /// path used for node outputs. The frontier is then reset to `entry_node` and the
+    /// scheduler's version-gating state is cleared so the entry path executes for this
+    /// logical invocation even when two consecutive input patches serialize to the
+    /// same state.
+    ///
+    /// Use [`create_iterative_session`](Self::create_iterative_session) before the
+    /// first call, including after process restart, so the latest checkpoint is loaded
+    /// into the runner.
+    #[instrument(skip(self, input), err)]
+    pub async fn invoke_next(
+        &mut self,
+        session_id: &str,
+        input: NodePartial,
+        entry_node: NodeKind,
+    ) -> Result<VersionedState, RunnerError> {
+        let frontier = self.frontier_for_iterative_entry(&entry_node)?;
+        self.apply_iterative_input(session_id, input).await?;
+        self.set_iterative_frontier(session_id, frontier)?;
+        self.run_until_complete_with_policy(session_id, CompletionEventPolicy::KeepStreamOpen)
+            .await
+    }
+
+    /// Emit the terminal stream marker for a completed iterative session.
+    ///
+    /// `invoke_next` keeps long-lived event subscriptions open between logical
+    /// inputs. Call this after the final input when a subscriber should receive
+    /// [`STREAM_END_SCOPE`](crate::event_bus::STREAM_END_SCOPE) and the stream
+    /// should close cleanly.
+    pub fn finish_iterative_session(&mut self, session_id: &str) -> Result<(), RunnerError> {
+        let (_, _, final_step) = self.finalize_state_snapshot(session_id)?;
+        self.emit_completion_event(
+            session_id,
+            StreamEndReason::Completed { step: final_step },
+            CompletionEventPolicy::CloseStream,
+        );
+        Ok(())
+    }
+
+    fn set_iterative_frontier(
+        &mut self,
+        session_id: &str,
+        frontier: Vec<NodeKind>,
+    ) -> Result<(), RunnerError> {
+        let session_state =
+            self.sessions
+                .get_mut(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
+
+        session_state.frontier = frontier;
+        session_state.scheduler_state = SchedulerState::default();
+        Ok(())
+    }
+
+    fn frontier_for_iterative_entry(
+        &self,
+        entry_node: &NodeKind,
+    ) -> Result<Vec<NodeKind>, RunnerError> {
+        match entry_node {
+            NodeKind::Start => {
+                let frontier = self
+                    .app
+                    .edges()
+                    .get(&NodeKind::Start)
+                    .cloned()
+                    .unwrap_or_default();
+                if frontier.is_empty() {
+                    Err(RunnerError::NoStartNodes)
+                } else {
+                    Ok(frontier)
+                }
+            }
+            NodeKind::End => Err(RunnerError::InvalidIterativeEntry {
+                node: entry_node.clone(),
+            }),
+            NodeKind::Custom(_) => {
+                if self.app.nodes().contains_key(entry_node) {
+                    Ok(vec![entry_node.clone()])
+                } else {
+                    Err(RunnerError::InvalidIterativeEntry {
+                        node: entry_node.clone(),
+                    })
+                }
+            }
+        }
+    }
+
+    async fn apply_iterative_input(
+        &mut self,
+        session_id: &str,
+        input: NodePartial,
+    ) -> Result<(), RunnerError> {
+        let mut updated_state = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| RunnerError::SessionNotFound {
+                session_id: session_id.to_string(),
+            })?
+            .state
+            .clone();
+
+        self.app
+            .apply_barrier(&mut updated_state, &[], vec![input])
+            .await
+            .map_err(RunnerError::AppBarrier)?;
+
+        let session_state =
+            self.sessions
+                .get_mut(session_id)
+                .ok_or_else(|| RunnerError::SessionNotFound {
+                    session_id: session_id.to_string(),
+                })?;
+        session_state.state = updated_state;
+        Ok(())
+    }
+
     /// Execute one superstep for the given session
     #[instrument(skip(self, options), err)]
     pub async fn run_step(
@@ -684,7 +907,7 @@ impl AppRunner {
                 })?;
 
         // Execute one superstep; on error, emit an ErrorEvent and rethrow
-        let step_report = match self.run_one_superstep(&mut session_state).await {
+        let step_report = match self.run_one_superstep(session_id, &mut session_state).await {
             Ok(rep) => rep,
             Err(e) => {
                 // Build error event
@@ -800,6 +1023,7 @@ impl AppRunner {
     #[inline]
     async fn schedule_step(
         &self,
+        session_id: &str,
         session_state: &mut SessionState,
         step: u64,
     ) -> Result<SchedulerOutcome, RunnerError> {
@@ -812,7 +1036,11 @@ impl AppRunner {
                 session_state.frontier.clone(),
                 snapshot.clone(),
                 step,
-                self.event_bus.get_emitter(),
+                SchedulerRunContext {
+                    event_emitter: self.event_bus.get_emitter(),
+                    clock: self.clock.clone(),
+                    invocation_id: Some(session_id.to_string()),
+                },
             )
             .await?;
 
@@ -984,6 +1212,7 @@ impl AppRunner {
     #[instrument(skip(self, session_state), err)]
     async fn run_one_superstep(
         &self,
+        session_id: &str,
         session_state: &mut SessionState,
     ) -> Result<StepReport, RunnerError> {
         session_state.step += 1;
@@ -998,7 +1227,7 @@ impl AppRunner {
             frontier_len = session_state.frontier.len()
         );
         let scheduler_outcome = schedule_span
-            .in_scope(|| self.schedule_step(session_state, step))
+            .in_scope(|| self.schedule_step(session_id, session_state, step))
             .await?;
 
         // Phase 2: apply barrier and update state
@@ -1073,6 +1302,15 @@ impl AppRunner {
         &mut self,
         session_id: &str,
     ) -> Result<VersionedState, RunnerError> {
+        self.run_until_complete_with_policy(session_id, CompletionEventPolicy::CloseStream)
+            .await
+    }
+
+    async fn run_until_complete_with_policy(
+        &mut self,
+        session_id: &str,
+        completion_policy: CompletionEventPolicy,
+    ) -> Result<VersionedState, RunnerError> {
         tracing::info!(session = %session_id, "workflow run started");
 
         loop {
@@ -1099,12 +1337,13 @@ impl AppRunner {
                 Err(err) => {
                     let reason = err.to_string();
                     let step = self.sessions.get(session_id).map(|state| state.step);
-                    self.finalize_event_stream(
+                    self.emit_completion_event(
                         session_id,
                         StreamEndReason::Error {
                             step,
                             error: reason,
                         },
+                        completion_policy,
                     );
                     return Err(err);
                 }
@@ -1119,12 +1358,13 @@ impl AppRunner {
                 StepResult::Paused(_) => {
                     // This shouldn't happen with default options, but handle gracefully
                     let step = self.sessions.get(session_id).map(|state| state.step);
-                    self.finalize_event_stream(
+                    self.emit_completion_event(
                         session_id,
                         StreamEndReason::Error {
                             step,
                             error: "execution paused unexpectedly".to_string(),
                         },
+                        completion_policy,
                     );
                     return Err(RunnerError::UnexpectedPause);
                 }
@@ -1169,7 +1409,11 @@ impl AppRunner {
             );
         }
 
-        self.finalize_event_stream(session_id, StreamEndReason::Completed { step: final_step });
+        self.emit_completion_event(
+            session_id,
+            StreamEndReason::Completed { step: final_step },
+            completion_policy,
+        );
         Ok(final_state)
     }
 
@@ -1195,6 +1439,22 @@ impl AppRunner {
     #[must_use]
     pub fn list_sessions(&self) -> Vec<&String> {
         self.sessions.keys().collect()
+    }
+
+    /// Return metadata for this runner and its compiled graph.
+    #[must_use]
+    pub fn run_metadata(&self) -> RunMetadata {
+        RunMetadata {
+            weavegraph_version: self.app.weavegraph_version().to_string(),
+            graph_hash: self.app.graph_definition_hash(),
+            runtime_config_hash: self.app.runtime_config().config_hash(),
+            checkpointer_backend: self.checkpointer_descriptor.clone(),
+            clock_mode: if self.clock.is_some() {
+                "configured".to_string()
+            } else {
+                "unset".to_string()
+            },
+        }
     }
 }
 
@@ -1236,5 +1496,19 @@ impl AppRunner {
             reason,
             &mut self.event_stream_taken,
         );
+    }
+
+    fn emit_completion_event(
+        &mut self,
+        session_id: &str,
+        reason: StreamEndReason,
+        policy: CompletionEventPolicy,
+    ) {
+        match policy {
+            CompletionEventPolicy::CloseStream => self.finalize_event_stream(session_id, reason),
+            CompletionEventPolicy::KeepStreamOpen => {
+                emit_invocation_end(&self.event_bus, session_id, reason);
+            }
+        }
     }
 }

@@ -157,6 +157,116 @@ let runner = AppRunner::builder()
     .await?;
 ```
 
+### Iterative Checkpointed Workflows
+
+Use iterative sessions when one logical run should process many inputs while keeping one checkpoint lineage. This is useful for event-driven systems that repeatedly restore the latest durable state, apply the next input, run the graph, and checkpoint the result.
+
+```rust
+use weavegraph::node::NodePartial;
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+use weavegraph::state::VersionedState;
+use weavegraph::types::NodeKind;
+use weavegraph::utils::collections::new_extra_map;
+
+# async fn example(app: weavegraph::app::App) -> Result<(), Box<dyn std::error::Error>> {
+let mut runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::SQLite)
+    .autosave(true)
+    .build()
+    .await;
+
+let run_id = "market-run-2026-05-08".to_string();
+runner
+    .create_iterative_session(
+        run_id.clone(),
+        VersionedState::new_with_user_message("start"),
+        NodeKind::Start,
+    )
+    .await?;
+
+for tick in [1, 2, 3] {
+    let mut extra = new_extra_map();
+    extra.insert("tick".to_string(), serde_json::json!(tick));
+
+    runner
+        .invoke_next(&run_id, NodePartial::new().with_extra(extra), NodeKind::Start)
+        .await?;
+}
+# Ok(())
+# }
+```
+
+`NodeKind::Start` means the same initial frontier as a normal session: the graph's outgoing edges from the virtual Start node. A registered custom node can be used to resume from a narrower entry point. `NodeKind::End` is rejected because it is terminal.
+
+The runner keeps `SessionState.step` monotonic across invocations. It also clears scheduler version-gating state for each `invoke_next` call, so the entry path runs for each logical input even when two consecutive input patches are identical.
+
+If you subscribe with `AppRunner::event_stream()` before an iterative run, each `invoke_next(...)` emits `INVOCATION_END_SCOPE` and leaves the stream open for the next input. After the final input, call `finish_iterative_session(...)` to emit `STREAM_END_SCOPE` and close the stream for consumers that expect the standard terminal sentinel.
+
+### Typed State Slots
+
+Use `StateKey<T>` when checkpointed `extra` state needs a documented schema and compile-time payload type while staying JSON-compatible across backends.
+
+```rust
+use serde::{Deserialize, Serialize};
+use weavegraph::node::NodePartial;
+use weavegraph::state::{StateKey, StateSnapshot};
+
+#[derive(Serialize, Deserialize)]
+struct PortfolioState {
+    cash_cents: i64,
+}
+
+const PORTFOLIO: StateKey<PortfolioState> = StateKey::new("wq", "portfolio", 1);
+
+fn load(snapshot: &StateSnapshot) -> Result<PortfolioState, weavegraph::state::StateSlotError> {
+    snapshot.require_typed(PORTFOLIO)
+}
+
+fn store(value: PortfolioState) -> Result<NodePartial, weavegraph::state::StateSlotError> {
+    NodePartial::new().with_typed_extra(PORTFOLIO, value)
+}
+```
+
+The generated storage key is `namespace:name:v{schema_version}`, so old and new schemas can coexist during migrations.
+
+### Deterministic Clock And Run Metadata
+
+Inject a clock when simulations, replay, or tests need logical time to be independent of wall-clock time. The same clock is available from `NodeContext::now_unix_ms()` and is attached to node event metadata when present.
+
+```rust
+use std::sync::Arc;
+use weavegraph::runtimes::{AppRunner, CheckpointerType};
+use weavegraph::utils::clock::MockClock;
+
+let runner = AppRunner::builder()
+    .app(app)
+    .checkpointer(CheckpointerType::InMemory)
+    .clock(Arc::new(MockClock::new(1_700_000_000)))
+    .build()
+    .await;
+
+let metadata = runner.run_metadata();
+println!("graph={} runtime={} clock={}", metadata.graph_hash, metadata.runtime_config_hash, metadata.clock_mode);
+```
+
+`App::graph_metadata()` and `App::graph_definition_hash()` are useful for replay manifests and checkpoint labels. The graph hash covers the graph definition surface, including node kinds, edges, conditional edge registrations, and reducer definition labels. Custom reducers can override `Reducer::definition_label(...)` when a stable domain label is more appropriate than the default Rust type path.
+
+### Replay Conformance Checks
+
+Replay helpers compare normalized events and final state snapshots for uninterrupted/resumed run parity.
+
+```rust
+use weavegraph::runtimes::{ReplayRun, compare_replay_runs};
+
+let expected = ReplayRun::new(expected_state, expected_events);
+let actual = ReplayRun::new(actual_state, actual_events);
+
+compare_replay_runs(&expected, &actual).assert_matches()?;
+```
+
+Use `compare_event_sequences_with(...)` or `compare_replay_runs_with(...)` when domain events need custom normalization before comparison.
+
 ### Storage Management
 
 **InMemoryCheckpointer** stores only the latest checkpoint per session (automatic retention). No storage management needed.

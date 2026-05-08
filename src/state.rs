@@ -36,12 +36,137 @@
 //! ```
 
 use rustc_hash::FxHashMap;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use std::marker::PhantomData;
+use thiserror::Error;
 
 use crate::{
     channels::{Channel, ErrorsChannel, ExtrasChannel, MessagesChannel},
     message::{Message, Role},
 };
+
+/// A schema-versioned key for typed values stored in [`VersionedState::extra`].
+///
+/// `StateKey` is a thin helper over the JSON-compatible `extra` map. Domain
+/// crates can define constants and use them from nodes, reducers, tests, and
+/// replay code without repeating string literals.
+///
+/// # Examples
+///
+/// ```rust
+/// use serde::{Deserialize, Serialize};
+/// use weavegraph::state::StateKey;
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct PortfolioSnapshot {
+///     cash: i64,
+/// }
+///
+/// const PORTFOLIO: StateKey<PortfolioSnapshot> =
+///     StateKey::new("wq", "portfolio_snapshot", 1);
+///
+/// assert_eq!(PORTFOLIO.storage_key(), "wq:portfolio_snapshot:v1");
+/// ```
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct StateKey<T> {
+    namespace: &'static str,
+    name: &'static str,
+    schema_version: u32,
+    _marker: PhantomData<fn() -> T>,
+}
+
+impl<T> Clone for StateKey<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for StateKey<T> {}
+
+impl<T> StateKey<T> {
+    /// Create a typed state key.
+    pub const fn new(namespace: &'static str, name: &'static str, schema_version: u32) -> Self {
+        Self {
+            namespace,
+            name,
+            schema_version,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Return the namespace component.
+    #[must_use]
+    pub fn namespace(&self) -> &'static str {
+        self.namespace
+    }
+
+    /// Return the key name component.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// Return the schema version component.
+    #[must_use]
+    pub fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// Return the concrete `extra` map key used for storage.
+    ///
+    /// The format is `namespace:name:v{schema_version}`. Changing the schema
+    /// version intentionally writes to a different slot, avoiding silent
+    /// collisions between incompatible payload shapes.
+    #[must_use]
+    pub fn storage_key(&self) -> String {
+        format!("{}:{}:v{}", self.namespace, self.name, self.schema_version)
+    }
+}
+
+/// Errors produced by typed state-slot helpers.
+#[derive(Debug, Error)]
+#[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+pub enum StateSlotError {
+    /// The requested typed slot was not present in the state.
+    #[error("state slot not found: {key}")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::state::slot_missing))
+    )]
+    Missing {
+        /// The concrete storage key that was not found.
+        key: String,
+    },
+
+    /// A typed slot value could not be serialized to JSON.
+    #[error("failed to serialize state slot {key}: {source}")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::state::slot_serialize))
+    )]
+    Serialize {
+        /// The concrete storage key being written.
+        key: String,
+        /// The underlying serde error.
+        #[source]
+        source: serde_json::Error,
+    },
+
+    /// A typed slot value could not be deserialized from JSON.
+    #[error("failed to deserialize state slot {key}: {source}")]
+    #[cfg_attr(
+        feature = "diagnostics",
+        diagnostic(code(weavegraph::state::slot_deserialize))
+    )]
+    Deserialize {
+        /// The concrete storage key being read.
+        key: String,
+        /// The underlying serde error.
+        #[source]
+        source: serde_json::Error,
+    },
+}
 
 /// The main state container for workflow execution.
 ///
@@ -322,6 +447,26 @@ impl VersionedState {
         self
     }
 
+    /// Adds a typed value to the extra channel using a schema-versioned key.
+    ///
+    /// The value is serialized to JSON and stored under
+    /// [`StateKey::storage_key`]. The channel version is still advanced by the
+    /// normal barrier system during graph execution.
+    pub fn add_typed_extra<T: Serialize>(
+        &mut self,
+        key: StateKey<T>,
+        value: T,
+    ) -> Result<&mut Self, StateSlotError> {
+        let storage_key = key.storage_key();
+        let json_value =
+            serde_json::to_value(value).map_err(|source| StateSlotError::Serialize {
+                key: storage_key.clone(),
+                source,
+            })?;
+        self.extra.get_mut().insert(storage_key, json_value);
+        Ok(self)
+    }
+
     /// Creates an immutable snapshot of the current state.
     ///
     /// This method clones the current channel data and version numbers,
@@ -366,6 +511,41 @@ impl VersionedState {
             errors: self.errors.snapshot(),
             errors_version: self.errors.version(),
         }
+    }
+}
+
+impl StateSnapshot {
+    /// Read an optional typed value from the extra channel.
+    ///
+    /// Returns `Ok(None)` when the slot is absent. Deserialization errors are
+    /// reported with the concrete storage key.
+    pub fn get_typed<T: DeserializeOwned>(
+        &self,
+        key: StateKey<T>,
+    ) -> Result<Option<T>, StateSlotError> {
+        let storage_key = key.storage_key();
+        self.extra
+            .get(&storage_key)
+            .cloned()
+            .map(|value| {
+                serde_json::from_value(value).map_err(|source| StateSlotError::Deserialize {
+                    key: storage_key,
+                    source,
+                })
+            })
+            .transpose()
+    }
+
+    /// Read a required typed value from the extra channel.
+    ///
+    /// Use this when a node cannot proceed without a specific typed slot.
+    pub fn require_typed<T: DeserializeOwned>(
+        &self,
+        key: StateKey<T>,
+    ) -> Result<T, StateSlotError> {
+        let storage_key = key.storage_key();
+        self.get_typed(key)?
+            .ok_or(StateSlotError::Missing { key: storage_key })
     }
 }
 
@@ -514,6 +694,22 @@ impl VersionedStateBuilder {
     pub fn with_extra(mut self, key: &str, value: Value) -> Self {
         self.extra.insert(key.to_string(), value);
         self
+    }
+
+    /// Adds a typed value to the extra channel using a schema-versioned key.
+    pub fn with_typed_extra<T: Serialize>(
+        mut self,
+        key: StateKey<T>,
+        value: T,
+    ) -> Result<Self, StateSlotError> {
+        let storage_key = key.storage_key();
+        let json_value =
+            serde_json::to_value(value).map_err(|source| StateSlotError::Serialize {
+                key: storage_key.clone(),
+                source,
+            })?;
+        self.extra.insert(storage_key, json_value);
+        Ok(self)
     }
 
     /// Builds the final VersionedState.
