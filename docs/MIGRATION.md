@@ -5,6 +5,136 @@ migration guidance for upgrading your code.
 
 ---
 
+## v0.6.0
+
+### Overview
+
+v0.6.0 adds two major feature groups (WG-006 and WG-007) with only one breaking change: five
+public error enums are now `#[non_exhaustive]`. The new APIs are purely additive and backward-compatible.
+
+### Breaking: `#[non_exhaustive]` error enums
+
+The following enums are now `#[non_exhaustive]` to allow adding new variants in future minor releases without a breaking change:
+
+- `RunnerError`
+- `NodeError`
+- `CheckpointerError`
+- `StateSlotError`
+- `ReplayConformanceError`
+
+**Migration**: Any exhaustive `match` on these types will now fail to compile. Add a wildcard arm:
+
+```rust
+// Before (0.5.0)
+match err {
+    RunnerError::SessionNotFound(_) => { /* ... */ }
+    RunnerError::StepFailed(_) => { /* ... */ }
+    // compiler accepted this as exhaustive
+}
+
+// After (0.6.0)
+match err {
+    RunnerError::SessionNotFound(_) => { /* ... */ }
+    RunnerError::StepFailed(_) => { /* ... */ }
+    _ => { /* handle any future variants */ }
+}
+```
+
+### Breaking: `MapMerge` now deletes keys with null values (RFC 7396)
+
+`MapMerge`, the built-in reducer for `VersionedState.extra`, previously wrote `serde_json::Value::Null` verbatim into the state map. It now **removes** the key when the incoming value is `null`, following [JSON Merge Patch](https://www.rfc-editor.org/rfc/rfc7396) semantics.
+
+**Impact**: If your graph stores `serde_json::Value::Null` intentionally as a meaningful value (as opposed to an absence marker), replace it with an explicit sentinel, for example:
+
+```json
+{ "absent": true }
+```
+
+**Benefit**: `NodePartial::clear_extra_keys` and `clear_typed_extra_key` now fully delete keys — no wrapper reducer or post-processing is required.
+
+### New: Invocation-scoped state slots (WG-006)
+
+Mark a `StateKey<T>` as `InvocationScoped` using the new const builder:
+
+```rust
+const SCRATCH: StateKey<ScratchPad> = StateKey::new("wq", "scratch", 1)
+    .invocation_scoped();
+```
+
+Keys marked `InvocationScoped` compare equal to a `Durable` key with the same `(namespace, name, schema_version)` — lifecycle is intentionally excluded from equality and hashing so that the same slot can be used across invocations without registry conflicts.
+
+To clear invocation-scoped slots at re-entry (e.g. in iterative sessions), call `clear_typed_extra_key` on the outgoing `NodePartial`:
+
+```rust
+partial.clear_typed_extra_key(SCRATCH)
+```
+
+This **deletes** the key from `VersionedState.extra` — no separate cleanup reducer is needed.
+`MapMerge` (the built-in extra reducer) now follows JSON Merge Patch semantics (RFC 7396):
+an incoming `null` removes the key rather than storing a null value.
+
+### New: Replay normalization profiles (WG-006)
+
+Use `StateNormalizeProfile` to ignore volatile or invocation-scoped keys during replay comparison:
+
+```rust
+let profile = StateNormalizeProfile::new()
+    .ignore_key(SCRATCH)         // typed — records lifecycle for conflict detection
+    .ignore_extra_keys(["ts"]);  // raw string — no lifecycle
+
+let comparison = compare_final_state_with(&run_a, &run_b, &profile);
+assert!(comparison.is_equivalent());
+```
+
+### New: Runtime observer (WG-007)
+
+Attach a `RuntimeObserver` to an `AppRunner` for structured hook callbacks at key lifecycle points:
+
+```rust
+#[derive(Debug)]
+struct MyObserver;
+
+impl RuntimeObserver for MyObserver {
+    fn on_invocation_finish(&self, meta: &InvocationFinishMeta<'_>) {
+        println!("run {} completed in {}ms", meta.session_id, meta.duration_ms);
+    }
+}
+
+let runner = AppRunner::builder()
+    .app(app)
+    .observer(Arc::new(MyObserver))
+    .build()
+    .await?;
+```
+
+When no observer is attached, there is zero overhead — the observer field is `Option<Arc<...>>`.
+
+Observer panics are caught via `catch_unwind` and logged as warnings; a misbehaving observer
+cannot crash or abort a workflow invocation.
+
+### New: MetricsObserver (WG-007, `metrics` feature)
+
+Enable the `metrics` feature and attach `MetricsObserver` to export standard Prometheus-compatible metrics via any `metrics`-crate recorder (e.g. `metrics-exporter-prometheus`):
+
+```toml
+weavegraph = { version = "0.6", features = ["metrics"] }
+metrics-exporter-prometheus = "0.17"
+```
+
+```rust
+use weavegraph::runtimes::MetricsObserver;
+
+let runner = AppRunner::builder()
+    .app(app)
+    .observer(Arc::new(MetricsObserver))
+    .build()
+    .await?;
+```
+
+See the `metrics_observer` module docs for the full metric inventory.
+
+---
+
 ## v0.5.0
 
 ### Overview

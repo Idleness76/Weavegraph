@@ -13,11 +13,17 @@ use crate::app::{App, BarrierOutcome};
 use crate::channels::Channel;
 use crate::channels::errors::{ErrorEvent, ErrorScope, WeaveError};
 use crate::control::{FrontierCommand, NodeRoute};
+use crate::event_bus::emitter::{EmitterError, EventEmitter};
+use crate::event_bus::event::Event;
 use crate::event_bus::{EventBus, EventStream};
 use crate::node::NodePartial;
 use crate::runtimes::CheckpointerType;
 use crate::runtimes::execution::{
     PausedReason, PausedReport, SchedulerOutcome, StepOptions, StepReport, StepResult,
+};
+use crate::runtimes::observer::{
+    CheckpointLoadMeta, CheckpointSaveMeta, EventBusEmitMeta, InvocationFinishMeta,
+    InvocationOutcome, InvocationStartMeta, NodeFinishMeta, NodeOutcome, RuntimeObserver,
 };
 use crate::runtimes::session::{SessionInit, SessionState, StateVersions};
 use crate::runtimes::streaming::{StreamEndReason, emit_invocation_end, finalize_event_stream};
@@ -29,10 +35,66 @@ use crate::state::VersionedState;
 use crate::types::NodeKind;
 use crate::utils::clock::Clock;
 use rustc_hash::FxHashMap;
+use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinError;
 use tracing::instrument;
+
+// ============================================================================
+// Private helpers
+// ============================================================================
+
+/// An [`EventEmitter`] wrapper that calls an observer's `on_event_bus_emit`
+/// hook after each successful (or failed) emit attempt.
+///
+/// Built lazily in `schedule_step` when an observer is present; otherwise the
+/// raw emitter is used directly, paying zero overhead.
+struct ObservingEmitter {
+    inner: Arc<dyn EventEmitter>,
+    observer: Arc<dyn RuntimeObserver>,
+}
+
+impl fmt::Debug for ObservingEmitter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ObservingEmitter")
+            .field("observer", &self.observer)
+            .finish_non_exhaustive()
+    }
+}
+
+impl EventEmitter for ObservingEmitter {
+    fn emit(&self, event: Event) -> Result<(), EmitterError> {
+        let scope = event.scope_label().unwrap_or("unknown").to_owned();
+        let result = self.inner.emit(event);
+        let meta = EventBusEmitMeta { scope: &scope };
+        // Safety: `Arc<dyn RuntimeObserver + RefUnwindSafe>` is AssertUnwindSafe-safe
+        // because we require RefUnwindSafe as a supertrait on RuntimeObserver.
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.observer.on_event_bus_emit(&meta)
+        }))
+        .is_err()
+        {
+            tracing::warn!("RuntimeObserver::on_event_bus_emit panicked; execution continues");
+        }
+        result
+    }
+}
+
+/// Call an observer hook, catching any panic and logging it as a warning.
+///
+/// Hooks must not kill graph execution; this helper enforces that contract.
+fn call_observer_hook<F>(f: F, hook_name: &'static str)
+where
+    F: FnOnce() + std::panic::UnwindSafe,
+{
+    if std::panic::catch_unwind(f).is_err() {
+        tracing::warn!(
+            hook = hook_name,
+            "RuntimeObserver hook panicked; execution continues"
+        );
+    }
+}
 
 /// Runtime execution engine for workflow graphs with session management and event streaming.
 ///
@@ -139,11 +201,13 @@ pub struct AppRunner {
     event_stream_taken: bool,
     clock: Option<Arc<dyn Clock>>,
     checkpointer_descriptor: String,
+    observer: Option<Arc<dyn RuntimeObserver>>,
 }
 
 /// Errors that can occur during workflow execution.
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+#[non_exhaustive]
 pub enum RunnerError {
     /// The requested session was not found.
     #[error("session not found: {session_id}")]
@@ -248,6 +312,7 @@ pub struct RunMetadata {
 struct RunnerRuntimeMetadata {
     clock: Option<Arc<dyn Clock>>,
     checkpointer_descriptor: String,
+    observer: Option<Arc<dyn RuntimeObserver>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -342,6 +407,7 @@ pub struct AppRunnerBuilder {
     event_bus: Option<EventBus>,
     start_listener: bool,
     clock: Option<Arc<dyn Clock>>,
+    observer: Option<Arc<dyn RuntimeObserver>>,
 }
 
 impl Default for AppRunnerBuilder {
@@ -368,6 +434,7 @@ impl AppRunnerBuilder {
             event_bus: None,
             start_listener: true,
             clock: None,
+            observer: None,
         }
     }
 
@@ -444,6 +511,42 @@ impl AppRunnerBuilder {
         self
     }
 
+    /// Attach a [`RuntimeObserver`] to receive telemetry hooks during execution.
+    ///
+    /// The observer is called synchronously at invocation boundaries, per-node
+    /// completion, checkpoint operations, and event-bus emissions. It pays zero
+    /// runtime cost when not set (`None` default).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use std::sync::Arc;
+    /// use weavegraph::runtimes::{AppRunner, observer::{RuntimeObserver, NodeFinishMeta}};
+    /// # use weavegraph::app::App;
+    ///
+    /// #[derive(Debug)]
+    /// struct LogObserver;
+    ///
+    /// impl RuntimeObserver for LogObserver {
+    ///     fn on_node_finish(&self, meta: &NodeFinishMeta<'_>) {
+    ///         tracing::info!(node = ?meta.node_kind, step = meta.step, "node finished");
+    ///     }
+    /// }
+    ///
+    /// # async fn example(app: App) {
+    /// let runner = AppRunner::builder()
+    ///     .app(app)
+    ///     .observer(Arc::new(LogObserver))
+    ///     .build()
+    ///     .await;
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn observer(mut self, observer: Arc<dyn RuntimeObserver>) -> Self {
+        self.observer = Some(observer);
+        self
+    }
+
     /// Build the [`AppRunner`].
     ///
     /// # Panics
@@ -471,6 +574,7 @@ impl AppRunnerBuilder {
         let runtime_metadata = RunnerRuntimeMetadata {
             clock,
             checkpointer_descriptor,
+            observer: self.observer,
         };
 
         Some(
@@ -625,6 +729,7 @@ impl AppRunner {
             event_stream_taken: false,
             clock: runtime_metadata.clock,
             checkpointer_descriptor: runtime_metadata.checkpointer_descriptor,
+            observer: runtime_metadata.observer,
         }
     }
 
@@ -659,7 +764,22 @@ impl AppRunner {
 
         if let Some(stored) = restored_checkpoint {
             let restored = restore_session_state(&stored);
-            self.sessions.insert(session_id, restored);
+            let restored_step = stored.step;
+            self.sessions.insert(session_id.clone(), restored);
+            if let Some(obs) = &self.observer {
+                let backend = self.checkpointer_descriptor.as_str();
+                let sid = session_id.as_str();
+                call_observer_hook(
+                    || {
+                        obs.on_checkpoint_load(&CheckpointLoadMeta {
+                            session_id: sid,
+                            backend,
+                            step: restored_step,
+                        })
+                    },
+                    "on_checkpoint_load",
+                );
+            }
             return Ok(SessionInit::Resumed {
                 checkpoint_step: stored.step,
             });
@@ -1028,6 +1148,15 @@ impl AppRunner {
         step: u64,
     ) -> Result<SchedulerOutcome, RunnerError> {
         let snapshot = session_state.state.snapshot();
+        // If an observer is attached, wrap the emitter to fire on_event_bus_emit for each emit.
+        let emitter: Arc<dyn EventEmitter> = if let Some(obs) = &self.observer {
+            Arc::new(ObservingEmitter {
+                inner: self.event_bus.get_emitter(),
+                observer: Arc::clone(obs),
+            })
+        } else {
+            self.event_bus.get_emitter()
+        };
         let result = session_state
             .scheduler
             .superstep(
@@ -1037,7 +1166,7 @@ impl AppRunner {
                 snapshot.clone(),
                 step,
                 SchedulerRunContext {
-                    event_emitter: self.event_bus.get_emitter(),
+                    event_emitter: emitter,
                     clock: self.clock.clone(),
                     invocation_id: Some(session_id.to_string()),
                 },
@@ -1197,9 +1326,27 @@ impl AppRunner {
                     && let Some(checkpointer) = &self.checkpointer
                     && let Some(session_state) = self.sessions.get(session_id)
                 {
-                    let _ = checkpointer
+                    let start = std::time::Instant::now();
+                    let result = checkpointer
                         .save(Checkpoint::from_session(session_id, session_state))
                         .await;
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    if result.is_ok()
+                        && let Some(obs) = &self.observer
+                    {
+                        let backend = self.checkpointer_descriptor.as_str();
+                        call_observer_hook(
+                            || {
+                                obs.on_checkpoint_save(&CheckpointSaveMeta {
+                                    session_id,
+                                    backend,
+                                    step,
+                                    duration_ms,
+                                })
+                            },
+                            "on_checkpoint_save",
+                        );
+                    }
                 }
             })
             .await;
@@ -1217,6 +1364,7 @@ impl AppRunner {
     ) -> Result<StepReport, RunnerError> {
         session_state.step += 1;
         let step = session_state.step;
+        let step_start = std::time::Instant::now();
 
         tracing::debug!(step, "starting superstep");
 
@@ -1285,6 +1433,39 @@ impl AppRunner {
             extra_version: session_state.state.extra.version(),
         };
 
+        // Emit per-node finish hooks (step-level timing, shared across all nodes in superstep).
+        if let Some(obs) = &self.observer {
+            let step_duration_ms = step_start.elapsed().as_millis() as u64;
+            for node_kind in &scheduler_outcome.ran_nodes {
+                call_observer_hook(
+                    || {
+                        obs.on_node_finish(&NodeFinishMeta {
+                            node_kind,
+                            session_id,
+                            step,
+                            step_duration_ms,
+                            outcome: NodeOutcome::Completed,
+                        })
+                    },
+                    "on_node_finish",
+                );
+            }
+            for node_kind in &scheduler_outcome.skipped_nodes {
+                call_observer_hook(
+                    || {
+                        obs.on_node_finish(&NodeFinishMeta {
+                            node_kind,
+                            session_id,
+                            step,
+                            step_duration_ms,
+                            outcome: NodeOutcome::Skipped,
+                        })
+                    },
+                    "on_node_finish",
+                );
+            }
+        }
+
         Ok(StepReport {
             step,
             ran_nodes: scheduler_outcome.ran_nodes,
@@ -1296,7 +1477,11 @@ impl AppRunner {
         })
     }
 
-    /// Run until completion (End nodes or no frontier) - the canonical execution method
+    /// Runs the workflow to completion (until End nodes or an empty frontier is reached).
+    ///
+    /// This is the canonical single-invocation execution method. For iterative
+    /// (multi-input) sessions, use [`create_iterative_session`](Self::create_iterative_session)
+    /// and [`invoke_next`](Self::invoke_next) instead.
     #[instrument(skip(self, session_id), err)]
     pub async fn run_until_complete(
         &mut self,
@@ -1312,6 +1497,22 @@ impl AppRunner {
         completion_policy: CompletionEventPolicy,
     ) -> Result<VersionedState, RunnerError> {
         tracing::info!(session = %session_id, "workflow run started");
+
+        let graph_id = self.app.graph_definition_hash();
+        if let Some(obs) = &self.observer {
+            let sid = session_id;
+            let gid = graph_id.as_str();
+            call_observer_hook(
+                || {
+                    obs.on_invocation_start(&InvocationStartMeta {
+                        session_id: sid,
+                        graph_id: gid,
+                    })
+                },
+                "on_invocation_start",
+            );
+        }
+        let invocation_start = std::time::Instant::now();
 
         loop {
             // Check if we're done before trying to run
@@ -1345,6 +1546,23 @@ impl AppRunner {
                         },
                         completion_policy,
                     );
+                    if let Some(obs) = &self.observer {
+                        let duration_ms = invocation_start.elapsed().as_millis() as u64;
+                        let graph_id = self.app.graph_definition_hash();
+                        let sid = session_id;
+                        let gid = graph_id.as_str();
+                        call_observer_hook(
+                            || {
+                                obs.on_invocation_finish(&InvocationFinishMeta {
+                                    session_id: sid,
+                                    graph_id: gid,
+                                    duration_ms,
+                                    outcome: InvocationOutcome::Error,
+                                })
+                            },
+                            "on_invocation_finish",
+                        );
+                    }
                     return Err(err);
                 }
             };
@@ -1414,6 +1632,21 @@ impl AppRunner {
             StreamEndReason::Completed { step: final_step },
             completion_policy,
         );
+        if let Some(obs) = &self.observer {
+            let duration_ms = invocation_start.elapsed().as_millis() as u64;
+            let gid = graph_id.as_str();
+            call_observer_hook(
+                || {
+                    obs.on_invocation_finish(&InvocationFinishMeta {
+                        session_id,
+                        graph_id: gid,
+                        duration_ms,
+                        outcome: InvocationOutcome::Completed,
+                    })
+                },
+                "on_invocation_finish",
+            );
+        }
         Ok(final_state)
     }
 

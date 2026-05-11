@@ -159,6 +159,7 @@ impl Checkpoint {
 /// Errors from checkpointer operations.
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+#[non_exhaustive]
 pub enum CheckpointerError {
     /// Session was not found in the checkpointer.
     #[error("session not found: {session_id}")]
