@@ -38,6 +38,7 @@
 use rustc_hash::FxHashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use thiserror::Error;
 
@@ -46,17 +47,53 @@ use crate::{
     message::{Message, Role},
 };
 
+/// Lifecycle classification for a state slot.
+///
+/// A slot's lifecycle is **metadata** — it does not change the storage key or
+/// affect `PartialEq` / `Hash` comparisons. Two `StateKey` values with the
+/// same `(namespace, name, schema_version)` but different lifecycle annotations
+/// refer to the same underlying storage slot and compare as equal.
+///
+/// Lifecycle is consumed by [`StateNormalizeProfile`](crate::runtimes::replay::StateNormalizeProfile)
+/// and by [`NodePartial::clear_typed_extra_key`](crate::node::NodePartial::clear_typed_extra_key)
+/// to distinguish durable state from per-invocation scratch values.
+///
+/// # Registration-time conflict detection
+///
+/// When you register a key with a lifecycle annotation (e.g. via
+/// `StateNormalizeProfile::ignore_key`), the profile detects and panics on
+/// conflicting annotations for the same storage key. This catches the common
+/// mistake of defining the same slot constant twice with different lifecycle
+/// policies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateLifecycle {
+    /// The slot contains durable state that persists across invocations.
+    ///
+    /// This is the default.
+    Durable,
+    /// The slot contains per-invocation scratch data that should be excluded
+    /// from durable state comparisons and resume normalization.
+    InvocationScoped,
+}
+
 /// A schema-versioned key for typed values stored in [`VersionedState::extra`].
 ///
 /// `StateKey` is a thin helper over the JSON-compatible `extra` map. Domain
 /// crates can define constants and use them from nodes, reducers, tests, and
 /// replay code without repeating string literals.
 ///
+/// # Equality and hashing
+///
+/// `PartialEq`, `Eq`, and `Hash` are based solely on `(namespace, name,
+/// schema_version)`. The `lifecycle` field is metadata and is **excluded**
+/// from equality comparisons, so that two keys for the same slot compare equal
+/// regardless of their lifecycle annotation.
+///
 /// # Examples
 ///
 /// ```rust
 /// use serde::{Deserialize, Serialize};
-/// use weavegraph::state::StateKey;
+/// use weavegraph::state::{StateKey, StateLifecycle};
 ///
 /// #[derive(Serialize, Deserialize)]
 /// struct PortfolioSnapshot {
@@ -66,13 +103,23 @@ use crate::{
 /// const PORTFOLIO: StateKey<PortfolioSnapshot> =
 ///     StateKey::new("wq", "portfolio_snapshot", 1);
 ///
+/// const CURRENT_EVENT: StateKey<u64> =
+///     StateKey::new("wq", "event", 1).invocation_scoped();
+///
 /// assert_eq!(PORTFOLIO.storage_key(), "wq:portfolio_snapshot:v1");
+/// assert_eq!(CURRENT_EVENT.lifecycle(), StateLifecycle::InvocationScoped);
+/// // Same slot identity regardless of lifecycle annotation:
+/// assert_eq!(
+///     StateKey::<u64>::new("wq", "event", 1),
+///     StateKey::<u64>::new("wq", "event", 1).invocation_scoped(),
+/// );
 /// ```
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct StateKey<T> {
     namespace: &'static str,
     name: &'static str,
     schema_version: u32,
+    lifecycle: StateLifecycle,
     _marker: PhantomData<fn() -> T>,
 }
 
@@ -84,15 +131,63 @@ impl<T> Clone for StateKey<T> {
 
 impl<T> Copy for StateKey<T> {}
 
+// Equality and Hash intentionally exclude `lifecycle` — it is metadata,
+// not identity. Two keys for the same slot are the same key.
+impl<T> PartialEq for StateKey<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.namespace == other.namespace
+            && self.name == other.name
+            && self.schema_version == other.schema_version
+    }
+}
+
+impl<T> Eq for StateKey<T> {}
+
+impl<T> Hash for StateKey<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.namespace.hash(state);
+        self.name.hash(state);
+        self.schema_version.hash(state);
+    }
+}
+
 impl<T> StateKey<T> {
-    /// Create a typed state key.
+    /// Create a typed state key with [`StateLifecycle::Durable`] (default).
     pub const fn new(namespace: &'static str, name: &'static str, schema_version: u32) -> Self {
         Self {
             namespace,
             name,
             schema_version,
+            lifecycle: StateLifecycle::Durable,
             _marker: PhantomData,
         }
+    }
+
+    /// Return a copy of this key annotated as [`StateLifecycle::InvocationScoped`].
+    ///
+    /// The returned key compares equal to the original — lifecycle is metadata,
+    /// not identity. Use this when defining constants that represent
+    /// per-invocation scratch slots so that normalization profiles and cleanup
+    /// helpers can distinguish them from durable state.
+    ///
+    /// ```rust
+    /// use weavegraph::state::{StateKey, StateLifecycle};
+    ///
+    /// const TICK_EVENT: StateKey<u64> =
+    ///     StateKey::new("wq", "tick_event", 1).invocation_scoped();
+    ///
+    /// assert_eq!(TICK_EVENT.lifecycle(), StateLifecycle::InvocationScoped);
+    /// ```
+    #[must_use]
+    pub const fn invocation_scoped(mut self) -> Self {
+        self.lifecycle = StateLifecycle::InvocationScoped;
+        self
+    }
+
+    /// Return the lifecycle classification of this key.
+    #[must_use]
+    pub fn lifecycle(&self) -> StateLifecycle {
+        self.lifecycle
     }
 
     /// Return the namespace component.
@@ -127,6 +222,7 @@ impl<T> StateKey<T> {
 /// Errors produced by typed state-slot helpers.
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+#[non_exhaustive]
 pub enum StateSlotError {
     /// The requested typed slot was not present in the state.
     #[error("state slot not found: {key}")]

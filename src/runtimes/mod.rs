@@ -53,6 +53,10 @@ pub mod checkpointer_sqlite;
 #[cfg(feature = "sqlite")]
 mod checkpointer_sqlite_helpers;
 pub mod execution;
+#[cfg(feature = "metrics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "metrics")))]
+pub mod metrics_observer;
+pub mod observer;
 pub mod persistence;
 pub mod replay;
 pub mod runner;
@@ -85,9 +89,17 @@ pub use session::{SessionInit, SessionState, StateVersions};
 pub use runner::{AppRunner, AppRunnerBuilder, RunMetadata};
 
 pub use replay::{
-    ReplayComparison, ReplayConformanceError, ReplayRun, compare_event_sequences,
-    compare_event_sequences_with, compare_final_state, compare_replay_runs,
-    compare_replay_runs_with, normalize_event, normalize_state,
+    ReplayComparison, ReplayConformanceError, ReplayRun, StateNormalizeProfile,
+    compare_event_sequences, compare_event_sequences_with, compare_final_state,
+    compare_final_state_with, compare_replay_runs, compare_replay_runs_with,
+    compare_replay_runs_with_profile, normalize_event, normalize_state, normalize_state_with,
 };
 pub use runtime_config::{EventBusConfig, RuntimeConfig, SinkConfig};
 pub use types::{SessionId, StepNumber};
+
+#[cfg(feature = "metrics")]
+pub use metrics_observer::MetricsObserver;
+pub use observer::{
+    CheckpointLoadMeta, CheckpointSaveMeta, EventBusEmitMeta, InvocationFinishMeta,
+    InvocationOutcome, InvocationStartMeta, NodeFinishMeta, NodeOutcome, RuntimeObserver,
+};

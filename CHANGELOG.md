@@ -5,7 +5,40 @@ All notable changes to Weavegraph will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-05-11
+
+### Added
+
+#### WG-006 — Invocation-scoped state lifecycle + normalization profiles
+
+- `StateLifecycle` enum (`Durable` / `InvocationScoped`) in `weavegraph::state`.
+- `StateKey<T>::invocation_scoped()` const builder — marks a key as invocation-scoped without changing its identity (equality / hash exclude the lifecycle field).
+- `StateKey<T>::lifecycle()` getter returning the stored `StateLifecycle`.
+- `StateNormalizeProfile` in `weavegraph::runtimes::replay` — fluent builder for specifying which state keys to ignore during replay comparison. Supports both typed (`ignore_key<T>(StateKey<T>)`) and raw-string (`ignore_extra_keys(impl IntoIterator<Item = &str>)`) forms. Panics at construction time if two registrations conflict on lifecycle annotation.
+- `normalize_state_with(state, profile)` — normalizes a `VersionedState` snapshot to a `serde_json::Value` after dropping ignored keys.
+- `compare_final_state_with(left, right, profile)` — variant of `compare_final_state` accepting a `StateNormalizeProfile`.
+- `compare_replay_runs_with_profile(left, right, profile, event_normalizer)` — variant of `compare_replay_runs_with` accepting a `StateNormalizeProfile`.
+- `NodePartial::clear_extra_keys(keys)` — **deletes** the given raw keys from state on the next barrier application. Uses JSON Merge Patch semantics: `MapMerge` now removes keys whose incoming value is `null` (RFC 7396). No separate cleanup reducer is needed.
+- `NodePartial::clear_typed_extra_key(key)` — typed companion to `clear_extra_keys`; uses the `StateKey`'s storage key.
+
+#### WG-007 — Runtime observability hooks + metrics adapter
+
+- `RuntimeObserver` trait in `weavegraph::runtimes::observer` — zero-cost (no allocation, no virtual dispatch when unused), always compiled, no feature gate. All methods have default no-op bodies; implementors override only what they need.
+- Hook methods: `on_invocation_start`, `on_invocation_finish`, `on_node_finish`, `on_checkpoint_load`, `on_checkpoint_save`, `on_event_bus_emit`.
+- Metadata structs (all `#[non_exhaustive]`): `InvocationStartMeta`, `InvocationFinishMeta`, `NodeFinishMeta`, `CheckpointLoadMeta`, `CheckpointSaveMeta`, `EventBusEmitMeta`.
+- Outcome enums (all `#[non_exhaustive]`): `InvocationOutcome`, `NodeOutcome`.
+- `AppRunnerBuilder::observer(Arc<dyn RuntimeObserver>)` — attaches an observer; no-op overhead when not set.
+- Observer panics are caught via `std::panic::catch_unwind` and logged as `tracing::warn!` — a misbehaving observer cannot abort a workflow.
+- `ObservingEmitter` (private) — wraps the event bus emitter to fire `on_event_bus_emit` for every emitted event when an observer is attached.
+- `MetricsObserver` in `weavegraph::runtimes::metrics_observer` — a `RuntimeObserver` impl that emits standard counters and histograms via the `metrics` crate facade. Available under the `metrics` feature flag.
+  - Counters: `weavegraph.node.invocations` (labels: `node`, `outcome`), `weavegraph.invocation.count` (`outcome`), `weavegraph.checkpoint.saves` (`backend`), `weavegraph.checkpoint.loads` (`backend`), `weavegraph.event_bus.emits` (`scope`).
+  - Histograms: `weavegraph.node.step_duration_ms` (`node`), `weavegraph.invocation.duration_ms`, `weavegraph.checkpoint.save_duration_ms` (`backend`).
+
+### Changed (breaking)
+
+- `RunnerError`, `NodeError`, `CheckpointerError`, `StateSlotError`, and `ReplayConformanceError` are now `#[non_exhaustive]`. Exhaustive `match` arms on these types must add a wildcard `_` arm.
+  - Migration: replace `_ => unreachable!()` with `_ => { /* handle future variants */ }` where appropriate.
+- **`MapMerge` reducer now deletes keys whose incoming value is `null`** (JSON Merge Patch / RFC 7396). Previously a `null` was written into state as-is. Any code that deliberately stored `serde_json::Value::Null` via `with_extra` should use a sentinel value instead (e.g. a JSON object with an `absent: true` field).
 
 ## [0.5.0] - 2026-05-08
 

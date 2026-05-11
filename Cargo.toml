@@ -1,6 +1,6 @@
 [package]
 name = "weavegraph"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "Graph-driven, concurrent agent workflow framework with versioned state, deterministic barrier merges, and rich diagnostics."
 license = "MIT"
@@ -100,6 +100,7 @@ reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
 ], optional = true }
 scraper = { version = "0.25", optional = true }
+metrics = { version = "0.24", optional = true }
 # wg-ragsmith removed from dependencies to avoid circular dependency.
 # For RAG examples, see the wg-ragsmith crate directly.
 
@@ -120,6 +121,7 @@ postgres = ["sqlx"]
 rig = ["dep:rig-core", "dep:rmcp"]
 diagnostics = ["dep:miette"]
 examples = ["reqwest", "scraper"]
+metrics = ["dep:metrics"]
 petgraph-compat = ["petgraph"]
 
 [[example]]

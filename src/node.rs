@@ -402,6 +402,59 @@ impl NodePartial {
         self.frontier = Some(command);
         self
     }
+
+    /// Remove the given extra keys from state on the next barrier application.
+    ///
+    /// Writes `serde_json::Value::Null` markers into the partial. [`MapMerge`](crate::reducers::MapMerge)
+    /// (the built-in extra reducer) follows JSON Merge Patch semantics (RFC 7396) and
+    /// **deletes** keys whose incoming value is `null`, so no separate cleanup reducer
+    /// is needed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use weavegraph::node::NodePartial;
+    ///
+    /// let partial = NodePartial::new()
+    ///     .clear_extra_keys(["wq:feature_snapshot:v1", "wq:signal_event:v1"]);
+    /// ```
+    #[must_use]
+    pub fn clear_extra_keys<I, S>(mut self, keys: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let extra = self.extra.get_or_insert_with(FxHashMap::default);
+        for key in keys {
+            extra.insert(key.into(), serde_json::Value::Null);
+        }
+        self
+    }
+
+    /// Remove a single typed extra key from state on the next barrier application.
+    ///
+    /// Typed companion to [`clear_extra_keys`](Self::clear_extra_keys). The storage key
+    /// is derived from the `StateKey`'s `(namespace, name, schema_version)` triple so
+    /// that the same constant used to write a value can be used to delete it.
+    ///
+    /// [`MapMerge`](crate::reducers::MapMerge) deletes keys with null values (RFC 7396),
+    /// so no separate cleanup reducer is needed.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use weavegraph::node::NodePartial;
+    /// use weavegraph::state::{StateKey, StateLifecycle};
+    ///
+    /// const CURRENT_EVENT: StateKey<u64> =
+    ///     StateKey::new("wq", "event", 1).invocation_scoped();
+    ///
+    /// let partial = NodePartial::new().clear_typed_extra_key(CURRENT_EVENT);
+    /// ```
+    #[must_use]
+    pub fn clear_typed_extra_key<T>(self, key: crate::state::StateKey<T>) -> Self {
+        self.clear_extra_keys([key.storage_key()])
+    }
 }
 
 // ============================================================================
@@ -431,6 +484,7 @@ pub enum NodeContextError {
 /// use `NodePartial.errors` instead.
 #[derive(Debug, Error)]
 #[cfg_attr(feature = "diagnostics", derive(miette::Diagnostic))]
+#[non_exhaustive]
 pub enum NodeError {
     /// Expected input data is missing from the state snapshot.
     #[error("missing expected input: {what}")]
